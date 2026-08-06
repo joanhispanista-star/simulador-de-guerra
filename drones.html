@@ -1125,6 +1125,8 @@ function terrainNormal(x,z){ // aproximada por diferencias
 function clearTerrain(){
   if(terrainMesh){ scene.remove(terrainMesh); terrainMesh.geometry.dispose();
     if(terrainMesh.material.map)terrainMesh.material.map.dispose(); terrainMesh.material.dispose(); terrainMesh=null; }
+  if(farMesh){ scene.remove(farMesh); farMesh.geometry.dispose();
+    if(farMesh.material.map)farMesh.material.map.dispose(); farMesh.material.dispose(); farMesh=null; }
   if(propGroup){ scene.remove(propGroup); disposeGroup(propGroup); propGroup=null; }
   colliders=[]; MAT_EDIFICIOS=null;
 }
@@ -1418,7 +1420,15 @@ async function buildRealWorld(map){
   scene.add(terrainMesh);
   propGroup=new THREE.Group(); scene.add(propGroup);
   // ambiente
-  worldBase={ skyTop:map.skyTop||0x3a72b0, fog:map.fog||0xbcd0e0, fogN:0.0011, amb:0x4a4436 };
+  /* Niebla del mundo real. Antes 0.0011, que daba 23% de bruma en el borde del
+     campo y tapaba por completo cualquier cosa a más de 6 km: con eso el
+     horizonte nuevo no se vería. A 0.00062 la escala queda así —
+       2,4 km (borde del campo)  8% · 4,7 km (Monserrate)  27%
+       11 km  81% · 15 km  96%, que es donde el fondo se funde con el cielo.
+     Esa degradación con la distancia ES la perspectiva aérea: es lo que hace
+     que un cerro lejano se vea lejano y no como un cartón pegado al lado.
+     El clima sigue multiplicando encima (niebla ×3,6, lluvia, polvo). */
+  worldBase={ skyTop:map.skyTop||0x3a72b0, fog:map.fog||0xbcd0e0, fogN:0.00062, amb:0x4a4436 };
   setWater(REAL.seaY, minE<-5);   // agua solo si hay zonas bajo el nivel del mar
   applyEnvironment();
   /* 🏙️ CIUDAD REAL: se trae EN SEGUNDO PLANO. Antes se esperaba aquí y la
@@ -1427,6 +1437,119 @@ async function buildRealWorld(map){
   const tok=REAL.tok;
   feed('🏙️ Trayendo los edificios de '+map.name+'…');
   buildOSM(tok).catch(e=>console.warn('OSM no disponible:', e&&e.message));
+  buildFarTerrain(map, tok).catch(e=>console.warn('horizonte no disponible:', e&&e.message));
+}
+
+/* =====================================================================
+   EL HORIZONTE
+   El campo de juego mide 2,4 km. Hasta aquí, pasado ese cuadrado no había
+   NADA: subías el dron y veías el borde del mundo recortado contra el
+   cielo. En Bogotá eso es especialmente falso, porque la ciudad está
+   metida contra los cerros orientales — Monserrate está a 4 km del centro
+   y 500 m por encima — y por el otro lado la sabana se ve hasta muy lejos.
+
+   Esto trae un SEGUNDO terreno, mucho más grande y con mucho menos
+   detalle, que rodea al campo como un marco: unos 21 km de lado. Es solo
+   decorado — no tiene colisiones ni sombras y no entra en el juego.
+   Se descarga aparte y en segundo plano; si falla, todo sigue como antes.
+
+   El marco tiene un agujero en el medio, donde va el terreno de detalle, y
+   los vértices del borde copian su altura para que no se vea el escalón.
+   ===================================================================== */
+let farMesh=null;
+/* color medio de una imagen, reduciéndola a 32×32 (basta y es instantáneo) */
+function mediaColor(img){
+  const c=document.createElement('canvas'); c.width=c.height=32;
+  const g=c.getContext('2d',{willReadFrequently:true});
+  try{ g.drawImage(img,0,0,32,32); }catch(e){ return [128,128,128]; }
+  let d; try{ d=g.getImageData(0,0,32,32).data; }catch(e){ return [128,128,128]; }
+  let r=0,v=0,b=0; for(let i=0;i<d.length;i+=4){ r+=d[i]; v+=d[i+1]; b+=d[i+2]; }
+  const n=d.length/4; return [r/n, v/n, b/n];
+}
+const LEJOS_MULT=9;      // el fondo abarca 9 veces el campo (~21 km)
+const LEJOS_N=56;        // pasos por lado, fuera del campo
+const LEJOS_M=16;        // pasos a lo ancho del campo (para que la costura encaje)
+async function buildFarTerrain(map, tok){
+  if(!REAL) return;
+  const R=REAL, spanF=R.spanM*LEJOS_MULT, FAR=HALF*LEJOS_MULT, GF=512, Z=12;
+  const vigente=()=>REAL && REAL.tok===tok;
+  const bbAt=(z)=>{ const h=(spanF/mppAt(map.lat,z))/256/2;
+    const fx=lon2tileX(map.lon,z), fy=lat2tileY(map.lat,z);
+    return {x0:fx-h, x1:fx+h, y0:fy-h, y1:fy+h}; };
+  // --- relieve lejano ---
+  const E=await fetchTiles(Z, (z,x,y)=>'https://s3.amazonaws.com/elevation-tiles-prod/terrarium/'+z+'/'+x+'/'+y+'.png', bbAt(Z), GF, false);
+  if(!E.ok || !vigente()) return;
+  let ed; try{ ed=E.ctx.getImageData(0,0,GF,GF).data; }catch(e){ return; }
+  const hF=new Float32Array(GF*GF);
+  for(let i=0;i<GF*GF;i++){
+    const a=ed[i*4+3];
+    const e = a===0 ? R.minE : (ed[i*4]*256+ed[i*4+1]+ed[i*4+2]/256)-32768;
+    hF[i]=(e-R.minE)*R.vScale;        // MISMA referencia vertical que el campo
+  }
+  // --- imagen lejana (si falla, el fondo va en color liso) ---
+  const TX=await fetchTiles(Z, (z,x,y)=>'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/'+z+'/'+y+'/'+x, bbAt(Z), 1024, true);
+  if(!vigente()) return;
+  const alturaF=(x,z)=>{
+    let u=clamp((x+FAR)/(2*FAR),0,0.999999), v=clamp((z+FAR)/(2*FAR),0,0.999999);
+    const fx=u*(GF-1), fz=v*(GF-1);
+    const x0=Math.floor(fx), z0=Math.floor(fz), x1=Math.min(x0+1,GF-1), z1=Math.min(z0+1,GF-1);
+    const tx=fx-x0, tz=fz-z0;
+    return lerp(lerp(hF[z0*GF+x0],hF[z0*GF+x1],tx), lerp(hF[z1*GF+x0],hF[z1*GF+x1],tx), tz);
+  };
+  /* Altura de cada vértice del marco. Dentro del campo se copia el terreno
+     de detalle; justo fuera se mezclan los dos poco a poco, porque si no,
+     el salto de resolución se ve como una grieta alrededor del campo. */
+  const alturaVert=(x,z)=>{
+    if(Math.abs(x)<=HALF+0.001 && Math.abs(z)<=HALF+0.001) return realHeightAt(x,z);
+    const borde=realHeightAt(clamp(x,-HALF,HALF), clamp(z,-HALF,HALF));
+    const t=clamp((Math.max(Math.abs(x),Math.abs(z))-HALF)/(HALF*0.6), 0, 1);
+    return lerp(borde, alturaF(x,z), t);
+  };
+  // coordenadas: fuera del campo, a lo ancho del campo, y fuera otra vez
+  const co=[];
+  for(let i=0;i<=LEJOS_N;i++) co.push(-FAR+(FAR-HALF)*i/LEJOS_N);   // termina en -HALF
+  for(let i=1;i<LEJOS_M;i++)  co.push(-HALF+WORLD*i/LEJOS_M);       // interior, sin extremos
+  for(let i=0;i<=LEJOS_N;i++) co.push(HALF+(FAR-HALF)*i/LEJOS_N);   // empieza en +HALF
+  const NC=co.length, pos=[], uv=[], idx=[];
+  for(let iz=0;iz<NC;iz++) for(let ix=0;ix<NC;ix++){
+    const x=co[ix], z=co[iz];
+    pos.push(x, alturaVert(x,z), z);
+    uv.push((x+FAR)/(2*FAR), 1-(z+FAR)/(2*FAR));
+  }
+  const dentro=(a,b)=>a>=-HALF-0.001 && b<=HALF+0.001;
+  for(let iz=0;iz<NC-1;iz++) for(let ix=0;ix<NC-1;ix++){
+    if(dentro(co[ix],co[ix+1]) && dentro(co[iz],co[iz+1])) continue;   // ahí manda el detalle
+    const a=iz*NC+ix, b=a+1, c=a+NC, d=c+1;
+    idx.push(a,c,b, b,c,d);
+  }
+  if(!vigente()) return;
+  const geo=new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos,3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv,2));
+  geo.setIndex(idx); geo.computeVertexNormals();
+  let mat;
+  if(TX.ok){ const tex=new THREE.CanvasTexture(TX.canvas); tex.colorSpace=THREE.SRGBColorSpace;
+    try{ tex.anisotropy=Math.min(8, renderer.capabilities.getMaxAnisotropy()); }catch(e){}
+    // mismos ajustes que el terreno de cerca, para que no se note el cambio
+    mat=new THREE.MeshStandardMaterial({ map:tex, roughness:0.95, metalness:0 });
+    /* La foto de lejos viene de otro nivel de zoom y casi siempre sale más
+       oscura y con otro tinte que la de cerca: el borde del campo se veía
+       como un escalón de color. Se mide el color MEDIO de las dos imágenes y
+       se corrige el del fondo hasta que coinciden. Así se ajusta solo, sea
+       la ciudad que sea, sin números a mano. */
+    const cerca=terrainMesh&&terrainMesh.material.map&&terrainMesh.material.map.image;
+    if(cerca){ const a=mediaColor(cerca), b=mediaColor(TX.canvas);
+      const f=(ca,cb)=>clamp(cb>4 ? ca/cb : 1, 0.6, 1.7);
+      mat.color.setRGB(f(a[0],b[0]), f(a[1],b[1]), f(a[2],b[2])); }
+  }
+  else mat=new THREE.MeshStandardMaterial({ color:0x6f7a63, roughness:0.95, metalness:0 });
+  if(farMesh){ scene.remove(farMesh); farMesh.geometry.dispose(); farMesh=null; }
+  farMesh=new THREE.Mesh(geo, mat);
+  farMesh.castShadow=false; farMesh.receiveShadow=false;   // es decorado: ni sombras ni colisiones
+  farMesh.renderOrder=-1;                                  // se dibuja antes que la ciudad
+  scene.add(farMesh);
+  const km=Math.round(spanF/100)/10;
+  feed('⛰️ Horizonte: '+km+' km a la redonda','good');
 }
 
 /* =====================================================================
@@ -1779,10 +1902,14 @@ async function buildOSM(tok){
   }
   const escalaTecho=6*REAL.hScale;      // la losa se repite cada 6 m
   const mH=REAL.hScale;
+  let masAlto=null;                     // para poder cazar alturas absurdas de OSM
   for(const e of edifs){
     const areaM2=e.areaU*REAL.mPerU*REAL.mPerU;
     const alturaM=alturaEdificio(e.tags, areaM2);
     const hU=Math.max(1.2, alturaM*M2U);
+    if(!masAlto || alturaM>masAlto.m) masAlto={ m:Math.round(alturaM), tipo:e.tipo,
+      nombre:(e.tags&&(e.tags.name||e.tags['addr:street']))||'', x:Math.round(e.cx), z:Math.round(e.cz),
+      tagAltura:(e.tags&&e.tags.height)||null, tagPisos:(e.tags&&e.tags['building:levels'])||null };
     let baseY=1e9; for(const p of e.pts) baseY=Math.min(baseY, terrainHeight(p.x,p.z));
     baseY-=0.4;
     const gm=geomMuros(e.pts, e.cx, e.cz, baseY, hU, M_TRAMO*REAL.hScale, M_PISO*M2U);
@@ -1885,7 +2012,8 @@ async function buildOSM(tok){
     tI.instanceMatrix.needsUpdate=true; lI.instanceMatrix.needsUpdate=true;
     propGroup.add(tI); propGroup.add(lI); nV=treePts.length;
   }
-  REAL.osm={ edificios:nB, traidos, agua:nA, arboles:nV, calles:nC, azotea:trastos.length, recortados };
+  REAL.osm={ edificios:nB, traidos, agua:nA, arboles:nV, calles:nC, azotea:trastos.length, recortados,
+             masAlto, trastoMasAlto:trastos.reduce((a,t)=>Math.max(a,t.y),0) };
   feed('🏙️ '+nB+' edificios · '+nC+' calles · '+nA+' aguas · '+nV+' árboles · '+
        trastos.length+' trastos de azotea','good');
   if(recortados) feed('· '+recortados+' edificios pequeños quedaron fuera por tamaño de la ciudad');
@@ -4259,6 +4387,15 @@ if(location.search.indexOf('dbg')>=0) window.DRONES={
   viewYaw:()=>+player.view.yaw.toFixed(3),
   postfx:()=>({bloom:useComposer, phys:physReady}),
   bbLL:()=>REAL?REAL.bbLL:null,
+  horizonte:()=>farMesh?{ vertices:farMesh.geometry.attributes.position.count,
+    triangulos:farMesh.geometry.index.count/3, textura:!!farMesh.material.map,
+    ladoKm:+(REAL.spanM*LEJOS_MULT/1000).toFixed(1),
+    nieblaPct:(d)=>Math.round((1-Math.exp(-Math.pow(d*(scene.fog?scene.fog.density:0),2)))*100) }:'sin horizonte',
+  niebla:(d)=>scene.fog?Math.round((1-Math.exp(-Math.pow(d*scene.fog.density,2)))*100):null,
+  /* rumbo del dron en grados: 0=norte(-z) · 90=este(+x) · 180=sur · 270=oeste.
+     En Bogotá los cerros están al ESTE, así que 90 es la vista que interesa. */
+  rumbo:(grados)=>{ if(grados!==undefined) drone.yaw=(180-grados)*Math.PI/180;
+    return Math.round(((180-drone.yaw*180/Math.PI)%360+360)%360); },
   osmRun:async()=>{ try{ await buildOSM(); return REAL&&REAL.osm?REAL.osm:'terminó sin datos'; }catch(e){ return 'THROW '+(e&&e.message)+' | '+(e&&e.stack||'').slice(0,200); } },
   ia:()=>IA.resumen(),
   iaLog:()=>IA.historial(),
