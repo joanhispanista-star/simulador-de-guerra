@@ -3,13 +3,10 @@
   "configurations": [
     {
       "name": "maquinas",
-      "runtimeExecutable": "python",
+      "runtimeExecutable": "node",
       "runtimeArgs": [
-        "-m",
-        "http.server",
-        "8199",
-        "--directory",
-        "C:/Users/joanh/OneDrive/Desktop/maquinas"
+        "C:/Users/joanh/OneDrive/Desktop/maquinas/servidor.js",
+        "8199"
       ],
       "port": 8199
     }
