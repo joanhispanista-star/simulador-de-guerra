@@ -1712,14 +1712,24 @@ function uvFachada(escalaU, escalaV){
     }
   };
 }
+/* Ruido DETERMINISTA por posición: dos edificios de la misma cuadra sacan el
+   mismo número, así que salen del mismo ladrillo. Antes era Math.random() puro y
+   cada edificio era de su padre y de su madre; desde el aire eso no se lee como
+   una ciudad, se lee como confeti. Una cuadra de Bogotá mide unos 75 m. */
+function ruidoCuadra(cx, cz, escala){
+  const i=Math.floor(cx/escala)|0, j=Math.floor(cz/escala)|0;
+  let h=Math.imul(i,374761393) + Math.imul(j,668265263);
+  h=Math.imul(h^(h>>>13), 1274126177); h=h^(h>>>16);
+  return ((h>>>0)%10000)/10000;
+}
 /* Paleta de fachadas de verdad. Bogotá es sobre todo LADRILLO. */
-function colorFachada(alturaM, tipo){
-  const r=Math.random();
+function colorFachada(alturaM, tipo, cx, cz){
+  const r = (cx===undefined) ? Math.random() : ruidoCuadra(cx, cz, 14);
   if(alturaM>45)  return r<0.55 ? [0.55,0.62,0.70] : [0.62,0.64,0.66];        // torres: cristal/hormigón
   if(alturaM>22)  return r<0.40 ? [0.58,0.34,0.26] : (r<0.75?[0.68,0.68,0.70]:[0.80,0.78,0.74]);
   if(/^(industrial|warehouse|hangar|farm)$/.test(tipo||'')) return [0.62,0.63,0.60];
   // bajos: ladrillo bogotano en varios tonos + algo de blanco/crema
-  if(r<0.52) return [0.52+Math.random()*0.16, 0.26+Math.random()*0.08, 0.20+Math.random()*0.06];
+  if(r<0.52) return [0.50+r*0.30, 0.25+r*0.14, 0.19+r*0.10];
   if(r<0.75) return [0.78,0.76,0.71];
   if(r<0.90) return [0.66,0.66,0.68];
   return [0.72,0.60,0.45];
@@ -1763,8 +1773,10 @@ function hacerTexturaTecho(){
 }
 /* Color de la cubierta vista desde arriba. En Bogotá: teja de barro en lo bajo
    (La Candelaria es casi toda teja roja) y losa de concreto gris en lo demás. */
-function colorTecho(alturaM, tipo){
-  const r=Math.random();
+function colorTecho(alturaM, tipo, cx, cz){
+  // escala más chica que la fachada: los techos varían más de casa a casa,
+  // pero siguen agrupándose por zona (La Candelaria es casi toda teja)
+  const r = (cx===undefined) ? Math.random() : ruidoCuadra(cx+7.3, cz-4.1, 5);
   if(alturaM>45) return [0.44,0.46,0.49];                                   // torres: cubierta técnica
   if(alturaM>22) return r<0.75 ? [0.47,0.48,0.50] : [0.52,0.50,0.48];
   if(/^(industrial|warehouse|hangar|farm)$/.test(tipo||'')) return [0.50,0.52,0.54];
@@ -1775,27 +1787,41 @@ function colorTecho(alturaM, tipo){
    fachada salga a escala. La cara de cada muro se orienta comparando con el
    centro del edificio, así da igual en qué sentido venga el polígono de
    OpenStreetMap (unos vienen en un sentido y otros en el contrario). */
-function geomMuros(pts, cx, cz, baseY, hU, escalaU, escalaV){
-  const pos=[], uv=[], idx=[]; let v=0, u0=0;
-  const yTop=baseY+hU, vTop=hU/escalaV;
+/* El muro se parte en FRANJAS horizontales. Con una sola franja no había forma
+   de distinguir la planta baja, y una calle de Bogotá es local comercial abajo
+   y vivienda arriba: sin ese zócalo oscuro y acristalado, el edificio parece
+   una caja de oficinas de cualquier parte. Como cada cuadrilátero lleva sus
+   propios vértices, la franja de abajo se puede pintar aparte sin degradado. */
+function geomMuros(pts, cx, cz, baseY, hU, escalaU, escalaV, alturaPlanta){
+  const pos=[], uv=[], idx=[], planta=[]; let v=0, u0=0;
+  const cortes = (alturaPlanta>0 && alturaPlanta<hU*0.8) ? [0, alturaPlanta, hU] : [0, hU];
   for(let i=0;i<pts.length;i++){
     const p0=pts[i], p1=pts[(i+1)%pts.length];
     const dx=p1.x-p0.x, dz=p1.z-p0.z, L=Math.hypot(dx,dz);
     if(L<0.02) continue;
     const u1=u0+L/escalaU;
-    pos.push(p0.x,baseY,p0.z,  p1.x,baseY,p1.z,  p1.x,yTop,p1.z,  p0.x,yTop,p0.z);
-    uv.push(u0,0,  u1,0,  u1,vTop,  u0,vTop);
     // ¿la normal de este orden mira hacia AFUERA del edificio?
     const mx=(p0.x+p1.x)/2-cx, mz=(p0.z+p1.z)/2-cz;
-    if(mx*(-dz)+mz*dx > 0) idx.push(v,v+1,v+2, v,v+2,v+3);
-    else                   idx.push(v,v+2,v+1, v,v+3,v+2);
-    v+=4; u0=u1;
+    const fuera = mx*(-dz)+mz*dx > 0;
+    for(let f=0; f<cortes.length-1; f++){
+      const ya=baseY+cortes[f], yb=baseY+cortes[f+1];
+      const va=cortes[f]/escalaV, vb=cortes[f+1]/escalaV;
+      pos.push(p0.x,ya,p0.z,  p1.x,ya,p1.z,  p1.x,yb,p1.z,  p0.x,yb,p0.z);
+      uv.push(u0,va,  u1,va,  u1,vb,  u0,vb);
+      const esPlanta = (cortes.length===3 && f===0) ? 1 : 0;
+      planta.push(esPlanta,esPlanta,esPlanta,esPlanta);
+      if(fuera) idx.push(v,v+1,v+2, v,v+2,v+3);
+      else      idx.push(v,v+2,v+1, v,v+3,v+2);
+      v+=4;
+    }
+    u0=u1;
   }
   if(!v) return null;
   const g=new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos,3));
   g.setAttribute('uv', new THREE.Float32BufferAttribute(uv,2));
   g.setIndex(idx); g.computeVertexNormals();
+  g.userData.planta=planta;      // 1 = ese vértice es de la planta baja
   return g;
 }
 /* Cubierta: el polígono triangulado y plano, a la altura del alero. Las UVs van
@@ -1818,7 +1844,12 @@ function geomTecho(pts, baseY, hU, escala){
 function pintarMalla(g, rgb, variacion){
   const n=g.attributes.position.count, col=new Float32Array(n*3);
   const s=1-variacion*0.5+Math.random()*variacion;
-  for(let i=0;i<n;i++){ col[i*3]=rgb[0]*s; col[i*3+1]=rgb[1]*s; col[i*3+2]=rgb[2]*s; }
+  const pl=g.userData.planta;                 // franja de planta baja, si la hay
+  for(let i=0;i<n;i++){
+    // el zócalo va oscuro y algo azulado: vidrio de local, toldos, reja
+    const k = (pl && pl[i]) ? 0.42 : 1, az = (pl && pl[i]) ? 1.12 : 1;
+    col[i*3]=rgb[0]*s*k; col[i*3+1]=rgb[1]*s*k*1.02; col[i*3+2]=rgb[2]*s*k*az;
+  }
   g.setAttribute('color', new THREE.BufferAttribute(col,3));
 }
 /* Trastos de azotea: tanques de agua y cajas de escalera. Es lo que distingue
@@ -2013,8 +2044,10 @@ async function buildOSM(tok){
       let minX=1e9,maxX=-1e9,minZ=1e9,maxZ=-1e9;
       for(const p of pts){ minX=Math.min(minX,p.x);maxX=Math.max(maxX,p.x);minZ=Math.min(minZ,p.z);maxZ=Math.max(maxZ,p.z); }
       const areaU=areaPoly(pts);
-      const cuantos=Math.min(denso?90:26, Math.floor(areaU/(denso?26:70)));
-      for(let i=0;i<cuantos && treePts.length<1200;i++){
+      // más densos que antes: un parque de Bogotá está lleno de árboles, y con
+      // 26 por parque se veía pelado desde el aire
+      const cuantos=Math.min(denso?170:70, Math.floor(areaU/(denso?11:26)));
+      for(let i=0;i<cuantos && treePts.length<3500;i++){
         const x=minX+Math.random()*(maxX-minX), z=minZ+Math.random()*(maxZ-minZ);
         if(Math.hypot(x,z)<20) continue;
         if(dentroPoly(x,z,pts)) treePts.push({x,z});
@@ -2046,12 +2079,14 @@ async function buildOSM(tok){
       tagAltura:(e.tags&&e.tags.height)||null, tagPisos:(e.tags&&e.tags['building:levels'])||null };
     let baseY=1e9; for(const p of e.pts) baseY=Math.min(baseY, terrainHeight(p.x,p.z));
     baseY-=0.4;
-    const gm=geomMuros(e.pts, e.cx, e.cz, baseY, hU, M_TRAMO*REAL.hScale, M_PISO*M2U);
+    // planta baja de local comercial, solo si el edificio da para tenerla
+    const plantaU = alturaM>=9 ? 4.2*M2U : 0;
+    const gm=geomMuros(e.pts, e.cx, e.cz, baseY, hU, M_TRAMO*REAL.hScale, M_PISO*M2U, plantaU);
     if(!gm) continue;
     const gt=geomTecho(e.pts, baseY, hU, escalaTecho);
     if(!gt){ gm.dispose(); continue; }
-    pintarMalla(gm, colorFachada(alturaM, e.tipo), 0.16);
-    pintarMalla(gt, colorTecho(alturaM, e.tipo), 0.10);
+    pintarMalla(gm, colorFachada(alturaM, e.tipo, e.cx, e.cz), 0.16);
+    pintarMalla(gt, colorTecho(alturaM, e.tipo, e.cx, e.cz), 0.10);
     geosMuro.push(gm); geosTecho.push(gt);
     colliders.push({ x:e.cx, z:e.cz, r:Math.max(1.2,Math.sqrt(e.areaU/Math.PI)*0.85), h:hU });
     if(alturaM<=45 && e.areaU>3) ponerTrastos(e, baseY+hU, areaM2, trastos);
@@ -2123,6 +2158,26 @@ async function buildOSM(tok){
         cintaPoly(c.pts, Math.max(0.05, 0.16*mH), 0.19, 12*mH, 1, lin);
         nLinea++;
       }
+      /* ÁRBOLES DE CALLE. Bogotá tiene las avenidas arboladas — la Séptima, la
+         Caracas, casi cualquier carrera principal — y sin ellos la ciudad se veía
+         como una maqueta de cemento. Van cada ~16 m sobre la acera, alternando
+         lado, y solo en avenidas (de terciaria para arriba). */
+      if(c.anchoM>=11 && aceraM>0 && treePts.length<3500){
+        const sep=16*mH, borde=semi+aceraM*mH*0.55;
+        let resto=0, lado=1;
+        for(let i=0;i<c.pts.length-1 && treePts.length<3500;i++){
+          const p0=c.pts[i], p1=c.pts[i+1];
+          const dx=p1.x-p0.x, dz=p1.z-p0.z, L=Math.hypot(dx,dz);
+          if(L<1e-4) continue;
+          const nx=-dz/L, nz=dx/L;
+          for(let s=sep-resto; s<L; s+=sep){
+            const t=s/L, x=p0.x+dx*t+nx*borde*lado, z=p0.z+dz*t+nz*borde*lado;
+            if(Math.abs(x)<LIM && Math.abs(z)<LIM && Math.hypot(x,z)>20) treePts.push({x,z,calle:true});
+            lado=-lado;
+          }
+          resto=(resto+L)%sep;
+        }
+      }
     }
     const matAcera=new THREE.MeshStandardMaterial({ map:TEX_TECHO, color:0x9a9791,
       roughness:0.95, metalness:0, polygonOffset:true, polygonOffsetFactor:-2, polygonOffsetUnits:-2 });
@@ -2154,20 +2209,45 @@ async function buildOSM(tok){
       else geos.forEach(g=>ciudad.add(new THREE.Mesh(g,matW)));
     }
   }
-  // ---- arbolado (instanciado) ----
+  /* ---- ARBOLADO ----
+     Antes: un cono verde oscuro sobre un palo, todos idénticos. Desde el aire
+     parecían chinchetas, y en un parque bogotano no hay pinos: hay urapanes,
+     cauchos y eucaliptos, de copa REDONDA y verde claro.
+     Ahora la copa son dos masas irregulares (icosaedros de pocas caras) a
+     alturas distintas, y cada árbol lleva SU PROPIO color y tamaño — que es lo
+     que hace que un grupo de árboles parezca un bosque y no un patrón. */
   if(treePts.length){
-    const trG=new THREE.CylinderGeometry(0.06,0.09,0.9,5), lfG=new THREE.ConeGeometry(0.5,1.7,7);
-    const trM=new THREE.MeshStandardMaterial({color:0x5b4636,roughness:1,flatShading:true});
-    const lfM=new THREE.MeshStandardMaterial({color:0x2f6b45,roughness:1,flatShading:true});
-    const tI=new THREE.InstancedMesh(trG,trM,treePts.length), lI=new THREE.InstancedMesh(lfG,lfM,treePts.length);
-    tI.castShadow=lI.castShadow=true;
-    const d=new THREE.Object3D();
-    treePts.forEach((p,i)=>{ const y=terrainHeight(p.x,p.z), s=0.8+Math.random()*0.6;
-      d.position.set(p.x,y+0.45*s,p.z); d.scale.setScalar(s); d.rotation.y=Math.random()*TAU; d.updateMatrix(); tI.setMatrixAt(i,d.matrix);
-      d.position.set(p.x,y+1.6*s,p.z); d.updateMatrix(); lI.setMatrixAt(i,d.matrix);
-      colliders.push({x:p.x,z:p.z,r:0.5*s,h:2.4*s}); });
-    tI.instanceMatrix.needsUpdate=true; lI.instanceMatrix.needsUpdate=true;
-    ciudad.add(tI); ciudad.add(lI); nV=treePts.length;
+    const troncoG=new THREE.CylinderGeometry(0.055,0.085,1.05,5);
+    const copaG=new THREE.IcosahedronGeometry(0.62,0);        // 20 caras: barato y no parece bola
+    const altaG=new THREE.IcosahedronGeometry(0.42,0);
+    const troncoM=new THREE.MeshStandardMaterial({color:0x6b5443, roughness:1, flatShading:true});
+    const hojaM=new THREE.MeshStandardMaterial({color:0xffffff, roughness:0.92, flatShading:true});
+    const N=treePts.length;
+    const tI=new THREE.InstancedMesh(troncoG,troncoM,N);
+    const cI=new THREE.InstancedMesh(copaG,hojaM,N);
+    const aI=new THREE.InstancedMesh(altaG,hojaM.clone(),N);
+    tI.castShadow=cI.castShadow=true; aI.castShadow=false;    // la copa alta no repite sombra
+    const d=new THREE.Object3D(), col=new THREE.Color();
+    treePts.forEach((p,i)=>{
+      const y=terrainHeight(p.x,p.z);
+      // los de calle son más chicos y parejos (están podados); los de parque, libres
+      const s = p.calle ? 0.85+Math.random()*0.3 : 0.8+Math.random()*0.85;
+      d.rotation.set(0, Math.random()*TAU, 0); d.scale.setScalar(s);
+      d.position.set(p.x, y+0.52*s, p.z); d.updateMatrix(); tI.setMatrixAt(i,d.matrix);
+      d.rotation.set(Math.random()*0.6, Math.random()*TAU, Math.random()*0.6);
+      d.position.set(p.x, y+1.42*s, p.z); d.updateMatrix(); cI.setMatrixAt(i,d.matrix);
+      d.position.set(p.x+(Math.random()-0.5)*0.25*s, y+2.05*s, p.z+(Math.random()-0.5)*0.25*s);
+      d.scale.setScalar(s*(0.8+Math.random()*0.4)); d.updateMatrix(); aI.setMatrixAt(i,d.matrix);
+      // verde de Bogotá: claro y algo amarillento, con variación de árbol a árbol
+      const h=0.24+Math.random()*0.06, sat=0.34+Math.random()*0.22, luz=0.34+Math.random()*0.16;
+      col.setHSL(h, sat, luz); cI.setColorAt(i,col);
+      col.setHSL(h, sat, luz*1.16); aI.setColorAt(i,col);     // arriba le da más el sol
+      colliders.push({x:p.x, z:p.z, r:0.45*s, h:2.6*s});
+    });
+    tI.instanceMatrix.needsUpdate=true; cI.instanceMatrix.needsUpdate=true; aI.instanceMatrix.needsUpdate=true;
+    if(cI.instanceColor) cI.instanceColor.needsUpdate=true;
+    if(aI.instanceColor) aI.instanceColor.needsUpdate=true;
+    ciudad.add(tI); ciudad.add(cI); ciudad.add(aI); nV=N;
   }
   REAL.osm={ edificios:nB, traidos, agua:nA, arboles:nV, calles:nC, azotea:trastos.length, recortados,
              masAlto, trastoMasAlto:trastos.reduce((a,t)=>Math.max(a,t.y),0) };
@@ -4559,6 +4639,13 @@ if(location.search.indexOf('dbg')>=0) window.DRONES={
     }
     return { sombras:renderer.shadowMap.enabled };
   },
+  /* Fija el tamaño de dibujo a mano. Hace falta para medir: si la ventana está
+     oculta, innerWidth vale 0, onResize deja el lienzo en 0×0 y entonces dibujar
+     no cuesta NADA — se mide humo. Con esto las medidas son comparables entre sí. */
+  tamano:(w,h)=>{ const W=w||1280, H=h||720;
+    renderer.setSize(W,H,false); camera.aspect=W/H; camera.updateProjectionMatrix();
+    if(composer) composer.setSize(W,H);
+    return W+'x'+H; },
   cronometro:(n)=>{ const N=n||25; window.DRONES.dibujo(); window.DRONES.dibujo();
     const t0=performance.now(); for(let i=0;i<N;i++) window.DRONES.dibujo();
     const ms=(performance.now()-t0)/N; return +ms.toFixed(1); },
