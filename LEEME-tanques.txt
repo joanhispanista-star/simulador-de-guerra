@@ -1,0 +1,135 @@
+==========================================================
+   JOAN TE PRESTA · BATALLA DE TANQUES — Cómo jugar
+==========================================================
+
+Un juego de tanques 2D estilo "Atari Combat" (1977), hecho
+como MINI APP: un solo archivo "tanques.html". Se abre con
+doble clic en Chrome (o Edge), NO necesita internet, NO se
+instala nada, NO pide cuentas.
+
+----------------------------------------------------------
+QUÉ NECESITAS (nada más)
+----------------------------------------------------------
+- El archivo "tanques.html" en tu carpeta.
+- Google Chrome o Microsoft Edge.
+- Un teclado. (Para 2 jugadores, los dos juegan en el MISMO
+  teclado, cada uno con sus teclas.)
+
+----------------------------------------------------------
+CÓMO EMPEZAR
+----------------------------------------------------------
+1. Doble clic en "tanques.html" → abre en el navegador.
+2. En el menú elige el modo:
+     • 2 JUGADORES → dos personas, mismo teclado.
+     • 1 JUGADOR vs MÁQUINA → tú contra el computador
+       (elige dificultad: Fácil / Normal / Difícil).
+3. Ajusta lo que quieras (ver "Opciones" abajo) y pulsa
+   el botón grande "▶ JUGAR".
+4. Sale una cuenta regresiva 3·2·1 y ¡a pelear!
+
+----------------------------------------------------------
+CONTROLES
+----------------------------------------------------------
+JUGADOR 1  (tanque AZUL, lado izquierdo del teclado)
+   W ............ avanzar
+   S ............ retroceder (solo si activas "Con reversa")
+   A / D ........ girar a izquierda / derecha
+   ESPACIO ...... disparar
+
+JUGADOR 2  (tanque ROJO, lado derecho del teclado)
+   ↑ ............ avanzar
+   ↓ ............ retroceder (solo si activas "Con reversa")
+   ← / → ........ girar a izquierda / derecha
+   ENTER ........ disparar
+
+TECLAS GENERALES
+   P ............ pausa / continuar
+   M ............ silenciar / activar sonido
+   Esc .......... volver al menú
+
+El tanque gira y avanza hacia donde apunta (como en Atari
+Combat): no se mueve "de lado". Practica girar y avanzar.
+
+----------------------------------------------------------
+CÓMO SE GANA
+----------------------------------------------------------
+- Cada vez que le pegas un tiro al rival, ganas 1 punto.
+- Al recibir un impacto, el tanque gira mareado ~1 segundo
+  y luego vuelve a moverse apuntando a otra dirección.
+- La partida termina de una de estas formas (tú eliges):
+     • TIEMPO 2:16  → gana quien tenga más puntos al final
+       (es la duración original del Atari; puede haber empate).
+     • PRIMERO A 5  o  PRIMERO A 10 → gana quien llegue antes.
+
+----------------------------------------------------------
+OPCIONES DEL MENÚ
+----------------------------------------------------------
+- TABLERO:
+    · Campo abierto  → sin muros, duelo directo.
+    · Laberinto      → algunos muros para cubrirse.
+    · Laberinto complejo → más muros, más táctico.
+- BALAS:
+    · Rectas         → la bala se detiene al chocar (clásico).
+    · Rebotan (Tank-Pong) → la bala rebota en los muros;
+      ¡puedes pegar tiros "de rebote"!
+- BALAS EN PANTALLA:
+    · 1 (clásico) → solo puedes tener 1 tiro volando a la vez;
+      hay que apuntar bien. También 2, 3 o 5 para más acción.
+- DURACIÓN:  Tiempo 2:16 · Primero a 5 · Primero a 10.
+- REVERSA:   Sin reversa (clásico) o Con reversa.
+
+Tus preferencias y tus récords se guardan solos en el
+navegador (para la próxima vez que abras el juego).
+
+----------------------------------------------------------
+CONSEJOS
+----------------------------------------------------------
+- En "1 bala en pantalla", si fallas quedas un momento sin
+  poder disparar hasta que la bala muera: no dispares al aire.
+- En modo "Rebotan", usa las paredes para sorprender al rival
+  por ángulos imposibles.
+- En laberinto, muévete entre los muros para cubrirte; la
+  máquina no te ve a través de las paredes.
+- ¿La máquina en "Difícil" es muy dura? Empieza en "Normal"
+  o "Fácil" y sube cuando le agarres el pulso.
+
+----------------------------------------------------------
+PROBLEMAS FRECUENTES
+----------------------------------------------------------
+- No suena nada: pulsa una tecla o el botón Jugar (el
+  navegador solo deja sonar tras una interacción). Revisa
+  también el botón 🔊 arriba a la derecha (o la tecla M).
+- Se ve pequeño o con bordes negros: es normal, el tablero
+  mantiene su proporción y se centra en la ventana.
+- Las teclas "se quedan pegadas" al cambiar de ventana: al
+  volver, el juego se pone en pausa solo; pulsa P o "Continuar".
+- Nada se mueve: haz clic dentro de la ventana del juego para
+  darle el foco y pulsa "Continuar".
+
+----------------------------------------------------------
+PARA COMPARTIRLO (sin internet)
+----------------------------------------------------------
+Solo pasa el archivo "tanques.html" (por WhatsApp, correo o
+USB). Con eso basta: quien lo reciba lo abre con doble clic
+y ya puede jugar los modos "2 Jugadores" y "vs Máquina", sin
+internet.
+
+----------------------------------------------------------
+JUGAR EN LÍNEA CON AMIGOS (en otros computadores)
+----------------------------------------------------------
+El juego YA trae el modo EN LÍNEA (botón "🌐 Jugar en línea"):
+una "Plaza" donde tú y tus amigos se conectan por un enlace y
+se retan, más salas privadas con código.
+
+Para activarlo hay que hacer una configuración GRATIS de una
+sola vez (crear una nube y publicar un enlace). Está todo
+explicado paso a paso en el archivo:
+
+        👉  LEEME-online.txt
+
+Mientras no lo actives, el botón en línea avisa que falta
+configurar, y los modos sin internet siguen funcionando igual.
+
+==========================================================
+© Joan te presta · Arcade — Batalla de Tanques
+==========================================================
