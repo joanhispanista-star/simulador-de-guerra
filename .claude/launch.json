@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "maquinas",
+      "runtimeExecutable": "python",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "8199",
+        "--directory",
+        "C:/Users/joanh/OneDrive/Desktop/maquinas"
+      ],
+      "port": 8199
+    }
+  ]
+}
