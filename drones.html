@@ -1562,7 +1562,7 @@ async function buildFarTerrain(map, tok){
   geo.setIndex(idx); geo.computeVertexNormals();
   let mat;
   if(TX.ok){ const tex=new THREE.CanvasTexture(TX.canvas); tex.colorSpace=THREE.SRGBColorSpace;
-    try{ tex.anisotropy=Math.min(8, renderer.capabilities.getMaxAnisotropy()); }catch(e){}
+    try{ tex.anisotropy=Math.min(4, renderer.capabilities.getMaxAnisotropy()); }catch(e){}
     // mismos ajustes que el terreno de cerca, para que no se note el cambio
     mat=new THREE.MeshStandardMaterial({ map:tex, roughness:0.95, metalness:0 });
     /* La foto de lejos viene de otro nivel de zoom y casi siempre sale más
@@ -1740,19 +1740,25 @@ function hacerTexturaTecho(){
   const S=128, c=document.createElement('canvas'); c.width=c.height=S;
   const g=c.getContext('2d');
   g.fillStyle='#ffffff'; g.fillRect(0,0,S,S);          // blanco: el color lo pone el vértice
-  g.strokeStyle='rgba(0,0,0,0.16)'; g.lineWidth=2;     // juntas de la losa
-  for(let i=1;i<4;i++){ const p=i*S/4;
-    g.beginPath(); g.moveTo(p,0); g.lineTo(p,S); g.stroke();
-    g.beginPath(); g.moveTo(0,p); g.lineTo(S,p); g.stroke(); }
-  for(let i=0;i<900;i++){                              // grano del concreto
-    g.fillStyle='rgba(0,0,0,'+(0.03+Math.random()*0.07)+')';
-    g.beginPath(); g.arc(Math.random()*S, Math.random()*S, Math.random()*2.2, 0, TAU); g.fill(); }
-  for(let i=0;i<7;i++){                                // manchas de humedad
-    g.fillStyle='rgba(30,40,35,'+(0.05+Math.random()*0.08)+')';
-    g.beginPath(); g.arc(Math.random()*S, Math.random()*S, 6+Math.random()*16, 0, TAU); g.fill(); }
+  /* Juntas: SOLO una en cada eje. Antes había tres por lado y, al repetirse
+     cada 6 m, el enrejado se veía desde el aire como un muaré de rombos —
+     parecía papel pintado, no una losa. Menos juntas, más suaves y más
+     separadas: de cerca se notan, de lejos desaparecen, que es lo correcto. */
+  g.strokeStyle='rgba(0,0,0,0.10)'; g.lineWidth=1.5;
+  g.beginPath(); g.moveTo(S/2,0); g.lineTo(S/2,S); g.stroke();
+  g.beginPath(); g.moveTo(0,S/2); g.lineTo(S,S/2); g.stroke();
+  /* SOLO grano fino. Nada de manchas grandes: una mancha grande se reconoce
+     de un vistazo, y al repetirse la textura cada 11 m el techo entero se ve
+     estampado. El grano fino, en cambio, no delata la repetición — la
+     variación entre edificios ya la pone el color de cada uno. */
+  for(let i=0;i<900;i++){
+    g.fillStyle='rgba(0,0,0,'+(0.02+Math.random()*0.035)+')';
+    g.beginPath(); g.arc(Math.random()*S, Math.random()*S, 0.4+Math.random()*1.1, 0, TAU); g.fill(); }
   TEX_TECHO=new THREE.CanvasTexture(c);
   TEX_TECHO.wrapS=TEX_TECHO.wrapT=THREE.RepeatWrapping;
   TEX_TECHO.colorSpace=THREE.SRGBColorSpace;
+  // sin esto, la losa vista de canto vuelve a hacer muaré
+  try{ TEX_TECHO.anisotropy=Math.min(4, renderer.capabilities.getMaxAnisotropy()); }catch(e){}
   return TEX_TECHO;
 }
 /* Color de la cubierta vista desde arriba. En Bogotá: teja de barro en lo bajo
@@ -1833,6 +1839,87 @@ function ponerTrastos(e, yTecho, areaM2, out){
     puestos++;
   }
 }
+/* ---------------------------------------------------------------------
+   CALLES
+   Antes cada tramo de calle era un rectángulo suelto tendido sobre el
+   terreno: en cada giro quedaba una MUESCA por fuera y un solape por
+   dentro, y sin coordenadas de textura no se les podía pintar nada.
+   Ahora cada calle es una cinta continua a lo largo de su polilínea, con
+   las esquinas resueltas por bisectriz y las UVs medidas en metros. Sobre
+   esa base se montan tres capas: acera, asfalto y línea central.
+   --------------------------------------------------------------------- */
+let TEX_ASFALTO=null, TEX_LINEA=null;
+function hacerTexturasCalle(){
+  if(TEX_ASFALTO) return;
+  const W=64,H=64, c=document.createElement('canvas'); c.width=W; c.height=H;
+  const g=c.getContext('2d');
+  g.fillStyle='#ffffff'; g.fillRect(0,0,W,H);        // blanco: el color va en el material
+  for(let i=0;i<1600;i++){                            // grano del asfalto
+    const v=Math.random()<0.5?0:255;
+    g.fillStyle='rgba('+v+','+v+','+v+','+(0.03+Math.random()*0.06)+')';
+    g.fillRect(Math.random()*W, Math.random()*H, 1+Math.random()*1.6, 1+Math.random()*1.6);
+  }
+  // v cruza la calzada de lado a lado: las rodadas caen a un cuarto y tres cuartos
+  for(const cy of [H*0.27, H*0.73]){
+    g.fillStyle='rgba(255,255,255,0.07)'; g.fillRect(0, cy-H*0.06, W, H*0.12); }
+  TEX_ASFALTO=new THREE.CanvasTexture(c);
+  TEX_ASFALTO.wrapS=THREE.RepeatWrapping; TEX_ASFALTO.wrapT=THREE.ClampToEdgeWrapping;
+  TEX_ASFALTO.colorSpace=THREE.SRGBColorSpace;
+  try{ TEX_ASFALTO.anisotropy=Math.min(4, renderer.capabilities.getMaxAnisotropy()); }catch(e){}
+  /* Línea central discontinua. Va con transparencia y alphaTest en vez de
+     recortar la geometría: así los huecos salen del material y no hay que
+     partir la cinta en trozos, que con polilíneas de largo variable es un lío. */
+  const L=64, cl=document.createElement('canvas'); cl.width=L; cl.height=4;
+  const g2=cl.getContext('2d');
+  g2.clearRect(0,0,L,4);
+  g2.fillStyle='#f0e8d2'; g2.fillRect(0,0,Math.round(L*0.42),4);   // trazo; el resto, hueco
+  TEX_LINEA=new THREE.CanvasTexture(cl);
+  TEX_LINEA.wrapS=THREE.RepeatWrapping; TEX_LINEA.wrapT=THREE.ClampToEdgeWrapping;
+  TEX_LINEA.colorSpace=THREE.SRGBColorSpace;
+}
+/* Cinta continua sobre una polilínea. En cada vértice interior el borde se
+   desplaza por la BISECTRIZ de las dos aristas, alargada 1/cos(θ/2), que es lo
+   que mantiene el ancho constante al girar y cierra la muesca de la esquina.
+   El alargamiento va topado: en un giro casi en horquilla, la punta se
+   dispararía hasta el infinito. */
+function cintaPoly(pts, semiancho, alto, escalaU, vMax, out){
+  const n=pts.length; if(n<2) return;
+  const nx=[], nz=[], largo=[];
+  for(let i=0;i<n-1;i++){
+    const dx=pts[i+1].x-pts[i].x, dz=pts[i+1].z-pts[i].z, L=Math.hypot(dx,dz)||1e-6;
+    nx.push(-dz/L); nz.push(dx/L); largo.push(L);
+  }
+  const base=out.pos.length/3;
+  let u=0;
+  for(let i=0;i<n;i++){
+    let ax, az;
+    if(i===0){ ax=nx[0]; az=nz[0]; }
+    else if(i===n-1){ ax=nx[n-2]; az=nz[n-2]; }
+    else{
+      ax=nx[i-1]+nx[i]; az=nz[i-1]+nz[i];
+      const m=Math.hypot(ax,az);
+      if(m<1e-4){ ax=nx[i]; az=nz[i]; }
+      else{ ax/=m; az/=m;
+        const cos=ax*nx[i]+az*nz[i];
+        const k=clamp(1/Math.max(0.36,cos), 1, 2.7);
+        ax*=k; az*=k; }
+    }
+    const iz={x:pts[i].x+ax*semiancho, z:pts[i].z+az*semiancho};
+    const de={x:pts[i].x-ax*semiancho, z:pts[i].z-az*semiancho};
+    out.pos.push(iz.x, terrainHeight(iz.x,iz.z)+alto, iz.z); out.uv.push(u/escalaU, 0);
+    out.pos.push(de.x, terrainHeight(de.x,de.z)+alto, de.z); out.uv.push(u/escalaU, vMax);
+    if(i<n-1) u+=largo[i];
+  }
+  for(let i=0;i<n-1;i++){ const v=base+i*2; out.idx.push(v, v+2, v+1,  v+1, v+2, v+3); }
+}
+function mallaCinta(out, mat){
+  if(!out.idx.length) return null;
+  const g=new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(out.pos,3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(out.uv,2));
+  g.setIndex(out.idx); g.computeVertexNormals();
+  const m=new THREE.Mesh(g,mat); m.receiveShadow=true; return m;
+}
 /* Tope de edificios. No es por dibujar: 6000 edificios extruidos son ~200 mil
    triángulos en DOS mallas fusionadas, nada para una GPU de hoy, y los
    obstáculos van por rejilla espacial, así que tampoco pesan en la lógica.
@@ -1842,6 +1929,19 @@ const MAX_EDIFICIOS=6000;
 async function buildOSM(tok){
   if(!REAL) return;
   const vigente=()=>REAL && (tok===undefined || REAL.tok===tok);   // ¿sigue siendo este mundo?
+  /* Se puede llamar dos veces al mismo mundo — pasa al reintentar cuando
+     Overpass viene ocupado. Sin esto, la segunda vez apila una ciudad ENCIMA
+     de la otra: el doble de geometría y el doble de obstáculos. Y no se nota
+     mirando, porque queda calcada; solo se ve en que la lógica se va al triple.
+     Así que todo lo de OpenStreetMap va en su propio grupo, que se puede
+     retirar entero, y los obstáculos se recortan a donde estaban. */
+  if(REAL.osmGroup){
+    propGroup.remove(REAL.osmGroup); disposeGroup(REAL.osmGroup); REAL.osmGroup=null;
+    if(REAL.osmCollBase!=null) colliders.length=REAL.osmCollBase;
+    CGRID=null;                                  // la rejilla espacial se rehace sola
+  }
+  REAL.osmCollBase=colliders.length;
+  const ciudad=new THREE.Group(); REAL.osmGroup=ciudad; propGroup.add(ciudad);
   const b=REAL.bbLL;
   const box=b.s.toFixed(5)+','+b.w.toFixed(5)+','+b.n.toFixed(5)+','+b.e.toFixed(5);
   const q='[out:json][timeout:25];('
@@ -1887,10 +1987,11 @@ async function buildOSM(tok){
       edifs.push({ pts, cx, cz, areaU, tipo:t.building, tags:t });
     }
     // ---------- CALLES ----------
-    else if(t.highway && calles.length<5000){
+    // se guarda la polilínea ENTERA, no tramo a tramo: hace falta para poder
+    // resolver las esquinas y para medir el largo (las marcas van por metro)
+    else if(t.highway && calles.length<1500){
       const anchoM=parseFloat(t.width) || ANCHO_CALLE[t.highway] || 8;
-      const w=Math.max(0.45, anchoM*REAL.hScale/2);
-      for(let i=0;i<pts.length-1;i++) calles.push({a:pts[i], b:pts[i+1], w});
+      calles.push({ pts, anchoM, tipo:t.highway });
       nC++;
     }
     // ---------- AGUA (lagos, ríos) ----------
@@ -1933,7 +2034,7 @@ async function buildOSM(tok){
     recortados=edifs.length-MAX_EDIFICIOS;
     edifs.length=MAX_EDIFICIOS;
   }
-  const escalaTecho=6*REAL.hScale;      // la losa se repite cada 6 m
+  const escalaTecho=11*REAL.hScale;     // la losa se repite cada 11 m (a 6 m hacía muaré)
   const mH=REAL.hScale;
   let masAlto=null;                     // para poder cazar alturas absurdas de OSM
   for(const e of edifs){
@@ -1967,10 +2068,10 @@ async function buildOSM(tok){
     const soltar=(geos,mat)=>{
       if(U && U.mergeGeometries){
         const m=U.mergeGeometries(geos,false);
-        if(m){ const me=new THREE.Mesh(m,mat); me.castShadow=true; me.receiveShadow=true; propGroup.add(me); }
+        if(m){ const me=new THREE.Mesh(m,mat); me.castShadow=true; me.receiveShadow=true; ciudad.add(me); }
         geos.forEach(g=>g.dispose());
       } else for(const g of geos){
-        const me=new THREE.Mesh(g,mat); me.castShadow=true; me.receiveShadow=true; propGroup.add(me); }
+        const me=new THREE.Mesh(g,mat); me.castShadow=true; me.receiveShadow=true; ciudad.add(me); }
     };
     soltar(geosMuro, matMuro); soltar(geosTecho, matTecho);
   }
@@ -1980,10 +2081,14 @@ async function buildOSM(tok){
     const d=new THREE.Object3D();
     const sembrar=(lista, geo, mat, alto)=>{
       if(!lista.length) return;
-      const im=new THREE.InstancedMesh(geo, mat, lista.length); im.castShadow=true;
+      /* NO proyectan sombra. Son casi 3000 objetos de metro y medio: su sombra
+         no se distingue desde el aire, y la pasada de sombras es la mitad del
+         coste de dibujar un cuadro. Los edificios sí la proyectan, que es la
+         que se ve. */
+      const im=new THREE.InstancedMesh(geo, mat, lista.length); im.castShadow=false;
       lista.forEach((t,i)=>{ d.position.set(t.x, t.y+alto*t.esc/2, t.z);
         d.rotation.set(0,t.giro,0); d.scale.setScalar(t.esc); d.updateMatrix(); im.setMatrixAt(i,d.matrix); });
-      im.instanceMatrix.needsUpdate=true; propGroup.add(im);
+      im.instanceMatrix.needsUpdate=true; ciudad.add(im);
     };
     // tanque de agua: cilindro de 1,6 m — en Bogotá están por todas las azoteas
     sembrar(tanques, new THREE.CylinderGeometry(0.8*mH, 0.8*mH, 1.6*M2U, 8),
@@ -1992,25 +2097,44 @@ async function buildOSM(tok){
     sembrar(cajas, new THREE.BoxGeometry(3*mH, 2.4*M2U, 3*mH),
             new THREE.MeshStandardMaterial({color:0x8a8578, roughness:0.9, metalness:0.03}), 2.4*M2U);
   }
-  // ---- calles: cintas de asfalto que siguen el relieve ----
+  /* ---- calles: acera + asfalto + línea central ----
+     Tres cintas a alturas ligeramente distintas (12, 16 y 19 cm sobre el
+     suelo) para que se dibujen en el orden correcto sin pelearse por la
+     profundidad. Desde el aire, la que más trabaja es la ACERA: es la banda
+     clara que dibuja la manzana y la que hace que una calle parezca calle. */
   if(calles.length){
-    const pos=[], idx=[]; let vi=0;
-    for(const s of calles){
-      const dx=s.b.x-s.a.x, dz=s.b.z-s.a.z, L=Math.hypot(dx,dz);
-      if(L<0.01) continue;
-      const nx=-dz/L*s.w, nz=dx/L*s.w;
-      const q=[ {x:s.a.x+nx,z:s.a.z+nz},{x:s.b.x+nx,z:s.b.z+nz},{x:s.b.x-nx,z:s.b.z-nz},{x:s.a.x-nx,z:s.a.z-nz} ];
-      for(const p of q) pos.push(p.x, terrainHeight(p.x,p.z)+0.16, p.z);
-      idx.push(vi,vi+1,vi+2, vi,vi+2,vi+3); vi+=4;
+    hacerTexturasCalle(); hacerTexturaTecho();
+    const mH=REAL.hScale;
+    const asf={pos:[],uv:[],idx:[]}, ace={pos:[],uv:[],idx:[]}, lin={pos:[],uv:[],idx:[]};
+    let nLinea=0;
+    for(const c of calles){
+      if(c.pts.length<2) continue;
+      const semi=Math.max(0.45, c.anchoM*mH/2);
+      // acera: 2,5 m a cada lado en calle de verdad, 1,2 m en las pequeñas,
+      // y ninguna en las peatonales (ahí la acera ES la calle)
+      const aceraM = c.tipo==='pedestrian' ? 0 : (c.anchoM>=8 ? 2.5 : 1.2);
+      if(aceraM>0){
+        const semiA=semi+aceraM*mH;
+        cintaPoly(c.pts, semiA, 0.12, 6*mH, (semiA*2)/(6*mH), ace);
+      }
+      cintaPoly(c.pts, semi, 0.16, 12*mH, 1, asf);
+      // línea central solo donde la hay de verdad: terciaria para arriba
+      if(c.anchoM>=11){
+        cintaPoly(c.pts, Math.max(0.05, 0.16*mH), 0.19, 12*mH, 1, lin);
+        nLinea++;
+      }
     }
-    if(vi){
-      const g=new THREE.BufferGeometry();
-      g.setAttribute('position', new THREE.Float32BufferAttribute(pos,3));
-      g.setIndex(idx); g.computeVertexNormals();
-      const matC=new THREE.MeshStandardMaterial({ color:0x33373c, roughness:0.94, metalness:0.02,
-        polygonOffset:true, polygonOffsetFactor:-3, polygonOffsetUnits:-3 });
-      const m=new THREE.Mesh(g,matC); m.receiveShadow=true; propGroup.add(m);
+    const matAcera=new THREE.MeshStandardMaterial({ map:TEX_TECHO, color:0x9a9791,
+      roughness:0.95, metalness:0, polygonOffset:true, polygonOffsetFactor:-2, polygonOffsetUnits:-2 });
+    const matAsf=new THREE.MeshStandardMaterial({ map:TEX_ASFALTO, color:0x3a3e44,
+      roughness:0.93, metalness:0.02, polygonOffset:true, polygonOffsetFactor:-3, polygonOffsetUnits:-3 });
+    const matLin=new THREE.MeshStandardMaterial({ map:TEX_LINEA, color:0xffffff,
+      roughness:0.8, metalness:0, alphaTest:0.5,
+      polygonOffset:true, polygonOffsetFactor:-4, polygonOffsetUnits:-4 });
+    for(const [o,m] of [[ace,matAcera],[asf,matAsf],[lin,matLin]]){
+      const malla=mallaCinta(o,m); if(malla) ciudad.add(malla);
     }
+    REAL.calleLineas=nLinea;
   }
   // ---- agua ----
   if(aguaPolys.length){
@@ -2026,8 +2150,8 @@ async function buildOSM(tok){
     }
     if(geos.length){ const U=await getBGU();
       if(U && U.mergeGeometries){ const mg=U.mergeGeometries(geos,false);
-        if(mg) propGroup.add(new THREE.Mesh(mg,matW)); geos.forEach(g=>g.dispose()); }
-      else geos.forEach(g=>propGroup.add(new THREE.Mesh(g,matW)));
+        if(mg) ciudad.add(new THREE.Mesh(mg,matW)); geos.forEach(g=>g.dispose()); }
+      else geos.forEach(g=>ciudad.add(new THREE.Mesh(g,matW)));
     }
   }
   // ---- arbolado (instanciado) ----
@@ -2043,7 +2167,7 @@ async function buildOSM(tok){
       d.position.set(p.x,y+1.6*s,p.z); d.updateMatrix(); lI.setMatrixAt(i,d.matrix);
       colliders.push({x:p.x,z:p.z,r:0.5*s,h:2.4*s}); });
     tI.instanceMatrix.needsUpdate=true; lI.instanceMatrix.needsUpdate=true;
-    propGroup.add(tI); propGroup.add(lI); nV=treePts.length;
+    ciudad.add(tI); ciudad.add(lI); nV=treePts.length;
   }
   REAL.osm={ edificios:nB, traidos, agua:nA, arboles:nV, calles:nC, azotea:trastos.length, recortados,
              masAlto, trastoMasAlto:trastos.reduce((a,t)=>Math.max(a,t.y),0) };
@@ -4420,6 +4544,32 @@ if(location.search.indexOf('dbg')>=0) window.DRONES={
     gaze.baseYaw=0; gaze.basePitch=0; gaze.yaw=headYaw||0; gaze.pitch=headPitch||0; return true; },
   viewYaw:()=>+player.view.yaw.toFixed(3),
   postfx:()=>({bloom:useComposer, phys:physReady}),
+  /* Lo que de verdad cuesta dibujar un cuadro, sin depender de los FPS: los FPS
+     mienten si la ventana está oculta o en segundo plano (el navegador
+     estrangula el dibujado), pero estos números son los mismos siempre. */
+  /* Apaga partes del mundo para poder medir qué cuesta cada una. Solo pruebas. */
+  aislar:(o)=>{
+    if(o.sombras!==undefined) renderer.shadowMap.enabled=!!o.sombras;
+    if(o.horizonte!==undefined && farMesh) farMesh.visible=!!o.horizonte;
+    if(o.ciudad!==undefined && REAL && REAL.osmGroup) REAL.osmGroup.visible=!!o.ciudad;
+    if(o.terreno!==undefined && terrainMesh) terrainMesh.visible=!!o.terreno;
+    if(REAL && REAL.osmGroup) for(const c of REAL.osmGroup.children){
+      if(o.azotea!==undefined && c.isInstancedMesh) c.visible=!!o.azotea;
+      if(o.sombraCiudad!==undefined) c.castShadow=!!o.sombraCiudad;
+    }
+    return { sombras:renderer.shadowMap.enabled };
+  },
+  cronometro:(n)=>{ const N=n||25; window.DRONES.dibujo(); window.DRONES.dibujo();
+    const t0=performance.now(); for(let i=0;i<N;i++) window.DRONES.dibujo();
+    const ms=(performance.now()-t0)/N; return +ms.toFixed(1); },
+  dibujo:()=>{ const i=renderer.info;
+    // se dibuja la escena DIRECTA, sin el bloom: si no, lo que queda contado es
+    // la última pasada del post-proceso (un rectángulo) y sale "1 triángulo"
+    i.autoReset=false; i.reset();
+    renderer.render(scene, camera);
+    const r={ llamadas:i.render.calls, triangulos:i.render.triangles,
+              geometrias:i.memory.geometries, texturas:i.memory.textures };
+    i.autoReset=true; return r; },
   bbLL:()=>REAL?REAL.bbLL:null,
   horizonte:()=>farMesh?{ vertices:farMesh.geometry.attributes.position.count,
     triangulos:farMesh.geometry.index.count/3, textura:!!farMesh.material.map,
