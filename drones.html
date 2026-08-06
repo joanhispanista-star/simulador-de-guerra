@@ -1344,6 +1344,37 @@ function realHeightAt(x,z){
 const REAL_SPAN_DEF=2400;                       // metros de lado del campo real
 let REAL_TOKEN=0;                               // identifica el mundo actual (la ciudad llega tarde)
 function mppAt(lat,z){ return 156543.03392*Math.cos(lat*Math.PI/180)/Math.pow(2,z); }
+/* ---------------------------------------------------------------------
+   NITIDEZ DEL SUELO
+   Antes esto se decidía con IS_TOUCH, y ahí estaba el problema: IS_TOUCH
+   arranca en true en casi TODO portátil con Windows, porque declaran
+   pantalla táctil (maxTouchPoints=10) aunque nadie la use nunca. Como el
+   mundo se construye antes de que toques ninguna tecla, el ordenador se
+   llevaba la textura de móvil — zoom 16, 2,34 m por píxel — y el suelo se
+   veía borroso de cerca. El propio archivo ya avisaba de esta trampa para
+   los CONTROLES; faltaba aplicarlo aquí.
+   Ahora se mira lo que de verdad distingue un ordenador de un móvil: si
+   hay puntero fino (ratón), cuánta memoria declara y qué textura admite
+   la GPU.
+      zoom 16 →  25 teselas · lienzo 1024 · 2,34 m/píxel
+      zoom 17 →  81 teselas · lienzo 2048 · 1,17 m/píxel
+      zoom 18 → 289 teselas · lienzo 4096 · 0,59 m/píxel
+   Medido el 6-ago-2026: bajar las teselas cuesta 0,3 s en zoom 17 y ~1,2 s
+   en zoom 18 — o sea, la descarga NO es el límite. El límite es la textura:
+   4096² con mipmaps son unos 90 MB de memoria de vídeo, y por eso el zoom 18
+   solo se da a un aparato que declare 8 GB y una GPU que admita 8192.
+   --------------------------------------------------------------------- */
+function lienzoDeZoom(z){ return z>=18?4096 : z>=17?2048 : 1024; }
+function zoomSuelo(){
+  let maxTex=2048;
+  try{ maxTex=renderer.capabilities.maxTextureSize||2048; }catch(e){}
+  let raton=false;
+  try{ raton=matchMedia('(pointer: fine)').matches && matchMedia('(hover: hover)').matches; }catch(e){}
+  const mem=navigator.deviceMemory||(raton?8:3);
+  if(raton && mem>=8 && maxTex>=8192) return 18;
+  if(raton && maxTex>=4096)           return 17;
+  return 16;
+}
 function tileX2lon(x,z){ return x/Math.pow(2,z)*360-180; }
 function tileY2lat(y,z){ const n=Math.PI-2*Math.PI*y/Math.pow(2,z); return 180/Math.PI*Math.atan(0.5*(Math.exp(n)-Math.exp(-n))); }
 async function fetchTiles(z, urlFn, bb, outSize, smooth){
@@ -1367,7 +1398,7 @@ async function buildRealWorld(map){
   REAL=null; clearTerrain();
   const spanM = map.spanM || REAL_SPAN_DEF;
   const ZE=15;                                    // elevación: máximo zoom que existe en Terrarium
-  const ZT=map.texZoom || (IS_TOUCH?16:17);       // satélite: más nítido en computador
+  const ZT=map.texZoom || zoomSuelo();            // satélite: según lo que aguante el aparato
   const bbAt=(z)=>{ const h=(spanM/mppAt(map.lat,z))/256/2;
     const fx=lon2tileX(map.lon,z), fy=lat2tileY(map.lat,z);
     return {x0:fx-h, x1:fx+h, y0:fy-h, y1:fy+h}; };
@@ -1376,8 +1407,10 @@ async function buildRealWorld(map){
   showLoading('Paso 1 de 2 · relieve del terreno', map.name);
   const E=await fetchTiles(ZE, (z,x,y)=>'https://s3.amazonaws.com/elevation-tiles-prod/terrarium/'+z+'/'+x+'/'+y+'.png', bbE, G, false);
   if(!E.ok) throw new Error('sin datos de elevación');
-  showLoading('Paso 2 de 2 · imagen satelital', map.name+(ZT>=17?' · alta definición':''));
-  const TX=await fetchTiles(ZT, (z,x,y)=>'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/'+z+'/'+y+'/'+x, bbT, ZT>=17?2048:1024, true);
+  const nitidez=+(spanM/lienzoDeZoom(ZT)).toFixed(2);
+  showLoading('Paso 2 de 2 · imagen satelital',
+    map.name+' · '+(ZT>=18?'máxima':ZT>=17?'alta':'normal')+' definición ('+nitidez+' m por píxel)');
+  const TX=await fetchTiles(ZT, (z,x,y)=>'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/'+z+'/'+y+'/'+x, bbT, lienzoDeZoom(ZT), true);
   const imgOK=TX.ok>0, ic=TX.canvas;
   // decodifica elevación
   let ed; try{ ed=E.ctx.getImageData(0,0,G,G).data; }catch(e){ throw new Error('sin datos de elevación (CORS)'); }
@@ -4342,6 +4375,7 @@ if(location.search.indexOf('dbg')>=0) window.DRONES={
   startReal:(id)=>startRealMission(REAL_MAPS.find(m=>m.id===id)||REAL_MAPS[0]),
   realInfo:()=>REAL?{G:REAL.G,minE:Math.round(REAL.minE),maxE:Math.round(REAL.maxE),seaY:+REAL.seaY.toFixed(1),
     spanKm:+(REAL.spanM/1000).toFixed(2), mPorUnidad:+REAL.mPerU.toFixed(2), zoomTex:REAL.Z,
+    suelo:{ lienzo:lienzoDeZoom(REAL.Z), mPorPixel:+(REAL.spanM/lienzoDeZoom(REAL.Z)).toFixed(2) },
     h00:+realHeightAt(0,0).toFixed(1), hasTex:!!(terrainMesh&&terrainMesh.material.map),
     osm:REAL.osm||null, colliders:colliders.length}:'no-real',
   sim:(dt)=>{ const d=dt||0.016; if(!playing)return 'no-playing'; simulate(d); renderScene(); return 'ok'; },
