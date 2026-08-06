@@ -736,15 +736,17 @@ const CONFIG_IA = {
     jammer:   { fov:360, alcance: 70, ojo:5.0 },
     airdrone: { fov:220, alcance:235, ojo:0.4 },
     aliado:   { fov:230, alcance:250, ojo:0.4 },
+    // el perro va a ras de suelo: ve poco lejos pero muy ancho, y es rápido
+    perro:    { fov:170, alcance: 95, ojo:1.0 },
   },
 
   /* Etapa 2 · máquina de estados. Todo lo que decide CUÁNDO cambia de
      comportamiento una unidad. Los rangos van en unidades (1 u ≈ 5 m). */
   COMBATE: {
-    rangoTiro:  { tank:110, turret:140, airdrone:85,  jammer:0, aliado:120 },
-    distIdeal:  { tank:55,  turret:0,   airdrone:45,  jammer:0, aliado:38  },
-    cargador:   { tank:6,   turret:8,   airdrone:4,   jammer:0, aliado:10  },
-    tRecarga:   { tank:4.5, turret:3.5, airdrone:3.0, jammer:0, aliado:2.5 },
+    rangoTiro:  { tank:110, turret:140, airdrone:85,  jammer:0, aliado:120, perro:62 },
+    distIdeal:  { tank:55,  turret:0,   airdrone:45,  jammer:0, aliado:38,  perro:26 },
+    cargador:   { tank:6,   turret:8,   airdrone:4,   jammer:0, aliado:10,  perro:30 },
+    tRecarga:   { tank:4.5, turret:3.5, airdrone:3.0, jammer:0, aliado:2.5, perro:2.6 },
     umbralRepliegue: 0.28,   // por debajo de este blindaje se repliega
     umbralCubrirse:  0.65,   // por debajo, si le disparan y hay cobertura, se cubre
     tCubierto: 5.5,          // s que aguanta cubierto antes de volver a asomarse
@@ -911,10 +913,10 @@ const MISSIONS=[
     enemies:[{t:'tank',n:3},{t:'turret',n:2}], objs:[
       {type:'destroy',tag:'enemy',n:5,text:'Elimina toda la resistencia (5)'} ] },
   { id:'m5', biome:'ruinas', name:'Ciudad tomada', diff:3,
-    desc:'Combate urbano. Usa los edificios como cobertura y limpia el sector.',
-    enemies:[{t:'tank',n:4},{t:'turret',n:3}], objs:[
-      {type:'destroy',tag:'turret',n:3,text:'Destruye las torretas (3)'},
-      {type:'destroy',tag:'tank',n:4,text:'Destruye los blindados (4)'} ] },
+    desc:'Combate urbano. Usa los edificios como cobertura y limpia el sector. Ojo: hay perros robot, y son rápidos.',
+    enemies:[{t:'tank',n:3},{t:'turret',n:3},{t:'perro',n:4}], objs:[
+      {type:'destroy',tag:'turret',n:3,text:'Silencia las torretas (3)'},
+      {type:'destroy',tag:'perro',n:4,text:'Abate los perros robot (4)'} ] },
   { id:'m6', biome:'canon', name:'Defiende el relé', diff:3,
     desc:'Oleadas enemigas quieren el relé de comunicaciones. Resiste 90 segundos.',
     survive:90, enemies:[{t:'tank',n:6}], objs:[
@@ -972,6 +974,9 @@ function initEngine(){
   initSky();
   initWater();
   clock=new THREE.Clock();
+  // se pide YA, sin esperar: lo necesitan los modelos de las máquinas para
+  // fusionar sus piezas, y se construyen en cuanto arranca la misión
+  getBGU();
   addEventListener('resize', onResize);
   onResize();
 }
@@ -1277,7 +1282,7 @@ const REAL_MAPS=[
     enemies:[{t:'tank',n:4}], objs:[{type:'destroy',tag:'enemy',n:4,text:'Operación en altura (4)'}] },
   { id:'cotopaxi', name:'Volcán Cotopaxi', pais:'Ecuador 🇪🇨', lat:-0.684, lon:-78.437, zoom:13, tiles:3, vexag:1.1,
     desc:'Uno de los volcanes activos más altos del mundo.',
-    enemies:[{t:'tank',n:4},{t:'airdrone',n:2}], objs:[{type:'destroy',tag:'enemy',n:6,text:'Domina el volcán (6)'}] },
+    enemies:[{t:'tank',n:3},{t:'airdrone',n:2},{t:'perro',n:3}], objs:[{type:'destroy',tag:'enemy',n:6,text:'Domina el volcán (6)'}] },
   { id:'paine', name:'Torres del Paine', pais:'Chile 🇨🇱', lat:-50.94, lon:-73.03, zoom:13, tiles:3, vexag:1.3,
     desc:'Picos de granito de la Patagonia.',
     enemies:[{t:'tank',n:5},{t:'turret',n:2}], objs:[{type:'destroy',tag:'enemy',n:7,text:'Patrulla los picos (7)'}] },
@@ -2279,74 +2284,321 @@ function hideLoading(){ $('boot').style.display='none';
 /* =====================================================================
    VEHÍCULOS (construcción procedural)
    ===================================================================== */
+/* ---------------------------------------------------------------------
+   ENSAMBLADOR DE MÁQUINAS
+   Un modelo con detalle de verdad son 60-100 piezas. Con ocho máquinas en
+   pantalla eso serían 800 llamadas de dibujo solo en vehículos — más que
+   toda la ciudad junta. Así que las piezas que NO se mueven se fusionan
+   por material: cada máquina baja a cuatro o cinco llamadas.
+   Lo que se mueve (torreta, cañón, rotores, patas) va aparte en su grupo.
+   Si BufferGeometryUtils no llegó a cargar, cae en malla por pieza y el
+   juego sigue igual — solo cuesta más.
+   --------------------------------------------------------------------- */
+function Ensamblador(){
+  const porMat=new Map(), _o=new THREE.Object3D();
+  return {
+    /* p(geometría, material, [x,y,z], [rx,ry,rz], escala) */
+    p(geo, mat, pos, rot, esc){
+      const g=geo.clone();
+      _o.position.set(pos?pos[0]:0, pos?pos[1]:0, pos?pos[2]:0);
+      _o.rotation.set(rot?rot[0]:0, rot?rot[1]:0, rot?rot[2]:0);
+      if(esc===undefined) _o.scale.set(1,1,1);
+      else if(typeof esc==='number') _o.scale.set(esc,esc,esc);
+      else _o.scale.set(esc[0],esc[1],esc[2]);
+      _o.updateMatrix(); g.applyMatrix4(_o.matrix);
+      (porMat.get(mat) || porMat.set(mat,[]).get(mat)).push(g);
+      return this;
+    },
+    /* repite una pieza a izquierda y derecha (casi todo en una máquina es simétrico) */
+    par(geo, mat, pos, rot, esc){
+      this.p(geo, mat, pos, rot, esc);
+      return this.p(geo, mat, [-pos[0],pos[1],pos[2]], rot?[rot[0],-rot[1],-rot[2]]:null, esc);
+    },
+    volcar(destino, sombra){
+      for(const [mat, geos] of porMat){
+        if(BGU && BGU.mergeGeometries && geos.length>1){
+          const m=BGU.mergeGeometries(geos,false);
+          if(m){ const me=new THREE.Mesh(m,mat); me.castShadow=!!sombra; me.receiveShadow=!!sombra;
+                 destino.add(me); geos.forEach(g=>g.dispose()); continue; }
+        }
+        for(const g of geos){ const me=new THREE.Mesh(g,mat); me.castShadow=!!sombra; destino.add(me); }
+      }
+      porMat.clear();
+      return destino;
+    }
+  };
+}
+/* geometrías compartidas: se crean UNA vez y las usan todas las máquinas */
+const GEO={};
+function geo(clave, hacer){ return GEO[clave] || (GEO[clave]=hacer()); }
+
+/* =====================================================================
+   UGV ARMADO A CONTROL REMOTO
+   Antes: dos cajas de oruga, cinco ruedas lisas, un casco, una torreta
+   cilíndrica y un tubo. Doce piezas. Ahora pasa de cien, con lo que
+   realmente lleva un vehículo de estos (THeMIS, Uran-9, Ripsaw):
+     rodaje   · eslabones de oruga, rueda motriz DENTADA, tensora, rodillos
+                de retorno, ruedas con buje y tornillos
+     casco    · glacis en cuña, faldones con pernos, bloques de blindaje
+                reactivo, cajas de estiba, cable de remolque, eslabones de
+                repuesto en la proa, rejilla y tubo de escape, faros con guarda
+     torreta  · mantelete, cañón con manguito térmico y freno de boca,
+                dos racimos de lanzafumígenos, visor principal con cristal,
+                telémetro, mástil de sensores
+     y la ESTACIÓN DE ARMAS REMOTA con su ametralladora, caja de munición
+     y escudo — que es la que dispara las trazadoras.
+   Todo lo que no gira se fusiona por material: ~5 llamadas de dibujo.
+   ===================================================================== */
 function buildVehicle(opt){
   const g=new THREE.Group();
-  const bodyM=new THREE.MeshStandardMaterial({color:opt.color, roughness:0.7, metalness:0.25, flatShading:true});
-  const darkM=new THREE.MeshStandardMaterial({color:0x20242b, roughness:0.9, metalness:0.2, flatShading:true});
-  const accentM=new THREE.MeshStandardMaterial({color:opt.accent||0x2a2f38, roughness:0.6, metalness:0.4, flatShading:true});
-  // orugas + ruedas de rodaje
-  const trackG=new THREE.BoxGeometry(0.9,0.9,4.6);
-  const wheelG=new THREE.CylinderGeometry(0.42,0.42,0.32,10);
-  for(const sx of [-1.35,1.35]){ const t=new THREE.Mesh(trackG,darkM); t.position.set(sx,0.45,0); t.castShadow=true; g.add(t);
-    for(let wz=-1.8; wz<=1.81; wz+=0.9){ const w=new THREE.Mesh(wheelG, accentM); w.rotation.z=Math.PI/2; w.position.set(sx,0.42,wz); g.add(w); } }
-  // faldones laterales
-  for(const sx of [-1.35,1.35]){ const sk=new THREE.Mesh(new THREE.BoxGeometry(0.12,0.5,4.4), bodyM); sk.position.set(sx,0.95,0); g.add(sk); }
-  // casco
-  const body=new THREE.Mesh(new THREE.BoxGeometry(3.0,0.9,4.2), bodyM); body.position.y=1.15; body.castShadow=true; g.add(body);
-  const glacis=new THREE.Mesh(new THREE.BoxGeometry(2.8,0.7,1.2), bodyM); glacis.position.set(0,1.0,2.0); glacis.rotation.x=-0.5; g.add(glacis);
-  // sin cabina (es un dron): domo de sensores
-  const dome=new THREE.Mesh(new THREE.SphereGeometry(0.42,10,8), accentM); dome.position.set(0.9,1.75,1.1); g.add(dome);
-  // TORRETA (grupo independiente, apunta en el mundo)
+  const bodyM =new THREE.MeshStandardMaterial({color:opt.color, roughness:0.72, metalness:0.22, flatShading:true});
+  const darkM =new THREE.MeshStandardMaterial({color:0x1c2027, roughness:0.9, metalness:0.25, flatShading:true});
+  const accentM=new THREE.MeshStandardMaterial({color:opt.accent||0x2a2f38, roughness:0.6, metalness:0.45, flatShading:true});
+  const gomaM =new THREE.MeshStandardMaterial({color:0x111317, roughness:1, metalness:0.05, flatShading:true});
+  const metalM=new THREE.MeshStandardMaterial({color:0x767c85, roughness:0.42, metalness:0.8, flatShading:true});
+  const E=new Ensamblador();
+
+  /* ---------- RODAJE ---------- */
+  const LADO=1.35;
+  for(const sx of [-LADO, LADO]){
+    const s=Math.sign(sx);
+    // banda de oruga: cuerpo + eslabones sueltos arriba y abajo, que es lo que
+    // hace que se lea como oruga y no como un patín
+    E.p(geo('bandaOr', ()=>new THREE.BoxGeometry(0.86,0.86,4.5)), gomaM, [sx,0.45,0]);
+    const eslabon=geo('eslabon', ()=>new THREE.BoxGeometry(0.9,0.09,0.2));
+    for(let z=-2.05; z<=2.06; z+=0.29){
+      E.p(eslabon, darkM, [sx,0.03,z]);          // los que pisan el suelo
+      E.p(eslabon, darkM, [sx,0.88,z]);          // los de arriba
+    }
+    // rueda motriz DENTADA delante, tensora detrás
+    E.p(geo('sprocket', ()=>new THREE.CylinderGeometry(0.44,0.44,0.3,9)), metalM, [sx,0.46,2.2], [0,0,Math.PI/2]);
+    const diente=geo('diente', ()=>new THREE.BoxGeometry(0.32,0.13,0.13));
+    for(let i=0;i<9;i++){ const a=i*TAU/9;
+      E.p(diente, metalM, [sx, 0.46+Math.sin(a)*0.47, 2.2+Math.cos(a)*0.47], [a,0,Math.PI/2]); }
+    E.p(geo('tensora', ()=>new THREE.CylinderGeometry(0.38,0.38,0.28,10)), accentM, [sx,0.44,-2.2], [0,0,Math.PI/2]);
+    // ruedas de rodaje con buje y tornillos
+    for(let wz=-1.55; wz<=1.56; wz+=0.78){
+      E.p(geo('rueda', ()=>new THREE.CylinderGeometry(0.42,0.42,0.3,12)), accentM, [sx,0.42,wz], [0,0,Math.PI/2]);
+      E.p(geo('buje',  ()=>new THREE.CylinderGeometry(0.15,0.15,0.34,8)), metalM,  [sx,0.42,wz], [0,0,Math.PI/2]);
+      for(let i=0;i<5;i++){ const a=i*TAU/5;
+        E.p(geo('tornillo', ()=>new THREE.CylinderGeometry(0.035,0.035,0.36,5)), metalM,
+            [sx, 0.42+Math.sin(a)*0.26, wz+Math.cos(a)*0.26], [0,0,Math.PI/2]); }
+    }
+    // rodillos de retorno arriba
+    for(const rz of [-0.9, 0.9])
+      E.p(geo('rodillo', ()=>new THREE.CylinderGeometry(0.17,0.17,0.22,8)), accentM, [sx,0.92,rz], [0,0,Math.PI/2]);
+    // faldón con pernos
+    E.p(geo('faldon', ()=>new THREE.BoxGeometry(0.11,0.56,4.3)), bodyM, [sx*1.02,0.98,0]);
+    const perno=geo('perno', ()=>new THREE.CylinderGeometry(0.045,0.045,0.06,5));
+    for(let z=-1.9; z<=1.91; z+=0.54) E.p(perno, metalM, [sx*1.09,1.16,z], [0,0,Math.PI/2]);
+  }
+
+  /* ---------- CASCO ---------- */
+  E.p(geo('cascoBajo', ()=>new THREE.BoxGeometry(2.75,0.55,4.3)), bodyM, [0,0.85,0]);
+  E.p(geo('casco',     ()=>new THREE.BoxGeometry(3.0,0.85,4.2)),  bodyM, [0,1.16,0]);
+  E.p(geo('glacis',    ()=>new THREE.BoxGeometry(2.82,0.72,1.25)), bodyM, [0,1.02,2.02], [-0.52,0,0]);
+  E.p(geo('popa',      ()=>new THREE.BoxGeometry(2.8,0.7,0.5)),   bodyM, [0,1.12,-2.15], [0.25,0,0]);
+  // blindaje reactivo: rejilla de tacos en la proa y en los costados
+  const taco=geo('taco', ()=>new THREE.BoxGeometry(0.44,0.2,0.34));
+  for(let i=-2;i<=2;i++) E.p(taco, accentM, [i*0.52, 1.06, 2.28], [-0.52,0,0]);
+  for(const sx of [-1.53,1.53]) for(let z=-1.2; z<=1.21; z+=0.6)
+    E.p(taco, accentM, [sx,1.34,z], [0,Math.PI/2,0]);
+  // eslabones de oruga de repuesto colgados en la proa
+  const repuesto=geo('repuesto', ()=>new THREE.BoxGeometry(0.5,0.1,0.22));
+  for(let i=-1;i<=1;i++) E.p(repuesto, darkM, [i*0.56,1.44,2.14]);
+  // cajas de estiba y bidón atrás
+  E.p(geo('estiba', ()=>new THREE.BoxGeometry(1.1,0.5,0.62)), accentM, [-0.85,1.75,-1.75]);
+  E.p(geo('bidon',  ()=>new THREE.CylinderGeometry(0.28,0.28,0.66,10)), accentM, [0.95,1.85,-1.8], [Math.PI/2,0,0]);
+  // cable de remolque enrollado por el costado
+  const cable=geo('cable', ()=>new THREE.CylinderGeometry(0.045,0.045,1.5,5));
+  E.par(cable, darkM, [1.42,1.5,0.6], [0,0,Math.PI/2], [1,1,1]);
+  // rejilla y tubo de escape
+  E.p(geo('rejilla', ()=>new THREE.BoxGeometry(1.2,0.08,0.9)), darkM, [-0.6,1.6,-1.0]);
+  const barrote=geo('barrote', ()=>new THREE.BoxGeometry(1.15,0.06,0.06));
+  for(let i=-3;i<=3;i++) E.p(barrote, metalM, [-0.6,1.66,-1.0+i*0.13]);
+  E.p(geo('escape', ()=>new THREE.CylinderGeometry(0.13,0.15,0.5,8)), darkM, [1.4,1.5,-1.7], [0,0,Math.PI/2]);
+  // faros con guarda
+  for(const sx of [-1.05,1.05]){
+    E.p(geo('faro', ()=>new THREE.CylinderGeometry(0.17,0.17,0.14,10)),
+        new THREE.MeshStandardMaterial({color:0xf2ecd0, emissive:0xf2e0a0, emissiveIntensity:0.55, roughness:0.3}),
+        [sx,1.42,2.36], [Math.PI/2,0,0]);
+    E.p(geo('guarda', ()=>new THREE.TorusGeometry(0.2,0.028,4,10)), metalM, [sx,1.42,2.38], [0,0,0]);
+  }
+
+  /* ---------- TORRETA ---------- */
   const turret=new THREE.Group(); turret.position.y=1.75;
-  const tBase=new THREE.Mesh(new THREE.CylinderGeometry(1.05,1.25,0.8,10), bodyM); tBase.castShadow=true; turret.add(tBase);
-  const tBox=new THREE.Mesh(new THREE.BoxGeometry(1.7,0.7,1.9), bodyM); tBox.position.set(0,0.15,-0.2); tBox.castShadow=true; turret.add(tBox);
-  // mástil/antena
-  const ant=new THREE.Mesh(new THREE.CylinderGeometry(0.03,0.03,2.2,4), darkM); ant.position.set(-0.7,1.2,-0.5); turret.add(ant);
-  const camEye=new THREE.Mesh(new THREE.BoxGeometry(0.5,0.35,0.35), accentM); camEye.position.set(0,0.35,0.9); turret.add(camEye);
-  const led=new THREE.Mesh(new THREE.SphereGeometry(0.08,6,6), new THREE.MeshStandardMaterial({color:opt.led||0x3ff0c0, emissive:opt.led||0x3ff0c0, emissiveIntensity:1.4})); led.position.set(0,0.35,1.08); turret.add(led);
-  // CAÑÓN (pivota en pitch)
-  const barrelPiv=new THREE.Group(); barrelPiv.position.set(0,0.2,0.6);
-  const barrel=new THREE.Mesh(new THREE.CylinderGeometry(0.16,0.2,3.4,8), darkM);
-  barrel.rotation.x=Math.PI/2; barrel.position.z=1.7; barrel.castShadow=true; barrelPiv.add(barrel);
-  const muzzle=new THREE.Mesh(new THREE.CylinderGeometry(0.26,0.26,0.5,8), darkM); muzzle.rotation.x=Math.PI/2; muzzle.position.z=3.3; barrelPiv.add(muzzle);
+  const T=new Ensamblador();
+  T.p(geo('tAro',  ()=>new THREE.CylinderGeometry(1.02,1.22,0.34,12)), bodyM, [0,-0.05,0]);
+  T.p(geo('tCaja', ()=>new THREE.BoxGeometry(1.75,0.66,2.0)),  bodyM, [0,0.36,-0.18]);
+  T.p(geo('tFrente',()=>new THREE.BoxGeometry(1.6,0.62,0.7)),  bodyM, [0,0.36,0.75], [0.3,0,0]);
+  T.p(geo('mantelete',()=>new THREE.BoxGeometry(0.95,0.62,0.5)), accentM, [0,0.3,1.0]);
+  // cesta trasera de rejilla
+  T.p(geo('cesta', ()=>new THREE.BoxGeometry(1.5,0.44,0.6)), darkM, [0,0.3,-1.35]);
+  const varilla=geo('varilla', ()=>new THREE.BoxGeometry(0.04,0.44,0.04));
+  for(let i=-3;i<=3;i++) T.p(varilla, metalM, [i*0.22,0.3,-1.06]);
+  // lanzafumígenos: dos racimos de tres tubos
+  const tubo=geo('tuboHumo', ()=>new THREE.CylinderGeometry(0.1,0.1,0.42,8));
+  for(const sx of [-0.78,0.78]) for(let i=0;i<3;i++)
+    T.p(tubo, darkM, [sx+(sx>0?i*0.13:-i*0.13), 0.6, 0.1-i*0.06], [-0.5,sx>0?0.3:-0.3,0]);
+  // visor principal con cristal, y telémetro encima
+  T.p(geo('visor', ()=>new THREE.BoxGeometry(0.56,0.4,0.42)), accentM, [0.62,0.72,0.5]);
+  T.p(geo('cristal',()=>new THREE.BoxGeometry(0.4,0.26,0.03)),
+      new THREE.MeshStandardMaterial({color:0x14303a, roughness:0.08, metalness:0.9}), [0.62,0.74,0.72]);
+  T.p(geo('telemetro',()=>new THREE.BoxGeometry(0.7,0.16,0.3)), darkM, [0.62,0.96,0.48]);
+  // mástil de sensores con cabeza panorámica
+  T.p(geo('mastil', ()=>new THREE.CylinderGeometry(0.06,0.08,1.5,6)), darkM, [-0.72,1.1,-0.5]);
+  T.p(geo('cabezaS',()=>new THREE.CylinderGeometry(0.22,0.22,0.3,10)), accentM, [-0.72,1.95,-0.5]);
+  T.p(geo('ojoS',   ()=>new THREE.BoxGeometry(0.12,0.16,0.06)),
+      new THREE.MeshStandardMaterial({color:0x0d1a20, roughness:0.1, metalness:0.85}), [-0.72,1.95,-0.32]);
+  // antenas
+  const whipT=geo('whipT', ()=>new THREE.CylinderGeometry(0.022,0.022,2.2,4));
+  T.p(whipT, darkM, [-0.85,1.2,-1.1], [0.12,0,0.1]);
+  T.p(whipT, darkM, [ 0.85,1.2,-1.1], [0.12,0,-0.1]);
+  T.volcar(turret, true);
+  // piloto rojo/verde de estado (emisivo, no se fusiona para poder cambiarlo)
+  const led=new THREE.Mesh(geo('led', ()=>new THREE.SphereGeometry(0.085,8,8)),
+    new THREE.MeshStandardMaterial({color:opt.led||0x3ff0c0, emissive:opt.led||0x3ff0c0, emissiveIntensity:1.8}));
+  led.position.set(0,0.78,-1.0); turret.add(led);
+
+  /* ---------- CAÑÓN ---------- */
+  const barrelPiv=new THREE.Group(); barrelPiv.position.set(0,0.3,0.9);
+  const B=new Ensamblador();
+  B.p(geo('canon',   ()=>new THREE.CylinderGeometry(0.15,0.19,3.2,10)), darkM, [0,0,1.6], [Math.PI/2,0,0]);
+  B.p(geo('manguito',()=>new THREE.CylinderGeometry(0.23,0.23,1.5,10)), accentM,[0,0,1.15],[Math.PI/2,0,0]);
+  B.p(geo('abraz',   ()=>new THREE.CylinderGeometry(0.25,0.25,0.09,10)), metalM, [0,0,1.9], [Math.PI/2,0,0]);
+  B.p(geo('freno',   ()=>new THREE.CylinderGeometry(0.25,0.22,0.55,10)), darkM,  [0,0,3.32],[Math.PI/2,0,0]);
+  const ranura=geo('ranura', ()=>new THREE.BoxGeometry(0.54,0.09,0.16));
+  for(const rz of [3.2,3.42]) B.p(ranura, gomaM, [0,0,rz]);
+  B.volcar(barrelPiv, true);
   turret.add(barrelPiv);
+
+  /* ---------- ESTACIÓN DE ARMAS REMOTA (la de las trazadoras) ---------- */
+  const rws=new THREE.Group(); rws.position.set(0.52,0.78,-0.15);
+  const R=new Ensamblador();
+  R.p(geo('rwsBase', ()=>new THREE.CylinderGeometry(0.22,0.26,0.16,10)), darkM, [0,0,0]);
+  R.p(geo('rwsCuerpo',()=>new THREE.BoxGeometry(0.34,0.26,0.42)), accentM, [0,0.2,0]);
+  R.p(geo('rwsEscudo',()=>new THREE.BoxGeometry(0.52,0.4,0.06)), bodyM, [0,0.26,0.2]);
+  R.p(geo('rwsCaja', ()=>new THREE.BoxGeometry(0.26,0.22,0.3)), darkM, [-0.28,0.18,-0.05]);   // caja de munición
+  R.p(geo('mgCuerpo',()=>new THREE.BoxGeometry(0.14,0.16,0.6)), darkM, [0,0.3,0.3]);
+  R.p(geo('mgCanon', ()=>new THREE.CylinderGeometry(0.045,0.05,0.9,8)), darkM, [0,0.32,0.95], [Math.PI/2,0,0]);
+  R.p(geo('mgApaga', ()=>new THREE.CylinderGeometry(0.075,0.06,0.16,8)), metalM, [0,0.32,1.42], [Math.PI/2,0,0]);
+  R.p(geo('mgOptica',()=>new THREE.BoxGeometry(0.1,0.1,0.24)), accentM, [0.13,0.42,0.22]);
+  R.volcar(rws, true);
+  turret.add(rws);
+
+  E.volcar(g, true);
   g.add(turret);
-  g.userData={turret, barrelPiv, barrelLen:3.5};
+  g.userData={turret, barrelPiv, barrelLen:3.6, rws, mgBoca:new THREE.Vector3(0,0.32,1.5), led};
   return g;
 }
 
-/* dron aéreo (quadcóptero) · modelo detallado */
-function buildDrone(color){
+/* =====================================================================
+   DRON FPV DE COMBATE
+   Antes era una caja con cuatro palos y un disco. Esto es el aparato que
+   se usa hoy: marco de fibra de carbono en X con dos placas y separadores,
+   motores de campana con su estátor a la vista, hélices de TRES palas con
+   paso (no aspas planas), batería LiPo colgada con sus bridas, cámara FPV
+   inclinada bajo una cubierta, antena de vídeo en cola de conejo y antenas
+   de radio, luces de navegación verde delante y roja detrás.
+   Todo lo que no gira se fusiona por material: el dron entero son ~5
+   llamadas de dibujo mas dos por rotor, no las 60 piezas que lo componen.
+   opt.kamikaze  → carga hueca en el morro     opt.fibra → carrete de fibra
+   ===================================================================== */
+function buildDrone(color, opt){
+  opt=opt||{};
   const g=new THREE.Group();
-  const bodyM=new THREE.MeshStandardMaterial({color:color||0x2b3440, roughness:0.45, metalness:0.55, flatShading:true});
-  const darkM=new THREE.MeshStandardMaterial({color:0x14171d, roughness:0.8, flatShading:true});
-  const carbonM=new THREE.MeshStandardMaterial({color:0x0d0f13, roughness:0.5, metalness:0.35, flatShading:true});
-  // fuselaje
-  const core=new THREE.Mesh(new THREE.BoxGeometry(1.0,0.32,1.35), bodyM); core.castShadow=true; g.add(core);
-  const top=new THREE.Mesh(new THREE.BoxGeometry(0.7,0.22,0.9), bodyM); top.position.y=0.24; g.add(top);
-  const nose=new THREE.Mesh(new THREE.ConeGeometry(0.28,0.5,4), bodyM); nose.rotation.set(Math.PI/2,0,Math.PI/4); nose.position.set(0,0,0.82); g.add(nose);
-  // gimbal (cámara estabilizada colgante)
-  const gim=new THREE.Group(); gim.position.set(0,-0.28,0.35);
-  gim.add(new THREE.Mesh(new THREE.SphereGeometry(0.2,10,8), carbonM));
-  const lens=new THREE.Mesh(new THREE.CylinderGeometry(0.12,0.14,0.14,10), new THREE.MeshStandardMaterial({color:0x0a0a0a,roughness:.2,metalness:.7})); lens.rotation.x=Math.PI/2; lens.position.z=0.16; gim.add(lens);
-  const glow=new THREE.Mesh(new THREE.CircleGeometry(0.08,10), new THREE.MeshBasicMaterial({color:0x3ff0c0})); glow.position.z=0.235; gim.add(glow); g.add(gim);
-  // patas de aterrizaje
-  for(const sx of [-0.5,0.5]){ const sk=new THREE.Mesh(new THREE.BoxGeometry(0.05,0.05,1.1), carbonM); sk.position.set(sx,-0.42,0); g.add(sk);
-    for(const sz of [-0.4,0.4]){ const leg=new THREE.Mesh(new THREE.CylinderGeometry(0.03,0.03,0.4,5), carbonM); leg.position.set(sx,-0.24,sz); g.add(leg); } }
-  // brazos + motores + luces de navegación + rotores (disco translúcido + aspas)
-  const arms=[[0.85,0.85,0x25ff88],[-0.85,0.85,0x25ff88],[0.85,-0.85,0xff4a4a],[-0.85,-0.85,0xff4a4a]];
+  const bodyM  = new THREE.MeshStandardMaterial({color:color||0x2b3440, roughness:0.45, metalness:0.5, flatShading:true});
+  const carbonM= new THREE.MeshStandardMaterial({color:0x0e1014, roughness:0.42, metalness:0.4, flatShading:true});
+  const darkM  = new THREE.MeshStandardMaterial({color:0x191d24, roughness:0.75, metalness:0.3, flatShading:true});
+  const metalM = new THREE.MeshStandardMaterial({color:0x8d949c, roughness:0.33, metalness:0.85, flatShading:true});
+  const lipoM  = new THREE.MeshStandardMaterial({color:0x14161b, roughness:0.55, metalness:0.15, flatShading:true});
+  const cobreM = new THREE.MeshStandardMaterial({color:0xa8702f, roughness:0.5, metalness:0.8, flatShading:true});
+  const E=new Ensamblador();
+
+  // ---- marco: dos placas de carbono y sus separadores ----
+  E.p(geo('placa', ()=>new THREE.BoxGeometry(0.92,0.045,1.12)), carbonM, [0,0,0]);
+  // la placa de arriba va del color del bando: un FPV real es todo negro, pero
+  // en el aire hay que poder distinguir de un vistazo el tuyo del enemigo
+  E.p(geo('placaAlta',()=>new THREE.BoxGeometry(0.74,0.035,0.86)), bodyM, [0,0.33,-0.02]);
+  const sep=geo('sep', ()=>new THREE.CylinderGeometry(0.035,0.035,0.33,6));
+  for(const sx of [-0.36,0.36]) for(const sz of [-0.44,0.44]) E.p(sep, metalM, [sx,0.17,sz]);
+  // pila de electrónica entre las placas (controladora + ESC), se ve por el lado
+  E.p(geo('pila', ()=>new THREE.BoxGeometry(0.44,0.11,0.44)), darkM, [0,0.15,-0.02]);
+  E.p(geo('cond', ()=>new THREE.CylinderGeometry(0.06,0.06,0.13,8)), cobreM, [0.2,0.16,-0.24], [Math.PI/2,0,0]);
+
+  // ---- brazos en X, con su placa de motor ----
+  const brazo=geo('brazo', ()=>new THREE.BoxGeometry(0.115,0.05,1));
+  const orejas=[[ 0.85, 0.85, 0x2bff90], [-0.85, 0.85, 0x2bff90],
+                [ 0.85,-0.85, 0xff4038], [-0.85,-0.85, 0xff4038]];
   const rotors=[];
-  for(const [ax,az,navc] of arms){
-    const arm=new THREE.Mesh(new THREE.BoxGeometry(0.1,0.09,0.1), carbonM);
-    const len=Math.hypot(ax,az); arm.scale.z=len*8.2; arm.position.set(ax*0.5,0,az*0.5); arm.lookAt(0,0,0); g.add(arm);
-    const motor=new THREE.Mesh(new THREE.CylinderGeometry(0.14,0.16,0.24,10), darkM); motor.position.set(ax,0.12,az); motor.castShadow=true; g.add(motor);
-    const nav=new THREE.Mesh(new THREE.SphereGeometry(0.06,6,6), new THREE.MeshStandardMaterial({color:navc,emissive:navc,emissiveIntensity:1.6})); nav.position.set(ax,0.02,az); g.add(nav);
-    const rot=new THREE.Group(); rot.position.set(ax,0.28,az);
-    const disk=new THREE.Mesh(new THREE.CircleGeometry(0.78,20), new THREE.MeshBasicMaterial({color:0x8899aa, transparent:true, opacity:0.13, side:THREE.DoubleSide})); disk.rotation.x=-Math.PI/2; rot.add(disk);
-    const blade=new THREE.Mesh(new THREE.BoxGeometry(1.5,0.02,0.12), darkM); rot.add(blade);
-    const blade2=blade.clone(); blade2.rotation.y=Math.PI/2; rot.add(blade2);
+  for(const [ax,az,navc] of orejas){
+    const ang=Math.atan2(ax,az), largo=Math.hypot(ax,az);
+    E.p(brazo, carbonM, [ax*0.52, 0.01, az*0.52], [0,ang,0], [1,1,largo*0.98]);
+    E.p(geo('placaMotor',()=>new THREE.BoxGeometry(0.3,0.03,0.3)), bodyM, [ax,0.045,az]);
+    // motor: estátor de cobre visible bajo la campana, como en uno de verdad
+    E.p(geo('estator', ()=>new THREE.CylinderGeometry(0.115,0.115,0.075,10)), cobreM, [ax,0.10,az]);
+    E.p(geo('campana', ()=>new THREE.CylinderGeometry(0.145,0.135,0.115,10)), metalM, [ax,0.19,az]);
+    E.p(geo('tuerca',  ()=>new THREE.CylinderGeometry(0.038,0.045,0.05,6)), darkM,  [ax,0.27,az]);
+    E.p(geo('nav', ()=>new THREE.SphereGeometry(0.055,6,6)),
+        new THREE.MeshStandardMaterial({color:navc, emissive:navc, emissiveIntensity:2.2}), [ax,0.02,az]);
+    // rotor: 3 palas con paso + disco de giro
+    const rot=new THREE.Group(); rot.position.set(ax,0.29,az);
+    const palas=geo('palas3', ()=>{
+      const partes=[], o=new THREE.Object3D();
+      const pala=new THREE.BoxGeometry(0.76,0.022,0.13);
+      for(let i=0;i<3;i++){
+        const p=pala.clone();
+        o.position.set(0,0,0); o.rotation.set(0, i*TAU/3, 0.22);   // 0.22 rad = el paso
+        o.scale.set(1,1,1); o.updateMatrix();
+        // desplaza la pala a su radio antes de girarla
+        p.translate(0.38,0,0); p.applyMatrix4(o.matrix); partes.push(p);
+      }
+      return (BGU&&BGU.mergeGeometries) ? (BGU.mergeGeometries(partes,false)||partes[0]) : partes[0];
+    });
+    rot.add(new THREE.Mesh(palas, darkM));
+    const disco=new THREE.Mesh(geo('disco', ()=>new THREE.CircleGeometry(0.8,18)),
+      new THREE.MeshBasicMaterial({color:0x9fb0c4, transparent:true, opacity:0.11, side:THREE.DoubleSide, depthWrite:false}));
+    disco.rotation.x=-Math.PI/2; rot.add(disco);
     g.add(rot); rotors.push(rot);
   }
+
+  // ---- batería LiPo colgada, con sus bridas ----
+  E.p(geo('lipo', ()=>new THREE.BoxGeometry(0.44,0.2,0.7)), lipoM, [0,-0.16,-0.1]);
+  E.p(geo('lipoEtiq',()=>new THREE.BoxGeometry(0.45,0.06,0.24)), bodyM, [0,-0.16,-0.1]);
+  const brida=geo('brida', ()=>new THREE.BoxGeometry(0.5,0.02,0.05));
+  E.p(brida, darkM, [0,-0.27,0.06]); E.p(brida, darkM, [0,-0.27,-0.26]);
+
+  // ---- cámara FPV inclinada, bajo su cubierta ----
+  E.p(geo('capota', ()=>new THREE.BoxGeometry(0.34,0.26,0.34)), bodyM, [0,0.2,0.44], [0.38,0,0]);
+  E.p(geo('camCuerpo',()=>new THREE.BoxGeometry(0.24,0.24,0.2)), darkM, [0,0.15,0.52], [0.38,0,0]);
+  E.p(geo('camLente', ()=>new THREE.CylinderGeometry(0.085,0.1,0.14,10)), darkM, [0,0.22,0.63], [Math.PI/2+0.38,0,0]);
+  E.p(geo('camCristal',()=>new THREE.CylinderGeometry(0.062,0.062,0.02,10)),
+      new THREE.MeshStandardMaterial({color:0x0a1418, roughness:0.08, metalness:0.9}), [0,0.245,0.685], [Math.PI/2+0.38,0,0]);
+
+  // ---- antenas: vídeo en cola de conejo detrás, y dos de radio ----
+  E.p(geo('antVar', ()=>new THREE.CylinderGeometry(0.022,0.022,0.42,5)), darkM, [0,0.42,-0.5], [0.5,0,0]);
+  E.p(geo('antAro', ()=>new THREE.TorusGeometry(0.1,0.022,5,10)), darkM, [0,0.62,-0.6], [0.5,0,0]);
+  const whip=geo('whip', ()=>new THREE.CylinderGeometry(0.014,0.014,0.34,4));
+  E.par(whip, darkM, [0.3,0.2,-0.52], [0.6,0,0.4]);
+
+  // ---- patines de aterrizaje ----
+  const patin=geo('patin', ()=>new THREE.BoxGeometry(0.045,0.045,0.78));
+  E.par(patin, carbonM, [0.42,-0.34,-0.05]);
+  const pata=geo('pataDron', ()=>new THREE.CylinderGeometry(0.026,0.026,0.36,5));
+  for(const sx of [-0.42,0.42]) for(const sz of [-0.34,0.28]) E.p(pata, carbonM, [sx,-0.18,sz]);
+
+  // ---- variantes ----
+  if(opt.kamikaze){   // carga hueca asomando por el morro
+    E.p(geo('ojiva', ()=>new THREE.ConeGeometry(0.2,0.42,10)), new THREE.MeshStandardMaterial({color:0x6a2a22, roughness:0.8, flatShading:true}),
+        [0,-0.05,0.72], [Math.PI/2,0,0]);
+    E.p(geo('cinta', ()=>new THREE.CylinderGeometry(0.21,0.21,0.06,10)), darkM, [0,-0.05,0.56], [Math.PI/2,0,0]);
+  }
+  if(opt.fibra){      // carrete de fibra óptica bajo el vientre
+    E.p(geo('carrete', ()=>new THREE.CylinderGeometry(0.26,0.26,0.3,12)),
+        new THREE.MeshStandardMaterial({color:0xd8d2c4, roughness:0.9, flatShading:true}), [0,-0.2,-0.4], [0,0,Math.PI/2]);
+  }
+
+  E.volcar(g, true);
   g.userData={rotors};
   return g;
 }
@@ -2453,6 +2705,8 @@ function updateEffects(dt){
     else if(e.kind==='puff'){ e.mesh.scale.setScalar(e.size*(0.3+k*1.3)); e.mesh.material.opacity=0.75*(1-k*k); e.mesh.position.y+=e.rise*dt; e.mesh.material.rotation+=dt*0.4; }
     else if(e.kind==='ring'){ const s=e.size*(0.3+k*1.5); e.mesh.scale.setScalar(s); e.mesh.material.opacity=0.7*(1-k*k); }
     else if(e.kind==='tracer'){ e.mesh.material.opacity=0.9*(1-k); }
+    // el fogonazo se apaga de golpe y encoge: dura 45 ms, no medio segundo
+    else if(e.kind==='fogonazo'){ e.mesh.material.opacity=1-k*k; e.mesh.scale.multiplyScalar(1+dt*6); }
     else if(e.kind==='light'){ if(e.i0===undefined)e.i0=e.mesh.intensity; e.mesh.intensity=e.i0*(1-k); }
     else if(e.kind==='debris'){ e.vel.y-=26*dt; e.mesh.position.addScaledVector(e.vel,dt);
       const gy=terrainHeight(e.mesh.position.x,e.mesh.position.z)+0.2;
@@ -2462,13 +2716,60 @@ function updateEffects(dt){
   }
 }
 
+/* ---------------------------------------------------------------------
+   TRAZADORAS
+   Una bala NO se dibuja como un punto. A 165 unidades por segundo recorre
+   casi 3 unidades (15 m) en un cuadro de 60 Hz, y lo que la cámara —y el
+   ojo— ven es un TRAZO de esos 15 m. Por eso el trazo se estira justo lo
+   que la bala avanza en ese cuadro, con un 15% de solape para que dos
+   cuadros seguidos se toquen y se lea una línea continua en vez de puntos
+   saltando. La fórmula se corrige sola a cualquier cadencia de cuadros.
+   El color va POR ENCIMA de 1: el tone mapping ACES que ya usa el juego
+   quema el centro a blanco y deja la caída de color alrededor, que es
+   exactamente lo que hace un sensor de verdad. Nada de una luz por bala:
+   eso hunde el rendimiento; solo hay luz en el fogonazo.
+   Una de cada cinco balas es trazadora, como en una cinta real: si todas
+   lo fueran parecería una manguera de neón y se delataría al instante.
+   --------------------------------------------------------------------- */
+const TRAZA_CADA=5;
+const _bala=new THREE.Vector3();     // vector propio: los compartidos los pisa el terreno
+let _matTraza={};
+function matTraza(bando){
+  if(_matTraza[bando]) return _matTraza[bando];
+  const m=new THREE.MeshBasicMaterial({ blending:THREE.AdditiveBlending, depthWrite:false,
+    transparent:true, toneMapped:true });
+  if(bando==='enemy') m.color.setRGB(11.0, 2.6, 0.7);    // rojo-naranja
+  else                m.color.setRGB(2.0, 10.0, 3.4);    // verde: la tuya se distingue
+  return (_matTraza[bando]=m);
+}
 /* proyectiles */
 function fireProjectile(from, dir, opt){
-  const g=new THREE.SphereGeometry(opt.r||0.35, 8,6);
-  const m=new THREE.MeshStandardMaterial({color:opt.color||0xffcf6a, emissive:opt.color||0xffb040, emissiveIntensity:0.8});
-  const mesh=new THREE.Mesh(g,m); mesh.position.copy(from); scene.add(mesh);
+  let mesh;
+  if(opt.kind==='bala'){
+    // solo una de cada cinco se ve; las demás vuelan igual pero sin dibujarse
+    if(opt.traza){
+      mesh=new THREE.Mesh(geo('trazaCaja',()=>new THREE.BoxGeometry(1,1,1)), matTraza(opt.from));
+      mesh.frustumCulled=false;
+    } else mesh=new THREE.Object3D();
+  } else {
+    const g=new THREE.SphereGeometry(opt.r||0.35, 8,6);
+    const m=new THREE.MeshStandardMaterial({color:opt.color||0xffcf6a, emissive:opt.color||0xffb040, emissiveIntensity:0.8});
+    mesh=new THREE.Mesh(g,m);
+  }
+  mesh.position.copy(from); scene.add(mesh);
   projectiles.push({mesh, vel:dir.clone().multiplyScalar(opt.speed), from:opt.from, dmg:opt.dmg,
-    splash:opt.splash||0, life:opt.life||4, t:0, homing:opt.homing||null, kind:opt.kind||'shell', grav:opt.grav||0});
+    splash:opt.splash||0, life:opt.life||4, t:0, homing:opt.homing||null, kind:opt.kind||'shell',
+    grav:opt.grav||0, traza:!!opt.traza});
+}
+/* fogonazo: corto y fuerte. 20-30 ms, no un destello largo de película */
+function fogonazo(pos, dir, escala){
+  const s=escala||1;
+  const f=new THREE.Mesh(geo('flashG',()=>new THREE.SphereGeometry(1,6,5)),
+    new THREE.MeshBasicMaterial({color:0xffd9a0, blending:THREE.AdditiveBlending, transparent:true, depthWrite:false}));
+  f.position.copy(pos).addScaledVector(dir,0.3*s);
+  f.scale.set(0.42*s, 0.42*s, 0.95*s);
+  f.lookAt(f.position.clone().add(dir));
+  scene.add(f); effects.push({mesh:f, t:0, life:0.045, kind:'fogonazo'});
 }
 /* penetración por ángulo de impacto + caída de daño por distancia + rebote */
 function penetration(p, center){
@@ -2498,6 +2799,15 @@ function updateProjectiles(dt){
     }
     if(p.grav) p.vel.y-=p.grav*dt;      // caída balística
     p.mesh.position.addScaledVector(p.vel, dt);
+    /* la trazadora se estira EXACTAMENTE lo que la bala avanzó en este cuadro,
+       con un 15% de solape para que dos cuadros seguidos se toquen punta con
+       punta y el ojo lea una raya y no puntos saltando. Se corrige sola con
+       los fps: a 30 el trazo es el doble de largo que a 60. */
+    if(p.traza){
+      _bala.copy(p.mesh.position).add(p.vel);
+      p.mesh.lookAt(_bala);
+      p.mesh.scale.set(0.1, 0.1, Math.max(0.6, p.vel.length()*dt*1.15));
+    }
     let hit=null, hp=p.mesh.position;
     // terreno
     if(hp.y<=terrainHeight(hp.x,hp.z)){ hit={p:hp.clone()}; }
@@ -2529,9 +2839,22 @@ function updateProjectiles(dt){
           if(p.from==='player'){ for(const e of enemies){ if(e.alive && e!==hit.target && e.pos.distanceTo(hit.p)<p.splash+e.radius) damageEnemy(e, p.dmg*0.5); } }
           else if(!hit.player && player.alive && player.pos.distanceTo(hit.p)<p.splash+2) damagePlayer(p.dmg*0.5);
           spawnExplosion(hit.p, p.splash*1.6+3, 0xffa53a);
-        } else spawnExplosion(hit.p, 2.4, 0xffc060);
+        }
+        /* Una BALA no explota. Antes cada impacto de ametralladora soltaba una
+           explosión de tamaño 2,4 con su humo: a doce disparos por segundo eso
+           llenaba la pantalla de bolas naranjas y tapaba el combate entero.
+           Ahora deja lo que deja de verdad: una chispa y un salpicón de polvo. */
+        else if(p.kind==='bala'){
+          spawnExplosion(hit.p, 0.55, 0xffe0a0);
+          if(!hit.target && Math.random()<0.5) spawnDust(hit.p.x, hit.p.y+0.2, hit.p.z);
+        }
+        else spawnExplosion(hit.p, 2.4, 0xffc060);
       }
-      scene.remove(p.mesh); p.mesh.geometry.dispose(); p.mesh.material.dispose(); projectiles.splice(i,1);
+      scene.remove(p.mesh);
+      // ⚠ las balas comparten geometría y material entre todas: si se liberan
+      // aquí, la primera bala en morir deja ciegas a las demás
+      if(p.kind!=='bala'){ if(p.mesh.geometry)p.mesh.geometry.dispose(); if(p.mesh.material)p.mesh.material.dispose(); }
+      projectiles.splice(i,1);
     }
   }
 }
@@ -2540,22 +2863,138 @@ function updateProjectiles(dt){
    ENEMIGOS
    ===================================================================== */
 function spawnEnemy(kind, x, z){
-  const isTurret=kind==='turret', isAir=kind==='airdrone', isJammer=kind==='jammer';
+  const isTurret=kind==='turret', isAir=kind==='airdrone', isJammer=kind==='jammer', isPerro=kind==='perro';
   const gy=terrainHeight(x,z);
   let mesh, hp, radius, tag, y;
-  if(isAir){ mesh=buildDrone(0x6e3838); y=gy+16+Math.random()*12; hp=40; radius=2.4; tag='tank'; }
+  if(isAir){ mesh=buildDrone(0x6e3838, {kamikaze:Math.random()<0.4}); y=gy+16+Math.random()*12; hp=40; radius=2.4; tag='tank'; }
   else if(isJammer){ mesh=buildJammer(); y=gy; hp=65; radius=2.6; tag='jammer'; }
   else if(isTurret){ mesh=buildTurret(); y=gy; hp=70; radius=2.2; tag='turret'; }
+  else if(isPerro){ mesh=buildPerro(0x4b4238); y=gy; hp=32; radius=1.4; tag='perro'; }
   else { mesh=buildVehicle({color:0x6b4a3f, accent:0x3a2a24, led:0xff5a4a}); y=gy; hp=90; radius=2.4; tag='tank'; }
   mesh.position.set(x,y,z); scene.add(mesh);
   const e={ mesh, kind, tag, pos:new THREE.Vector3(x,y,z), yaw:Math.random()*TAU,
     vel:new THREE.Vector3(), hp, hpMax:hp, alive:true, radius,
     reload:Math.random()*2, state:'patrol', target:null, wp:new THREE.Vector3(), aim:0, aimPitch:0,
-    mobile:(kind==='tank'||isAir), air:isAir, jammer:isJammer, bob:Math.random()*TAU };
+    mobile:(kind==='tank'||isAir||isPerro), air:isAir, jammer:isJammer, perro:isPerro,
+    paso:Math.random(), rafaga:0, bob:Math.random()*TAU };
   pickWaypoint(e);
-  addHeat(mesh, isAir?0.5:(isTurret?1.6:2.0), isAir?4:(isTurret?7:6));
+  addHeat(mesh, isAir?0.5:(isTurret?1.6:(isPerro?0.9:2.0)), isAir?4:(isTurret?7:(isPerro?3:6)));
   IA.iaInit(e, 'rojo', kind);          // sensores + memoria táctica propios
   enemies.push(e); return e;
+}
+/* =====================================================================
+   PERRO ROBOT CON RIFLE (cuadrúpedo armado)
+   Referencias reales: Ghost Robotics Vision 60 y el montaje SPUR de Sword
+   International, que es un rifle sobre uno de estos.
+   Cada pata tiene TRES segmentos —cadera, muslo y caña— y las delanteras
+   doblan la rodilla al revés que las traseras, como un perro de verdad.
+   El cuerpo lleva encima la torreta de sensores y el rifle.
+   ===================================================================== */
+function buildPerro(color){
+  const g=new THREE.Group();
+  const cuerpoM=new THREE.MeshStandardMaterial({color:color||0x3a3f46, roughness:0.55, metalness:0.5, flatShading:true});
+  const negroM =new THREE.MeshStandardMaterial({color:0x15181d, roughness:0.7, metalness:0.35, flatShading:true});
+  const metalM =new THREE.MeshStandardMaterial({color:0x8a9099, roughness:0.35, metalness:0.85, flatShading:true});
+  const C=new Ensamblador();
+  // torso
+  C.p(geo('pTorso', ()=>new THREE.BoxGeometry(0.9,0.46,1.9)), cuerpoM, [0,0,0]);
+  C.p(geo('pLomo',  ()=>new THREE.BoxGeometry(0.7,0.2,1.5)),  negroM,  [0,0.3,-0.05]);
+  C.p(geo('pMorro', ()=>new THREE.BoxGeometry(0.5,0.34,0.34)), negroM, [0,0.05,1.02]);
+  // torreta de sensores (la "cabeza"): cámara y lidar
+  C.p(geo('pCabeza',()=>new THREE.CylinderGeometry(0.2,0.24,0.22,10)), cuerpoM, [0,0.42,0.78]);
+  C.p(geo('pLidar', ()=>new THREE.CylinderGeometry(0.13,0.13,0.12,10)), metalM, [0,0.58,0.78]);
+  C.p(geo('pOjo',   ()=>new THREE.BoxGeometry(0.26,0.12,0.06)),
+      new THREE.MeshStandardMaterial({color:0x10202a, roughness:0.08, metalness:0.9}), [0,0.42,0.92]);
+  // batería y radiador en el lomo
+  C.p(geo('pBat',   ()=>new THREE.BoxGeometry(0.56,0.16,0.6)), negroM, [0,0.42,-0.55]);
+  const aleta=geo('pAleta', ()=>new THREE.BoxGeometry(0.5,0.1,0.04));
+  for(let i=-2;i<=2;i++) C.p(aleta, metalM, [0,0.52,-0.55+i*0.11]);
+  // RIFLE montado encima, con cargador, mira y bocacha
+  C.p(geo('rCuerpo', ()=>new THREE.BoxGeometry(0.14,0.16,0.92)), negroM, [0,0.66,0.1]);
+  C.p(geo('rCanon',  ()=>new THREE.CylinderGeometry(0.035,0.04,0.8,8)), negroM, [0,0.7,0.85], [Math.PI/2,0,0]);
+  C.p(geo('rBocacha',()=>new THREE.CylinderGeometry(0.06,0.05,0.14,8)), metalM, [0,0.7,1.3], [Math.PI/2,0,0]);
+  C.p(geo('rCargador',()=>new THREE.BoxGeometry(0.09,0.3,0.14)), negroM, [0,0.48,0.28], [0.25,0,0]);
+  C.p(geo('rMira',   ()=>new THREE.BoxGeometry(0.08,0.1,0.34)), metalM, [0,0.79,0.2]);
+  C.volcar(g, true);
+  // piloto de estado
+  const led=new THREE.Mesh(geo('pLed', ()=>new THREE.SphereGeometry(0.07,6,6)),
+    new THREE.MeshStandardMaterial({color:0xff4a3a, emissive:0xff4a3a, emissiveIntensity:2}));
+  led.position.set(0,0.58,0.92); g.add(led);
+
+  /* ---- las cuatro patas ----
+     Cada una es cadera → muslo → caña, con la rodilla doblando hacia ATRÁS en
+     las delanteras y hacia ADELANTE en las traseras. Se guardan los pivotes
+     para poder animarlas. */
+  const patas=[];
+  const muslo=geo('pMuslo', ()=>new THREE.BoxGeometry(0.14,0.5,0.18));
+  const cana =geo('pCana',  ()=>new THREE.BoxGeometry(0.09,0.5,0.12));
+  for(const [sx,sz,delantera] of [[1,0.68,true],[-1,0.68,true],[1,-0.68,false],[-1,-0.68,false]]){
+    const cadera=new THREE.Group(); cadera.position.set(sx*0.5, -0.1, sz);
+    const hombro=new THREE.Mesh(geo('pHombro',()=>new THREE.CylinderGeometry(0.16,0.16,0.2,10)), cuerpoM);
+    hombro.rotation.z=Math.PI/2; cadera.add(hombro);
+    const sup=new THREE.Group(); cadera.add(sup);
+    const mm=new THREE.Mesh(muslo, cuerpoM); mm.position.y=-0.25; mm.castShadow=true; sup.add(mm);
+    const rodilla=new THREE.Group(); rodilla.position.y=-0.5; sup.add(rodilla);
+    const cc=new THREE.Mesh(cana, negroM); cc.position.y=-0.25; cc.castShadow=true; rodilla.add(cc);
+    const pie=new THREE.Mesh(geo('pPie',()=>new THREE.SphereGeometry(0.09,7,6)), negroM);
+    pie.position.y=-0.5; rodilla.add(pie);
+    g.add(cadera);
+    patas.push({ cadera, sup, rodilla, sx, sz, delantera,
+                 fase:(sx>0)===(sz>0) ? 0 : 0.5 });   // trote: diagonales a la vez
+  }
+  /* A escala 1 el perro medía 1,9 unidades de largo contra las 4,2 del tanque:
+     casi la mitad de un blindado. Un Vision 60 real mide 1 m frente a los 7 m
+     de un tanque. Se encoge para que la proporción se lea bien; sigue siendo
+     generoso a propósito, porque hay que poder verlo y acertarle. */
+  g.scale.setScalar(PERRO_ESC);
+  g.userData={patas, led, rifleBoca:new THREE.Vector3(0,0.7,1.45)};
+  return g;
+}
+const PERRO_ESC=0.6, PERRO_ALTO=0.86*0.6;   // alto del vientre, ya escalado
+/* ---------------------------------------------------------------------
+   CÓMO CAMINA
+   Trote diagonal: delantera izquierda con trasera derecha, y al revés.
+   Apoyo: el pie está clavado en el suelo y, respecto al cuerpo, retrocede en
+   línea recta — el suelo no perdona. Vuelo: vuelve adelante por una cicloide
+   y sube con un seno al cuadrado, que dan velocidad cero justo al despegar y
+   al posarse; sin eso el pie da un tirón al aterrizar y se ve.
+   LA LEY QUE NO SE PUEDE ROMPER: velocidad = paso × frecuencia. Si el cuerpo
+   avanza a una velocidad y las patas se animan a otra, los pies patinan y el
+   modelo se cae visualmente en medio segundo. Por eso se elige la frecuencia
+   y se DEDUCE el paso, nunca al revés.
+   --------------------------------------------------------------------- */
+function animarPerro(u, dt){
+  const ud=u.mesh.userData; if(!ud.patas) return;
+  const v=Math.hypot(u.vel.x, u.vel.z);
+  const f = v<0.4 ? 1.2 : v<3 ? 2.0 : v<6 ? 2.6 : 3.2;          // marcha según velocidad
+  const D = v<0.4 ? 0.75 : v<3 ? 0.55 : v<6 ? 0.50 : 0.42;      // fracción con el pie en suelo
+  const S = f>0 ? Math.max(0.12, v/f) : 0.3;                     // paso DEDUCIDO de la velocidad
+  const H = 0.09 + v*0.02;
+  u.paso = ((u.paso||0) + f*dt) % 1;
+  for(const P of ud.patas){
+    const p=(u.paso + P.fase) % 1;
+    let pz, py;
+    if(p < D){                       // APOYO: el pie retrocede pegado al suelo
+      pz = S/2 - S*(p/D); py = 0;
+    } else {                         // VUELO: cicloide adelante + seno al cuadrado arriba
+      const w=(p-D)/(1-D);
+      pz = -S/2 + S*(w - Math.sin(TAU*w)/TAU);
+      py = H*Math.pow(Math.sin(Math.PI*Math.pow(w,0.85)), 2);
+    }
+    // de la posición del pie a los ángulos: cinemática inversa de dos barras
+    const L=0.5, alcance=clamp(Math.hypot(pz, 0.86-py), 0.2, L*2-0.02);
+    const cos=clamp((alcance*alcance)/(2*L*alcance), -1, 1);
+    const rodillaAng=Math.acos(clamp(1-(alcance*alcance)/(2*L*L), -1, 1));
+    const base=Math.atan2(pz, 0.86-py);
+    const signo=P.delantera ? 1 : -1;      // la rodilla dobla al revés delante y detrás
+    P.sup.rotation.x = base - signo*(Math.PI-rodillaAng)/2;
+    P.rodilla.rotation.x = signo*(Math.PI-rodillaAng);
+  }
+  // el cuerpo bota al doble de la frecuencia y se balancea a la frecuencia:
+  // sin esto el perro parece deslizarse sobre patines
+  const bote=(0.012+v*0.004)*PERRO_ESC;
+  u.mesh.position.y = u.pos.y - bote*Math.sin(2*TAU*u.paso);
+  u.mesh.rotation.z = 0.026*Math.sin(TAU*u.paso);
 }
 function buildJammer(){
   const g=new THREE.Group();
@@ -2588,7 +3027,8 @@ function damageEnemy(e, dmg){
   if(e.hp<=0){ e.alive=false; e.mesh.visible=false; if(e.ia) IA.cambiar(e,'DESTRUIDO','destruido');
     spawnExplosion(e.pos, e.air?6:8, 0xffa040); spawnSmoke(e.pos);
     killCount.enemy++; killCount[e.tag]=(killCount[e.tag]||0)+1;
-    const nm = e.kind==='airdrone'?'Dron derribado' : e.kind==='jammer'?'Jammer destruido · enlace libre' : e.tag==='turret'?'Torreta destruida' : 'Blindado destruido';
+    const nm = e.kind==='airdrone'?'Dron derribado' : e.kind==='jammer'?'Jammer destruido · enlace libre'
+             : e.kind==='perro'?'Perro robot abatido' : e.tag==='turret'?'Torreta destruida' : 'Blindado destruido';
     feed(nm,'good');
     if(designatedTarget===e) designatedTarget=null;
     checkObjectives();
@@ -3001,21 +3441,30 @@ function moverUnidad(e, orden, dt){
     if(ud.led) ud.led.material.emissiveIntensity=1.5+Math.sin(missionTime*8)*1.2;
     return;
   }
-  // ---------- TERRESTRE (blindado / torreta) ----------
+  // ---------- TERRESTRE (blindado / torreta / perro robot) ----------
   if(e.mobile && orden.ir){
     const dx=orden.ir.x-e.pos.x, dz=orden.ir.z-e.pos.z, L=Math.hypot(dx,dz);
-    if(L>3.5){
-      e.yaw=angLerp(e.yaw, Math.atan2(dx,dz), 1.4*dt);
-      const sp=9*(orden.prisa||1);
+    const cerca=e.perro?1.8:3.5;
+    if(L>cerca){
+      // el perro gira y corre mucho más que un blindado: es su gracia
+      e.yaw=angLerp(e.yaw, Math.atan2(dx,dz), (e.perro?3.4:1.4)*dt);
+      const sp=(e.perro?12:9)*(orden.prisa||1);
       e.vel.set(Math.sin(e.yaw)*sp, 0, Math.cos(e.yaw)*sp);
       e.pos.addScaledVector(e.vel, dt);
       e.pos.x=clamp(e.pos.x,-HALF+6,HALF-6); e.pos.z=clamp(e.pos.z,-HALF+6,HALF-6);
-      resolveColliders(e.pos, 2.2);
+      resolveColliders(e.pos, e.perro?0.9:2.2);
     } else e.vel.set(0,0,0);
   } else e.vel.set(0,0,0);
-  e.pos.y=damp(e.pos.y, terrainHeight(e.pos.x,e.pos.z), 12, dt);
+  e.pos.y=damp(e.pos.y, terrainHeight(e.pos.x,e.pos.z)+(e.perro?PERRO_ALTO:0), 12, dt);
   e.mesh.position.copy(e.pos);
-  if(e.mobile){ e.mesh.rotation.y=e.yaw; alignToGround(e.mesh, e.pos, e.yaw, 6, dt); }
+  if(e.mobile){ e.mesh.rotation.y=e.yaw; if(!e.perro) alignToGround(e.mesh, e.pos, e.yaw, 6, dt); }
+  // el perro no tiene torreta: apunta con el cuerpo, y camina
+  if(e.perro){
+    if(mirar) e.yaw=angLerp(e.yaw, Math.atan2(mirar.x-e.pos.x, mirar.z-e.pos.z), 4.5*dt);
+    e.aim=e.yaw; e.mesh.rotation.y=e.yaw;
+    animarPerro(e, dt);
+    if(ud.led) ud.led.material.emissiveIntensity=1.4+Math.sin(missionTime*6)*0.8;
+  }
 
   // ---------- TORRETA: apunta al blanco, o BARRE si vigila ----------
   if(ud.turret){
@@ -3036,13 +3485,31 @@ function moverUnidad(e, orden, dt){
   // ---------- FUEGO ----------
   e.reload-=dt;
   if(orden.fuego && mirar && e.reload<=0 &&
-     Math.abs(angDiff(e.aim, Math.atan2(mirar.x-e.pos.x, mirar.z-e.pos.z)))<0.25){
+     Math.abs(angDiff(e.aim, Math.atan2(mirar.x-e.pos.x, mirar.z-e.pos.z)))<(e.perro?0.35:0.25)){
+    const disp0=IA.skill().error;
+    if(e.perro){
+      /* RIFLE del perro: ráfagas cortas de tres, no un cañonazo. Entre tiro y
+         tiro hay 90 ms; entre ráfaga y ráfaga, casi un segundo. Eso es lo que
+         suena y se ve como un arma automática y no como artillería. */
+      e.rafaga=(e.rafaga||0)+1;
+      const finRafaga=e.rafaga%3===0;
+      e.reload = finRafaga ? 0.85+Math.random()*0.6 : 0.09;
+      if(finRafaga) gastarMunicion(e);
+      const boca=e.pos.clone().setY(e.pos.y+0.7*PERRO_ESC).addScaledVector(_toP.set(Math.sin(e.yaw),0,Math.cos(e.yaw)), 1.45*PERRO_ESC);
+      const d=_toP.copy(mirar).sub(boca).normalize(), disp=disp0*1.4;
+      d.x+=(Math.random()-0.5)*disp; d.y+=(Math.random()-0.5)*disp*0.5; d.z+=(Math.random()-0.5)*disp; d.normalize();
+      fireProjectile(boca, d, {speed:MG_VELOCIDAD, dmg:5.5, from:'enemy', kind:'bala',
+        traza:(e.rafaga%2===0), life:1.8});
+      fogonazo(boca, d, 0.6);
+      return;
+    }
     e.reload=1.6+Math.random()*1.1; gastarMunicion(e);
     const muzzle=e.pos.clone().setY(e.pos.y+2.0);
-    const d=_toP.copy(mirar).sub(e.pos).normalize(), disp=IA.skill().error;
+    const d=_toP.copy(mirar).sub(e.pos).normalize(), disp=disp0;
     d.x+=(Math.random()-0.5)*disp; d.y+=(Math.random()-0.5)*disp*0.6; d.z+=(Math.random()-0.5)*disp; d.normalize();
     muzzle.addScaledVector(d, 3);
     fireProjectile(muzzle, d, {speed:150, dmg:e.tag==='turret'?14:12, from:'enemy', color:0xff6a4a, splash:2, life:3});
+    fogonazo(muzzle, d, 1.5);
   }
 }
 function alignToGround(mesh, pos, yaw, l, dt){
@@ -3553,11 +4020,16 @@ function updatePlayer(dt, inp){
     const ud=player.mesh.userData;
     ud.turret.rotation.set(0, player.view.yaw-player.yaw, 0);
     ud.barrelPiv.rotation.x=clamp(-player.view.pitch,-0.35,0.5);
+    // la estación de armas remota apunta con la vista, pero tiene más recorrido
+    // hacia arriba que el cañón: para eso está, para tirarle a lo que vuela
+    if(ud.rws) ud.rws.rotation.x=clamp(-player.view.pitch,-0.9,0.6);
 
     // armas
     player.reload-=dt; player.secReload-=dt;
     if(inp.fire && player.reload<=0){ firePlayerCannon(); player.reload=stats.cannon.reload; }
     if(inp.sec) firePlayerSecondary(dt);
+    // al soltar el gatillo el arma se asienta y el grupo se vuelve a cerrar
+    else mgRafaga=Math.max(0, mgRafaga-45*dt);
   } else {
     updateDrone(dt, inp);
   }
@@ -3574,6 +4046,20 @@ function turretMuzzle(){
   ud.barrelPiv.getWorldPosition(m); // base del cañón
   return m.add(aimDir().multiplyScalar(ud.barrelLen));
 }
+/* ---- AMETRALLADORA ----
+   700 disparos por minuto es la cadencia de una ametralladora media real
+   (una MAG o una PKT andan por ahí). La velocidad, 165 unidades/s, son unos
+   860 m/s a la escala del juego: la de un 7,62 de verdad. */
+const MG_CADENCIA=700, MG_VELOCIDAD=165;
+let mgRonda=0, mgRafaga=0;
+/* boca de la estación de armas remota, no del cañón: son armas distintas y
+   están en sitios distintos de la torreta */
+function rwsMuzzle(){
+  const ud=player.mesh.userData;
+  if(!ud.rws) return turretMuzzle();
+  const m=ud.rws.localToWorld(ud.mgBoca.clone());
+  return m.addScaledVector(aimDir(), 0.4);
+}
 function firePlayerCannon(){
   const dir=aimDir(); const from=turretMuzzle();
   fireProjectile(from, dir, {speed:stats.cannon.pspeed, dmg:stats.cannon.dmg, splash:stats.cannon.splash, from:'player', color:0x9ff0ff, r:0.4, life:5, grav:CANNON_GRAV});
@@ -3587,14 +4073,28 @@ let recoilT=0; function recoil(){ recoilT=0.12; }
 function firePlayerSecondary(dt){
   const sec=stats.secondary; if(sec.kind==='none') return;
   if(sec.kind==='mg'){
-    const dir=aimDir(); const from=turretMuzzle();
-    // busca enemigo dentro de un cono estrecho; daño continuo (dps) mientras se sostiene
-    let best=null,bd=1e9;
-    for(const e of enemies){ if(!e.alive)continue; V.copy(e.pos).sub(from); const dist=V.length(); if(dist>sec.range)continue; V.normalize(); if(V.dot(dir)>0.985 && dist<bd){bd=dist;best=e;} }
-    if(best) damageEnemy(best, sec.dps*dt);
-    if(player.secReload<=0){ player.secReload=0.05;
-      const end=best? best.pos.clone(): from.clone().addScaledVector(dir, sec.range);
-      spawnTracer(from, end, 0xffe08a); }
+    /* Antes era daño instantáneo por cono más una rayita: no había balas, así
+       que no se podía fallar, ni adelantarse a un blanco que se mueve, ni ver
+       de dónde venía el fuego. Ahora dispara BALAS de verdad, desde la boca de
+       la estación de armas remota, a la cadencia de una ametralladora media
+       (700 disparos por minuto) y con una de cada cinco trazadora. */
+    if(player.secReload>0) return;
+    player.secReload=60/MG_CADENCIA;
+    const dir=aimDir().clone(), from=rwsMuzzle();
+    /* la ráfaga ABRE el grupo: los primeros tiros van juntos y luego el arma
+       se calienta y salta. Se recupera al soltar el gatillo. */
+    mgRafaga=Math.min(mgRafaga+1, 34);
+    const disp=(0.006 + mgRafaga*0.0013) * (dmg.optica>0.05?2:1);
+    dir.x+=(Math.random()-0.5)*disp; dir.y+=(Math.random()-0.5)*disp;
+    dir.z+=(Math.random()-0.5)*disp; dir.normalize();
+    mgRonda++;
+    fireProjectile(from, dir, { speed:MG_VELOCIDAD, dmg:sec.dps*0.115, from:'player',
+      kind:'bala', traza:(mgRonda%TRAZA_CADA===0), life:2.2, r:0.1 });
+    fogonazo(from, dir, 0.8);
+    // una sola luz, y solo en la boca: una por bala hundiría el rendimiento
+    if(mgRonda%2===0){ const fl=new THREE.PointLight(0xffc070, 2.4, 14); fl.position.copy(from);
+      scene.add(fl); effects.push({mesh:fl, t:0, life:0.05, kind:'light'}); }
+    if(navigator.vibrate && mgRonda%4===0) try{navigator.vibrate(4)}catch(x){}
   } else if(sec.kind==='missile'){
     if(player.secReload>0) return; player.secReload=sec.reload;
     const dir=aimDir(); const from=turretMuzzle();
@@ -4523,7 +5023,7 @@ function wireUI(){
       const [la,lo]=sel.value.split(',').map(Number);
       const nombre=sel.options[sel.selectedIndex].textContent;
       startRealMission({ id:'city_'+sel.value, name:nombre, pais:'🏙️ '+nombre, lat:la, lon:lo, vexag:1.0,
-        enemies:[{t:'tank',n:4},{t:'airdrone',n:2}],
+        enemies:[{t:'tank',n:3},{t:'airdrone',n:2},{t:'perro',n:3}],
         objs:[{type:'destroy',tag:'enemy',n:6,text:'Limpia el sector (6)'}] });
     };
   })();
@@ -4532,7 +5032,7 @@ function wireUI(){
     if(isNaN(lat)||isNaN(lon)||lat<-85||lat>85||lon<-180||lon>180){ alert('Coordenadas inválidas.\nEjemplo (Bogotá): 4.60, -74.08'); return; }
     startRealMission({ id:'custom_'+lat.toFixed(2)+'_'+lon.toFixed(2), name:'Tu zona', pais:'📍 '+lat.toFixed(3)+', '+lon.toFixed(3),
       lat, lon, vexag:1.0,
-      enemies:[{t:'tank',n:4},{t:'airdrone',n:2}], objs:[{type:'destroy',tag:'enemy',n:6,text:'Limpia tu zona (6)'}] }); };
+      enemies:[{t:'tank',n:3},{t:'airdrone',n:2},{t:'perro',n:3}], objs:[{type:'destroy',tag:'enemy',n:6,text:'Limpia tu zona (6)'}] }); };
   // pad
   const padHold=(id,flag)=>{ const el=$(id); el.addEventListener('pointerdown',e=>{pad[flag]=true; e.preventDefault();}); ['pointerup','pointercancel','pointerleave'].forEach(ev=>el.addEventListener(ev,()=>pad[flag]=false)); };
   padHold('padUp','throttleUp'); padHold('padDown','throttleDown'); padHold('padFire','fire');
@@ -4590,6 +5090,28 @@ if(location.search.indexOf('dbg')>=0) window.DRONES={
     const t0=performance.now(); for(let i=0;i<(n||60);i++) simulate(d);
     return { pasos:n||60, ms:+(performance.now()-t0).toFixed(1), msPorPaso:+((performance.now()-t0)/(n||60)).toFixed(3) }; },
   fireTest:()=>{ mouseFire=true; },
+  secTest:(on)=>{ mouseSec=(on!==false); return mouseSec; },
+  /* lleva el dron junto a un enemigo de ese tipo, para poder mirarlo de cerca */
+  verEnemigo:(tipo, dist)=>{ const e=enemies.find(x=>x.alive && x.kind===tipo);
+    if(!e) return 'no hay '+tipo;
+    if(!drone.active) return 'despliega el dron primero';
+    const d=dist||6;
+    drone.pos.set(e.pos.x-d*0.7, e.pos.y+d*0.45, e.pos.z-d*0.7);
+    drone.yaw=Math.atan2(e.pos.x-drone.pos.x, e.pos.z-drone.pos.z);
+    drone.gimbalManual=true; drone.gimbal=-0.35;
+    return { tipo, pos:e.pos.toArray().map(n=>+n.toFixed(1)) }; },
+  efectos:()=>{ const c={}; for(const e of effects){ c[e.kind]=(c[e.kind]||0)+1; }
+    const g={}; for(const p of projectiles){ g[p.kind]=(g[p.kind]||0)+1; }
+    const may=effects.filter(e=>e.mesh&&e.mesh.scale&&e.mesh.scale.x>3)
+      .map(e=>({k:e.kind, esc:+e.mesh.scale.x.toFixed(1), vida:e.life}));
+    return { efectos:c, proyectiles:g, demasiadoGrandes:may.slice(0,6) }; },
+  /* apunta la torreta al enemigo vivo más cercano — para probar el fuego sin jugar */
+  apuntar:()=>{ let m=null,md=1e9;
+    for(const e of enemies){ if(!e.alive) continue; const d=e.pos.distanceTo(player.pos); if(d<md){md=d;m=e;} }
+    if(!m) return 'sin blancos';
+    player.view.yaw=Math.atan2(m.pos.x-player.pos.x, m.pos.z-player.pos.z);
+    player.view.pitch=-Math.atan2(m.pos.y+1-player.pos.y-2, md);
+    return { blanco:m.kind, dist:Math.round(md) }; },
   snapshot:()=>{ try{ const w=320,h=180; renderer.setSize(w,h,false); camera.aspect=w/h; camera.updateProjectionMatrix();
     if(composer)composer.setSize(w,h); if(skyMesh)skyMesh.position.copy(camera.position); renderScene();
     const gl=renderer.getContext(); const px=new Uint8Array(w*h*4); gl.readPixels(0,0,w,h,gl.RGBA,gl.UNSIGNED_BYTE,px);
