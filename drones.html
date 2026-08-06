@@ -546,6 +546,8 @@
           <span><b>Móvil:</b> palanca IZQ vuela y gira · palanca DER sube/baja</span>
           <span><kbd>W</kbd><kbd>S</kbd> adelante/atrás · <kbd>A</kbd><kbd>D</kbd> girar</span>
           <span><kbd>Espacio</kbd> subir · <kbd>Shift</kbd> bajar</span>
+          <span><kbd>Q</kbd><kbd>R</kbd> o <b>rueda del ratón</b>: inclinar la cámara (gimbal)</span>
+          <span>La cámara <b>baja sola al subir</b>, para que veas la ciudad</span>
           <span><b>Clic</b> / DISPARAR: soltar carga o marcar</span>
           <span>💥 <b>KAMIKAZE</b> (botón) o <kbd>K</kbd> = picar y explotar</span>
           <span><b>Barriles rojos</b> explotan en cadena — física real</span>
@@ -1442,28 +1444,42 @@ function llToGame(lat,lon){
    los espejos EN PARALELO y gana el primero que responda. Además se cachea
    la zona en memoria para que reintentar o volver sea instantáneo. */
 const OSM_CACHE=new Map();
+const OSM_ESPEJOS=['https://overpass-api.de/api/interpreter',
+                   'https://overpass.kumi.systems/api/interpreter',
+                   'https://overpass.osm.ch/api/interpreter'];
 async function overpass(q, key){
   if(key && OSM_CACHE.has(key)) return OSM_CACHE.get(key);
-  const eps=['https://overpass-api.de/api/interpreter',
-             'https://overpass.kumi.systems/api/interpreter',
-             'https://overpass.osm.ch/api/interpreter'];
-  let huboVacia=false;
-  const pedir=(ep)=>new Promise((res,rej)=>{
-    const c=new AbortController(), t=setTimeout(()=>{ c.abort(); rej(new Error('timeout')); }, 22000);
+  /* Un espejo saturado contesta 200 con CERO elementos. Eso NO significa
+     "aquí no hay nada": es una respuesta rota. Se cuenta aparte, y solo se
+     acepta como zona sin mapear si nadie más trajo datos. */
+  let vacias=0;
+  const pedir=(ep, ms)=>new Promise((res,rej)=>{
+    const c=new AbortController(), t=setTimeout(()=>{ c.abort(); rej(new Error('timeout')); }, ms);
     fetch(ep,{ method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'},
         body:'data='+encodeURIComponent(q), signal:c.signal })
       .then(r=>{ clearTimeout(t); if(!r.ok) throw new Error('http '+r.status); return r.json(); })
       // ⚠ una respuesta VACÍA no puede ganar la carrera: si un espejo saturado
       // contesta "sin elementos" antes que el bueno, perderíamos la ciudad entera
       .then(j=>{ if(j && j.elements && j.elements.length) res(j);
-                 else { huboVacia=true; rej(new Error('vacío')); } })
+                 else { vacias++; rej(new Error('vacío')); } })
       .catch(e=>{ clearTimeout(t); rej(e); });
   });
+  // 1ª vuelta: los tres a la vez, gana el primero que traiga datos de verdad
   try{
-    const j=await Promise.any(eps.map(pedir));
+    const j=await Promise.any(OSM_ESPEJOS.map(ep=>pedir(ep,18000)));
     if(key) OSM_CACHE.set(key, j);
     return j;
-  }catch(e){ return huboVacia ? {elements:[], vacio:true} : null; }
+  }catch(e){}
+  /* 2ª vuelta, uno por uno. Hace falta: medido el 6-ago-2026 sobre el centro de
+     Bogotá, overpass.osm.ch devolvía 200 con 0 elementos mientras overpass-api.de
+     traía 2936 edificios de la MISMA caja. Sin este reintento, el espejo roto
+     decidía por todos y el juego declaraba desierta media ciudad. */
+  for(const ep of OSM_ESPEJOS){
+    try{ const j=await pedir(ep,12000); if(key) OSM_CACHE.set(key, j); return j; }catch(e){}
+  }
+  // Nadie trajo datos. Si alguien contestó bien pero vacío, la zona está de
+  // verdad sin mapear; si todos fallaron, es que el servicio está caído.
+  return vacias>0 ? {elements:[], vacio:true} : null;
 }
 function areaPoly(p){ let a=0; for(let i=0,j=p.length-1;i<p.length;j=i++) a+=(p[j].x+p[i].x)*(p[j].z-p[i].z); return Math.abs(a/2); }
 function dentroPoly(x,z,p){ let d=false;
@@ -1553,6 +1569,120 @@ function colorFachada(alturaM, tipo){
   return [0.72,0.60,0.45];
 }
 
+/* ---------------------------------------------------------------------
+   CUBIERTAS. Desde un dron, los techos SON la ciudad: es lo primero que
+   se ve y lo último en lo que uno piensa. Antes el techo era el mismo
+   polígono extruido pintado un 38% más oscuro — cartulina de color.
+   Ahora los muros y las cubiertas se construyen POR SEPARADO, cada uno
+   con su malla y su material, para que el techo tenga su propia textura
+   (losa con juntas, grano y manchas) y encima sus trastos.
+   Son dos mallas fusionadas, así que siguen siendo dos llamadas de dibujo.
+   --------------------------------------------------------------------- */
+let TEX_TECHO=null;
+function hacerTexturaTecho(){
+  if(TEX_TECHO) return TEX_TECHO;
+  const S=128, c=document.createElement('canvas'); c.width=c.height=S;
+  const g=c.getContext('2d');
+  g.fillStyle='#ffffff'; g.fillRect(0,0,S,S);          // blanco: el color lo pone el vértice
+  g.strokeStyle='rgba(0,0,0,0.16)'; g.lineWidth=2;     // juntas de la losa
+  for(let i=1;i<4;i++){ const p=i*S/4;
+    g.beginPath(); g.moveTo(p,0); g.lineTo(p,S); g.stroke();
+    g.beginPath(); g.moveTo(0,p); g.lineTo(S,p); g.stroke(); }
+  for(let i=0;i<900;i++){                              // grano del concreto
+    g.fillStyle='rgba(0,0,0,'+(0.03+Math.random()*0.07)+')';
+    g.beginPath(); g.arc(Math.random()*S, Math.random()*S, Math.random()*2.2, 0, TAU); g.fill(); }
+  for(let i=0;i<7;i++){                                // manchas de humedad
+    g.fillStyle='rgba(30,40,35,'+(0.05+Math.random()*0.08)+')';
+    g.beginPath(); g.arc(Math.random()*S, Math.random()*S, 6+Math.random()*16, 0, TAU); g.fill(); }
+  TEX_TECHO=new THREE.CanvasTexture(c);
+  TEX_TECHO.wrapS=TEX_TECHO.wrapT=THREE.RepeatWrapping;
+  TEX_TECHO.colorSpace=THREE.SRGBColorSpace;
+  return TEX_TECHO;
+}
+/* Color de la cubierta vista desde arriba. En Bogotá: teja de barro en lo bajo
+   (La Candelaria es casi toda teja roja) y losa de concreto gris en lo demás. */
+function colorTecho(alturaM, tipo){
+  const r=Math.random();
+  if(alturaM>45) return [0.44,0.46,0.49];                                   // torres: cubierta técnica
+  if(alturaM>22) return r<0.75 ? [0.47,0.48,0.50] : [0.52,0.50,0.48];
+  if(/^(industrial|warehouse|hangar|farm)$/.test(tipo||'')) return [0.50,0.52,0.54];
+  if(r<0.46) return [0.46+Math.random()*0.12, 0.20+Math.random()*0.05, 0.13+Math.random()*0.04]; // teja
+  return [0.46+Math.random()*0.10, 0.46+Math.random()*0.09, 0.45+Math.random()*0.08];            // losa
+}
+/* Muros: un cuadrilátero por arista, con las UVs en metros y pisos para que la
+   fachada salga a escala. La cara de cada muro se orienta comparando con el
+   centro del edificio, así da igual en qué sentido venga el polígono de
+   OpenStreetMap (unos vienen en un sentido y otros en el contrario). */
+function geomMuros(pts, cx, cz, baseY, hU, escalaU, escalaV){
+  const pos=[], uv=[], idx=[]; let v=0, u0=0;
+  const yTop=baseY+hU, vTop=hU/escalaV;
+  for(let i=0;i<pts.length;i++){
+    const p0=pts[i], p1=pts[(i+1)%pts.length];
+    const dx=p1.x-p0.x, dz=p1.z-p0.z, L=Math.hypot(dx,dz);
+    if(L<0.02) continue;
+    const u1=u0+L/escalaU;
+    pos.push(p0.x,baseY,p0.z,  p1.x,baseY,p1.z,  p1.x,yTop,p1.z,  p0.x,yTop,p0.z);
+    uv.push(u0,0,  u1,0,  u1,vTop,  u0,vTop);
+    // ¿la normal de este orden mira hacia AFUERA del edificio?
+    const mx=(p0.x+p1.x)/2-cx, mz=(p0.z+p1.z)/2-cz;
+    if(mx*(-dz)+mz*dx > 0) idx.push(v,v+1,v+2, v,v+2,v+3);
+    else                   idx.push(v,v+2,v+1, v,v+3,v+2);
+    v+=4; u0=u1;
+  }
+  if(!v) return null;
+  const g=new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos,3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv,2));
+  g.setIndex(idx); g.computeVertexNormals();
+  return g;
+}
+/* Cubierta: el polígono triangulado y plano, a la altura del alero. Las UVs van
+   por metro de mundo, no por edificio: así la textura no se estira en los
+   grandes ni se apelmaza en los chicos. */
+function geomTecho(pts, baseY, hU, escala){
+  const sh=new THREE.Shape();
+  sh.moveTo(pts[0].x, -pts[0].z);
+  for(let i=1;i<pts.length;i++) sh.lineTo(pts[i].x, -pts[i].z);
+  let g; try{ g=new THREE.ShapeGeometry(sh); }catch(e){ return null; }
+  g.rotateX(-Math.PI/2);
+  g.translate(0, baseY+hU, 0);
+  const p=g.attributes.position, uv=new Float32Array(p.count*2);
+  for(let i=0;i<p.count;i++){ uv[i*2]=p.getX(i)/escala; uv[i*2+1]=p.getZ(i)/escala; }
+  g.setAttribute('uv', new THREE.BufferAttribute(uv,2));
+  return g;
+}
+/* Tiñe una malla entera de un color, con una variación pequeña para que dos
+   edificios vecinos del mismo tipo no salgan calcados. */
+function pintarMalla(g, rgb, variacion){
+  const n=g.attributes.position.count, col=new Float32Array(n*3);
+  const s=1-variacion*0.5+Math.random()*variacion;
+  for(let i=0;i<n;i++){ col[i*3]=rgb[0]*s; col[i*3+1]=rgb[1]*s; col[i*3+2]=rgb[2]*s; }
+  g.setAttribute('color', new THREE.BufferAttribute(col,3));
+}
+/* Trastos de azotea: tanques de agua y cajas de escalera. Es lo que distingue
+   una ciudad de verdad vista desde arriba de una maqueta de cajas lisas. */
+function ponerTrastos(e, yTecho, areaM2, out){
+  const cuantos = areaM2>1500 ? 3 : areaM2>500 ? 2 : 1;
+  let minX=1e9,maxX=-1e9,minZ=1e9,maxZ=-1e9;
+  for(const p of e.pts){ minX=Math.min(minX,p.x);maxX=Math.max(maxX,p.x);
+                         minZ=Math.min(minZ,p.z);maxZ=Math.max(maxZ,p.z); }
+  let puestos=0, intentos=0;
+  while(puestos<cuantos && intentos++<12){
+    // el primer intento va al centro del edificio, que casi siempre cae dentro
+    const x = intentos===1 ? e.cx : minX+Math.random()*(maxX-minX);
+    const z = intentos===1 ? e.cz : minZ+Math.random()*(maxZ-minZ);
+    if(!dentroPoly(x,z,e.pts)) continue;
+    out.push({ x, z, y:yTecho, tanque:Math.random()<0.55,
+               giro:Math.random()*TAU, esc:0.8+Math.random()*0.5 });
+    puestos++;
+  }
+}
+/* Tope de edificios. No es por dibujar: 6000 edificios extruidos son ~200 mil
+   triángulos en DOS mallas fusionadas, nada para una GPU de hoy, y los
+   obstáculos van por rejilla espacial, así que tampoco pesan en la lógica.
+   Está para que una ciudad enorme no agote la memoria en un móvil. */
+const MAX_EDIFICIOS=6000;
+
 async function buildOSM(tok){
   if(!REAL) return;
   const vigente=()=>REAL && (tok===undefined || REAL.tok===tok);   // ¿sigue siendo este mundo?
@@ -1572,8 +1702,11 @@ async function buildOSM(tok){
   if(!j){ feed('⚠ OpenStreetMap ocupado — reintenta la misión para traer la ciudad','bad'); return; }
   if(j.vacio){ feed('Esta zona no tiene edificios mapeados en OpenStreetMap'); REAL.osm={edificios:0,agua:0,arboles:0}; return; }
   const ways=(j.elements||[]).filter(e=>e.geometry && e.geometry.length>2);
+  // cuántos edificios TRAJO OpenStreetMap, antes de filtrar nada. Sin este número
+  // no hay forma de saber si "2855 edificios" es la ciudad entera o un recorte nuestro
+  const traidos=ways.reduce((n,w)=>n+((w.tags&&w.tags.building)?1:0),0);
   const M2U=REAL.vScale, LIM=HALF-4;
-  const geosB=[], aguaPolys=[], treePts=[], calles=[];
+  const edifs=[], aguaPolys=[], treePts=[], calles=[];
   const ANCHO_CALLE={motorway:24,trunk:20,primary:17,secondary:14,tertiary:11,residential:8,unclassified:7,living_street:6,pedestrian:4};
   let nB=0, nA=0, nV=0, nC=0;
   const cBase=new THREE.Color();
@@ -1585,36 +1718,17 @@ async function buildOSM(tok){
       pts.push({x:clamp(p.x,-LIM,LIM), z:clamp(p.z,-LIM,LIM)}); }
     if(!dentro) continue;
     // ---------- EDIFICIOS ----------
-    if(t.building && nB<1500){
+    // Aquí solo se APUNTAN. Se levantan después del bucle, cuando ya están
+    // todos: si la ciudad no cupiera entera, hay que poder elegir cuáles caen,
+    // y para eso hace falta verlos todos primero.
+    if(t.building){
       if(pts.length<4) continue;
       const cx=pts.reduce((s,p)=>s+p.x,0)/pts.length, cz=pts.reduce((s,p)=>s+p.z,0)/pts.length;
-      if(Math.hypot(cx,cz)<22) continue;                        // deja libre la zona de despliegue
       const areaU=areaPoly(pts); if(areaU<0.6) continue;
-      const areaM2=areaU*REAL.mPerU*REAL.mPerU;
-      const alturaM=alturaEdificio(t,areaM2);
-      const hU=Math.max(1.2, alturaM*M2U);
-      const sh=new THREE.Shape();
-      sh.moveTo(pts[0].x, -pts[0].z);
-      for(let i=1;i<pts.length;i++) sh.lineTo(pts[i].x, -pts[i].z);
-      let g;
-      try{ g=new THREE.ExtrudeGeometry(sh,{ depth:hU, bevelEnabled:false, curveSegments:1,
-             UVGenerator: uvFachada(M_TRAMO*REAL.hScale, M_PISO*M2U) }); }catch(e){ continue; }
-      g.rotateX(-Math.PI/2);
-      let baseY=1e9; for(const p of pts) baseY=Math.min(baseY, terrainHeight(p.x,p.z));
-      g.translate(0, baseY-0.4, 0);
-      g.deleteAttribute('normal'); g.computeVertexNormals();
-      // color propio del edificio; el TECHO va más oscuro (si no, parece una caja plana)
-      const [cr,cg,cb]=colorFachada(alturaM, t.building);
-      const n=g.attributes.position.count, col=new Float32Array(n*3), nor=g.attributes.normal;
-      for(let i=0;i<n;i++){
-        const arriba = nor.getY(i)>0.8 ? 0.62 : 1;      // cubierta: más oscura y mate
-        const suc = 0.92+0.16*Math.random()*0.5;        // suciedad/variación entre paños
-        col[i*3]=cr*arriba*suc; col[i*3+1]=cg*arriba*suc; col[i*3+2]=cb*arriba*suc;
-      }
-      g.setAttribute('color', new THREE.BufferAttribute(col,3));
-      geosB.push(g);
-      colliders.push({ x:cx, z:cz, r:Math.max(1.2,Math.sqrt(areaU/Math.PI)*0.85), h:hU });
-      nB++;
+      // deja sitio para desplegar, pero solo lo justo: antes se borraba TODO en
+      // 115 m a la redonda y en pleno centro de Bogotá eso era un cráter
+      if(Math.hypot(cx,cz) < 9+Math.sqrt(areaU/Math.PI)) continue;
+      edifs.push({ pts, cx, cz, areaU, tipo:t.building, tags:t });
     }
     // ---------- CALLES ----------
     else if(t.highway && calles.length<5000){
@@ -1650,20 +1764,73 @@ async function buildOSM(tok){
       }
     }
   }
-  // ---- edificios: se fusionan en UNA malla (rendimiento) ----
-  if(geosB.length){
+  /* ---- EDIFICIOS: se levantan ahora, con todos a la vista ----
+     Muros y cubiertas por separado (dos mallas fusionadas, dos materiales).
+     Si la ciudad no cabe, se ordena por tamaño y sobreviven los GRANDES:
+     perder la silueta se nota; perder casitas sueltas, no. Antes se quedaban
+     los primeros que llegaran, que es un orden sin sentido, y la ciudad salía
+     con parches vacíos en mitad del centro. */
+  const geosMuro=[], geosTecho=[], trastos=[];
+  let recortados=0;
+  if(edifs.length>MAX_EDIFICIOS){
+    edifs.sort((a,b)=>b.areaU-a.areaU);
+    recortados=edifs.length-MAX_EDIFICIOS;
+    edifs.length=MAX_EDIFICIOS;
+  }
+  const escalaTecho=6*REAL.hScale;      // la losa se repite cada 6 m
+  const mH=REAL.hScale;
+  for(const e of edifs){
+    const areaM2=e.areaU*REAL.mPerU*REAL.mPerU;
+    const alturaM=alturaEdificio(e.tags, areaM2);
+    const hU=Math.max(1.2, alturaM*M2U);
+    let baseY=1e9; for(const p of e.pts) baseY=Math.min(baseY, terrainHeight(p.x,p.z));
+    baseY-=0.4;
+    const gm=geomMuros(e.pts, e.cx, e.cz, baseY, hU, M_TRAMO*REAL.hScale, M_PISO*M2U);
+    if(!gm) continue;
+    const gt=geomTecho(e.pts, baseY, hU, escalaTecho);
+    if(!gt){ gm.dispose(); continue; }
+    pintarMalla(gm, colorFachada(alturaM, e.tipo), 0.16);
+    pintarMalla(gt, colorTecho(alturaM, e.tipo), 0.10);
+    geosMuro.push(gm); geosTecho.push(gt);
+    colliders.push({ x:e.cx, z:e.cz, r:Math.max(1.2,Math.sqrt(e.areaU/Math.PI)*0.85), h:hU });
+    if(alturaM<=45 && e.areaU>3) ponerTrastos(e, baseY+hU, areaM2, trastos);
+    nB++;
+  }
+  if(geosMuro.length){
     const U=await getBGU();
-    hacerTexturasFachada();
-    const matB=new THREE.MeshStandardMaterial({ vertexColors:true, roughness:0.82, metalness:0.06,
+    hacerTexturasFachada(); hacerTexturaTecho();
+    const matMuro=new THREE.MeshStandardMaterial({ vertexColors:true, roughness:0.82, metalness:0.06,
       map:TEX_FACHADA, emissive:0xffffff, emissiveMap:TEX_LUCES, emissiveIntensity:0 });
-    MAT_EDIFICIOS=matB; aplicarLucesCiudad();      // se encienden solas de noche
-    if(U && U.mergeGeometries){
-      const merged=U.mergeGeometries(geosB,false);
-      if(merged){ const m=new THREE.Mesh(merged,matB); m.castShadow=true; m.receiveShadow=true; propGroup.add(m); }
-      geosB.forEach(g=>g.dispose());
-    } else {
-      for(const g of geosB){ const m=new THREE.Mesh(g,matB); m.castShadow=true; m.receiveShadow=true; propGroup.add(m); }
-    }
+    const matTecho=new THREE.MeshStandardMaterial({ vertexColors:true, roughness:0.94, metalness:0.02,
+      map:TEX_TECHO });
+    MAT_EDIFICIOS=matMuro; aplicarLucesCiudad();   // las ventanas se encienden solas de noche
+    const soltar=(geos,mat)=>{
+      if(U && U.mergeGeometries){
+        const m=U.mergeGeometries(geos,false);
+        if(m){ const me=new THREE.Mesh(m,mat); me.castShadow=true; me.receiveShadow=true; propGroup.add(me); }
+        geos.forEach(g=>g.dispose());
+      } else for(const g of geos){
+        const me=new THREE.Mesh(g,mat); me.castShadow=true; me.receiveShadow=true; propGroup.add(me); }
+    };
+    soltar(geosMuro, matMuro); soltar(geosTecho, matTecho);
+  }
+  // ---- trastos de azotea (instanciados: una llamada de dibujo cada uno) ----
+  if(trastos.length){
+    const tanques=trastos.filter(t=>t.tanque), cajas=trastos.filter(t=>!t.tanque);
+    const d=new THREE.Object3D();
+    const sembrar=(lista, geo, mat, alto)=>{
+      if(!lista.length) return;
+      const im=new THREE.InstancedMesh(geo, mat, lista.length); im.castShadow=true;
+      lista.forEach((t,i)=>{ d.position.set(t.x, t.y+alto*t.esc/2, t.z);
+        d.rotation.set(0,t.giro,0); d.scale.setScalar(t.esc); d.updateMatrix(); im.setMatrixAt(i,d.matrix); });
+      im.instanceMatrix.needsUpdate=true; propGroup.add(im);
+    };
+    // tanque de agua: cilindro de 1,6 m — en Bogotá están por todas las azoteas
+    sembrar(tanques, new THREE.CylinderGeometry(0.8*mH, 0.8*mH, 1.6*M2U, 8),
+            new THREE.MeshStandardMaterial({color:0x2b2f36, roughness:0.85, metalness:0.05}), 1.6*M2U);
+    // caja de escalera o cuarto de máquinas: 3 × 3 × 2,4 m
+    sembrar(cajas, new THREE.BoxGeometry(3*mH, 2.4*M2U, 3*mH),
+            new THREE.MeshStandardMaterial({color:0x8a8578, roughness:0.9, metalness:0.03}), 2.4*M2U);
   }
   // ---- calles: cintas de asfalto que siguen el relieve ----
   if(calles.length){
@@ -1718,8 +1885,10 @@ async function buildOSM(tok){
     tI.instanceMatrix.needsUpdate=true; lI.instanceMatrix.needsUpdate=true;
     propGroup.add(tI); propGroup.add(lI); nV=treePts.length;
   }
-  REAL.osm={ edificios:nB, agua:nA, arboles:nV, calles:nC };
-  feed('🏙️ '+nB+' edificios · '+nC+' calles · '+nA+' aguas · '+nV+' árboles','good');
+  REAL.osm={ edificios:nB, traidos, agua:nA, arboles:nV, calles:nC, azotea:trastos.length, recortados };
+  feed('🏙️ '+nB+' edificios · '+nC+' calles · '+nA+' aguas · '+nV+' árboles · '+
+       trastos.length+' trastos de azotea','good');
+  if(recortados) feed('· '+recortados+' edificios pequeños quedaron fuera por tamaño de la ciudad');
 }
 /* Pantalla de carga con SEÑALES DE VIDA: sin el contador parecía que el juego
    se había quedado en blanco mientras descargaba. */
@@ -2672,6 +2841,12 @@ addEventListener('keydown',e=>{ keys[e.code]=true;
   if(['Space','KeyW','KeyA','KeyS','KeyD','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code)) e.preventDefault();
 });
 addEventListener('keyup',e=>{ keys[e.code]=false; });
+/* rueda del ratón: inclina el gimbal, como en el mando de un dron de verdad */
+addEventListener('wheel', e=>{
+  if(!playing || paused || mode!=='drone' || !drone.active) return;
+  e.preventDefault();
+  ajustarGimbal(-Math.sign(e.deltaY)*0.09);
+}, {passive:false});
 
 /* ratón: pointer lock para apuntar */
 let pointerLocked=false, mouseFire=false, mouseSec=false;
@@ -2895,7 +3070,7 @@ function toggleVoice(){
 
 /* lee la intención del jugador (unificado) */
 function readInput(dt){
-  const inp={ moveF:0, moveT:0, dyaw:0, dpitch:0, dr_yaw:0, dr_pitch:0, dr_roll:0, fire:false, sec:false, up:false, down:false, boost:false };
+  const inp={ moveF:0, moveT:0, dyaw:0, dpitch:0, dr_yaw:0, dr_pitch:0, dr_roll:0, gimbal:0, fire:false, sec:false, up:false, down:false, boost:false };
   // teclado (casco)
   inp.moveF=((keys.KeyW||keys.ArrowUp)?1:0)-((keys.KeyS||keys.ArrowDown)?1:0);
   inp.moveT=((keys.KeyD||keys.ArrowRight)?1:0)-((keys.KeyA||keys.ArrowLeft)?1:0);
@@ -2903,7 +3078,8 @@ function readInput(dt){
   if(keys.ShiftLeft||keys.ShiftRight){ if(mode==='tank') inp.boost=true; else inp.down=true; }
   if(keys.Space){ if(mode==='drone') inp.up=true; else inp.fire=true; }
   // teclado (dron): W/S adelante-atrás, A/D giro (siempre; el táctil/giroscopio se suma)
-  if(mode==='drone'){ inp.dr_pitch=inp.moveF; inp.dr_yaw=inp.moveT; }
+  if(mode==='drone'){ inp.dr_pitch=inp.moveF; inp.dr_yaw=inp.moveT;
+    inp.gimbal=(keys.KeyR?1:0)-(keys.KeyQ?1:0); }   // R sube la cámara, Q la baja
   // ratón
   if(mouseFire) inp.fire=true; if(mouseSec) inp.sec=true;
   // táctil
@@ -3078,6 +3254,30 @@ function deployDrone(){
   droneCam = stats.drone.view360?1:0;   // los de larga distancia arrancan en 360°
   drone.pos.copy(player.pos).add(new THREE.Vector3(0,14,0));
   drone.vel.set(0,0,0); drone.yaw=player.yaw; drone.pitch=0; drone.roll=0;
+  drone.gimbal=0; drone.gimbalManual=false;   // cámara al frente, en automático
+}
+/* ---------------------------------------------------------------------
+   GIMBAL: la cámara colgante del dron, que se inclina hacia abajo.
+   Sin esto, subir no servía de nada: a más de 200 m la cámara miraba al
+   frente y solo se veía cielo — la ciudad estaba ahí abajo y no se veía.
+   Es lo PRIMERO que hace un piloto de verdad al ganar altura.
+   Va en automático (baja sola al subir) hasta que el jugador la toca; a
+   partir de ahí manda él, hasta que lance otro dron.
+   --------------------------------------------------------------------- */
+const GIMBAL_MIN=-Math.PI/2, GIMBAL_MAX=0.35;      // -90° = a plomo · +20° = algo arriba
+let _gimbalVisto=999;                              // último grado pintado en el HUD
+function gimbalAuto(){
+  // altura sobre el SUELO, no sobre el nivel del mar
+  const h=drone.pos.y-terrainHeight(drone.pos.x, drone.pos.z);
+  // a ras de suelo mira un poco hacia abajo (como miraba antes la cámara fija);
+  // a ~380 m sobre el suelo ya va a 66°, que es el ángulo con el que se sobrevuela
+  return lerp(-0.2, -1.15, clamp((h-10)/70, 0, 1));
+}
+function ajustarGimbal(d){
+  if(!drone.active) return;
+  drone.gimbalManual=true;
+  drone.gimbal=clamp((drone.gimbal||0)+d, GIMBAL_MIN, GIMBAL_MAX);
+  updateChips();
 }
 function armKamikaze(){
   if(mode!=='drone'||!drone.active) return;
@@ -3106,6 +3306,14 @@ function detonateDrone(){
 }
 function updateDrone(dt, inp){
   if(!drone.active) return;
+  // gimbal: manual si lo tocaste, si no baja solo con la altura
+  if(inp.gimbal) ajustarGimbal(inp.gimbal*1.1*dt);
+  else if(!drone.gimbalManual){
+    drone.gimbal=damp(drone.gimbal||0, gimbalAuto(), 2.2, dt);
+    // el indicador solo se repinta cuando el grado cambia, no en cada cuadro
+    const gr=Math.round(drone.gimbal*180/Math.PI);
+    if(gr!==_gimbalVisto){ _gimbalVisto=gr; updateChips(); }
+  }
   // batería: se agota volando; sin carga, casi no sostiene vuelo
   drone.batt=clamp(drone.batt - dt*0.018*(1+(inp.up?0.6:0)), 0, 1);
   const power = drone.batt>0.04 ? 1 : 0.3;
@@ -3202,11 +3410,15 @@ function updateCamera(dt){
       V.set(drone.pos.x - sy*cp*dist, drone.pos.y - player.view.pitch*dist + 1.5, drone.pos.z - cy*cp*dist);
       camera.position.lerp(V, clamp(13*dt,0,1));
       V2.set(drone.pos.x + sy*8, drone.pos.y + player.view.pitch*8, drone.pos.z + cy*8); camera.lookAt(V2);
-    } else { // FPV (un solo ángulo): detrás-arriba mirando al frente
+    } else { // FPV: mira hacia donde apunta el gimbal (al frente o hacia abajo)
       const cy=Math.cos(drone.yaw), sy=Math.sin(drone.yaw);
-      V.copy(drone.pos).addScaledVector(new THREE.Vector3(-sy,0,-cy), 7).add(new THREE.Vector3(0,3.5,0));
+      const g=drone.gimbal||0, cg=Math.cos(g), sg=Math.sin(g);
+      const dx=sy*cg, dy=sg, dz=cy*cg;                 // hacia dónde mira la cámara
+      // la cámara va DETRÁS del dron sobre esa misma línea: al mirar a plomo,
+      // sube encima del dron sola, sin saltos ni cambios de modo
+      V.set(drone.pos.x-dx*7, drone.pos.y-dy*7+2.2, drone.pos.z-dz*7);
       camera.position.lerp(V, clamp(10*dt,0,1));
-      V2.copy(drone.pos).addScaledVector(new THREE.Vector3(sy,0,cy), 10).add(new THREE.Vector3(0,-2,0));
+      V2.set(drone.pos.x+dx*12, drone.pos.y+dy*12, drone.pos.z+dz*12);
       camera.lookAt(V2);
     }
     return;
@@ -3590,7 +3802,11 @@ function updateChips(){
   $('chipSensor').textContent=SENSOR_NAMES[sensor];
   $('chipSensor').className='chip '+(sensor===1?'warn':(sensor===2?'hot':''));
   if(!stats) return;   // aún no hay misión desplegada (arranque)
-  $('chipCam').textContent='CÁMARA · '+(mode==='drone'?DRONECAM_NAMES[droneCam]:CAM_NAMES[camMode]);
+  // en FPV se añade el ángulo del gimbal: sin verlo, el jugador no sabe que existe
+  let cam=(mode==='drone'?DRONECAM_NAMES[droneCam]:CAM_NAMES[camMode]);
+  if(mode==='drone' && droneCam===0 && drone.active)
+    cam+=' '+Math.round((drone.gimbal||0)*180/Math.PI)+'°'+(drone.gimbalManual?'':' auto');
+  $('chipCam').textContent='CÁMARA · '+cam;
   $('chipMode').textContent= mode==='drone'?('DRON · '+(drone.acro?'ACRO':'ÁNGULO')):'UGV TERRESTRE';
   $('chipMode').className='chip '+(mode==='drone'?'hot':'');
   let w;
@@ -4013,7 +4229,10 @@ if(location.search.indexOf('dbg')>=0) window.DRONES={
     const gl=renderer.getContext(); const px=new Uint8Array(w*h*4); gl.readPixels(0,0,w,h,gl.RGBA,gl.UNSIGNED_BYTE,px);
     let sum=0,min=255,max=0; const uniq=new Set();
     for(let i=0;i<px.length;i+=4){ const l=(px[i]+px[i+1]+px[i+2])/3; sum+=l; if(l<min)min=l; if(l>max)max=l; if(i%160===0)uniq.add((px[i]>>4)+','+(px[i+1]>>4)+','+(px[i+2]>>4)); }
-    return {avg:+(sum/(w*h)).toFixed(1), min, max, distinct:uniq.size}; }catch(e){ return 'snap-err '+e.message; } },
+    onResize();   // ⚠ devolver el lienzo a su tamaño: si no, tras medir una vez
+                  // te quedas jugando en una ventanita de 320×180 sin saber por qué
+    return {avg:+(sum/(w*h)).toFixed(1), min, max, distinct:uniq.size}; }
+    catch(e){ try{ onResize(); }catch(_){} return 'snap-err '+e.message; } },
   killOne:()=>{ const e=enemies.find(x=>x.alive); if(e){ damageEnemy(e,9999); return e.tag; } return 'none'; },
   hitPlayer:(d)=>{ damagePlayer(d||50); return +player.hp.toFixed(1); },
   tp:(x,z)=>{ player.pos.x=x; player.pos.z=z; return player.pos.toArray().map(n=>+n.toFixed(1)); },
@@ -4027,7 +4246,10 @@ if(location.search.indexOf('dbg')>=0) window.DRONES={
   air:()=>enemies.filter(e=>e.alive&&e.air).length,
   jammers:()=>enemies.filter(e=>e.alive&&e.jammer).length,
   allies:()=>({total:allies.length, alive:allies.filter(a=>a.alive).length, engaging:allies.filter(a=>a.alive&&a.state==='engage').length, lvl:allies[0]&&allies[0].L.name}),
-  droneInfo:()=>({type:stats&&stats.drone.id, fiber:!!(stats&&stats.drone.fiber), maxAlt:stats&&stats.drone.maxAlt, domain:stats&&stats.drone.domain, cam:DRONECAM_NAMES[droneCam], y:+drone.pos.y.toFixed(1)}),
+  droneInfo:()=>({type:stats&&stats.drone.id, fiber:!!(stats&&stats.drone.fiber), maxAlt:stats&&stats.drone.maxAlt, domain:stats&&stats.drone.domain, cam:DRONECAM_NAMES[droneCam], y:+drone.pos.y.toFixed(1),
+    gimbal:Math.round((drone.gimbal||0)*180/Math.PI), gimbalManual:!!drone.gimbalManual}),
+  setGimbal:(grados)=>{ ajustarGimbal(grados*Math.PI/180-(drone.gimbal||0)); return Math.round((drone.gimbal||0)*180/Math.PI); },
+  gimbalAuto:()=>{ drone.gimbalManual=false; return 'vuelve al automático'; },
   cycleCam:()=>cycleCam(),
   setLoadout:(slot,id)=>{ const l=currentLoadout(); l[slot]=id; store.loadout=l; return l; },
   terrH:(x,z)=>+terrainHeight(x,z).toFixed(2),
