@@ -153,9 +153,16 @@
     background:conic-gradient(rgba(255,255,255,.55) calc(var(--p,0) * 1turn),transparent 0);
     -webkit-mask:radial-gradient(farthest-side,transparent calc(100% - 4px),#000 calc(100% - 3px));
     mask:radial-gradient(farthest-side,transparent calc(100% - 4px),#000 calc(100% - 3px));pointer-events:none}
-  /* botones izquierda (cámara / dron) */
-  .tleft{position:absolute;left:calc(var(--sa-l) + 4px);bottom:calc(var(--sa-b) + 150px);z-index:9;
-    display:flex;flex-flow:row wrap;gap:8px;width:102px;pointer-events:none}
+  /* Botonera de funciones (dron, cámara, sensor, mirada, voz).
+     ⚠ Vivía DENTRO del panel táctil, y como el juego esconde ese panel en
+     cuanto usas el ratón o el teclado, en un PC estos botones desaparecían
+     al primer movimiento. Pero no son controles táctiles: son funciones del
+     juego, y en el ordenador hacen tanta falta como en el móvil — sobre todo
+     MIRADA y VOZ, que si no, nadie descubre que existen. Ahora es su propio
+     panel y se ve siempre que estés jugando. */
+  #utiles{position:fixed;left:calc(var(--sa-l) + 4px);bottom:calc(var(--sa-b) + 150px);z-index:9;
+    display:none;flex-flow:row wrap;gap:8px;width:102px;pointer-events:none}
+  #utiles.on{display:flex}
 
   /* ===== OVERLAYS / MENÚS ===== */
   .overlay{position:fixed;inset:0;z-index:20;display:none;place-items:center;padding:16px;overflow:auto;
@@ -418,15 +425,18 @@
       <button class="tbtn sec" id="btnSec"><div class="ring"></div><span class="ic">🚀</span>2ª ARMA</button>
       <button class="tbtn sec" id="btnKmk" style="display:none;background:rgba(216,30,44,.32);border-color:rgba(255,59,70,.9)"><span class="ic">💥</span>KAMIKAZE</button>
     </div>
-    <div class="tleft">
-      <button class="tbtn util" id="btnDrone"><span class="ic">🚁</span>DRON</button>
-      <button class="tbtn util" id="btnCam"><span class="ic">🎥</span>CÁM</button>
-      <button class="tbtn util" id="btnSensor"><span class="ic">🌡️</span>SENSOR</button>
-      <button class="tbtn util" id="btnGaze"><span class="ic">👁️</span>MIRADA</button>
-      <button class="tbtn util" id="btnVoice"><span class="ic">🎤</span>VOZ</button>
-      <button class="tbtn util sec" id="btnUp" style="display:none"><span class="ic">▲</span>SUBIR</button>
-      <button class="tbtn util sec" id="btnDown" style="display:none"><span class="ic">▼</span>BAJAR</button>
-    </div>
+  </div>
+
+  <!-- Funciones del juego. FUERA del panel táctil a propósito: en un PC el
+       panel táctil se esconde al usar el ratón, y estos botones se iban con él. -->
+  <div id="utiles">
+    <button class="tbtn util" id="btnDrone"><span class="ic">🚁</span>DRON</button>
+    <button class="tbtn util" id="btnCam"><span class="ic">🎥</span>CÁM</button>
+    <button class="tbtn util" id="btnSensor"><span class="ic">🌡️</span>SENSOR</button>
+    <button class="tbtn util" id="btnGaze"><span class="ic">👁️</span>MIRADA</button>
+    <button class="tbtn util" id="btnVoice"><span class="ic">🎤</span>VOZ</button>
+    <button class="tbtn util sec" id="btnUp" style="display:none"><span class="ic">▲</span>SUBIR</button>
+    <button class="tbtn util sec" id="btnDown" style="display:none"><span class="ic">▼</span>BAJAR</button>
   </div>
 
   <a class="backlink" id="backPlaza" href="plaza.html">← Plaza</a>
@@ -885,7 +895,7 @@ function derivedStats(l){
   const hp=ch.hp+ (bl.hp||0);
   const speed=(ch.speed + (bl.speed||0) + (mo.speed||0));
   return {
-    hpMax:hp, hp, speed:14*speed, turn:2.1*ch.turn, boost:(mo.boost||1),
+    hpMax:hp, hp, speed:2.8*speed, turn:2.1*ch.turn, boost:(mo.boost||1),
     stealth:(mo.stealth||1),
     cannon:ca, secondary:se, drone:dr, allies:al, color:ch.color, l:l
   };
@@ -963,7 +973,8 @@ function initEngine(){
   renderer.toneMapping=THREE.ACESFilmicToneMapping;   // aspecto cinematográfico
   renderer.toneMappingExposure=1.12;
   scene=new THREE.Scene();
-  camera=new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.5, 4000);
+  // plano cercano bajo: las maquinas miden metro y medio y la camara va a 3-7 m
+  camera=new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.25, 4000);
   hemi=new THREE.HemisphereLight(0xffffff, 0x40484f, 0.7); scene.add(hemi);
   sun=new THREE.DirectionalLight(0xffffff, 2.4);
   sun.position.set(150,240,110); sun.castShadow=true;
@@ -2332,6 +2343,26 @@ function Ensamblador(){
 const GEO={};
 function geo(clave, hacer){ return GEO[clave] || (GEO[clave]=hacer()); }
 
+/* ---------------------------------------------------------------------
+   ESCALA DE LAS MÁQUINAS  —  esto es un simulador de vehículos NO
+   TRIPULADOS, y esos son PEQUEÑOS. Un THeMIS mide 2,4 m de largo, 2,0 de
+   ancho y 1,1 de alto: menos que un carro familiar. Un Vision 60, 0,9 m.
+   Los modelos estaban dibujados a 22 m de largo — más grandes que las
+   casas por las que pasan — y por eso Bogotá parecía una maqueta y el
+   vehículo un acorazado.
+   Las piezas se siguen escribiendo con números cómodos de leer y el
+   conjunto se encoge aquí, de una vez, al tamaño que le toca. Todo lo que
+   depende del tamaño (cámaras, velocidades, colisiones, bocas de arma)
+   está más abajo en metros, no en números sueltos.
+   --------------------------------------------------------------------- */
+const MPU=5.22;                    // metros que mide una unidad del juego (lo usa tambien el telemetro)
+const M=1/MPU;                     // un metro, en unidades
+const ESC_UGV  = 2.4*M/4.2;        // el casco medía 4,2 u de largo → 2,4 m
+const ESC_DRON = 0.9*M/1.9;        // 1,9 u de envergadura → 0,9 m (dron pesado de ataque)
+const ESC_PERRO= 0.9*M/1.9;        // 1,9 u → 0,9 m de largo
+const ESC_TORRETA=2.5*M/4.8;       // emplazamiento de arma remota: 2,5 m de alto
+const ESC_JAMMER =8.0*M/7.0;       // mastil de interferencia: 8 m
+
 /* =====================================================================
    UGV ARMADO A CONTROL REMOTO
    Antes: dos cajas de oruga, cinco ruedas lisas, un casco, una torreta
@@ -2488,7 +2519,9 @@ function buildVehicle(opt){
 
   E.volcar(g, true);
   g.add(turret);
-  g.userData={turret, barrelPiv, barrelLen:3.6, rws, mgBoca:new THREE.Vector3(0,0.32,1.5), led};
+  g.scale.setScalar(ESC_UGV);          // 2,4 m de largo, como un UGV de verdad
+  // barrelLen se usa en coordenadas de MUNDO, asi que va escalado a mano
+  g.userData={turret, barrelPiv, barrelLen:3.6*ESC_UGV, rws, mgBoca:new THREE.Vector3(0,0.32,1.5), led};
   return g;
 }
 
@@ -2599,6 +2632,7 @@ function buildDrone(color, opt){
   }
 
   E.volcar(g, true);
+  g.scale.setScalar(ESC_DRON);          // 0,9 m de envergadura
   g.userData={rotors};
   return g;
 }
@@ -2637,7 +2671,8 @@ const cmdPost=new THREE.Vector3(); let cmdMesh=null;
 /* motor de física de terceros (cannon-es, carga diferida y opcional) */
 let CANNON=null, physWorld=null, physReady=false;
 const physBodies=[], barrelQueue=[]; let tankBody=null;
-const MPU=5;                 // metros por unidad (lectura del telémetro)
+/* el telémetro usa la MISMA escala que todo lo demás (arriba, MPU=5.22).
+   Antes tenía su propio 5 y por eso las distancias salían un 4% cortas. */
 const CANNON_GRAV=13;        // caída balística del cañón
 const SIG_RANGE=280;         // alcance del enlace (unidades)
 let gunAim={range:0, impact:new THREE.Vector3(), hit:false, valid:false};
@@ -2819,8 +2854,8 @@ function updateProjectiles(dt){
         for(const e of enemies){ if(!e.alive) continue; if(e.pos.distanceTo(hp)<e.radius){ hit={p:hp.clone(), target:e}; break; } }
       } else {
         // los proyectiles enemigos golpean al UGV (aunque estés pilotando el dron)
-        if(player.alive && player.pos.distanceTo(hp)<2.4){ hit={p:hp.clone(), player:true}; }
-        else { for(const a of allies){ if(a.alive && a.pos.distanceTo(hp)<2.2){ hit={p:hp.clone(), ally:a}; break; } } }
+        if(player.alive && player.pos.distanceTo(hp)<1.8*M){ hit={p:hp.clone(), player:true}; }
+        else { for(const a of allies){ if(a.alive && a.pos.distanceTo(hp)<1.0*M){ hit={p:hp.clone(), ally:a}; break; } } }
       }
       // barriles explosivos (cualquier bando los detona)
       if(!hit && physReady){ for(const pb of physBodies){ if(!pb.explosive||pb.exploding)continue; const b=pb.body;
@@ -2866,11 +2901,11 @@ function spawnEnemy(kind, x, z){
   const isTurret=kind==='turret', isAir=kind==='airdrone', isJammer=kind==='jammer', isPerro=kind==='perro';
   const gy=terrainHeight(x,z);
   let mesh, hp, radius, tag, y;
-  if(isAir){ mesh=buildDrone(0x6e3838, {kamikaze:Math.random()<0.4}); y=gy+16+Math.random()*12; hp=40; radius=2.4; tag='tank'; }
-  else if(isJammer){ mesh=buildJammer(); y=gy; hp=65; radius=2.6; tag='jammer'; }
-  else if(isTurret){ mesh=buildTurret(); y=gy; hp=70; radius=2.2; tag='turret'; }
-  else if(isPerro){ mesh=buildPerro(0x4b4238); y=gy; hp=32; radius=1.4; tag='perro'; }
-  else { mesh=buildVehicle({color:0x6b4a3f, accent:0x3a2a24, led:0xff5a4a}); y=gy; hp=90; radius=2.4; tag='tank'; }
+  if(isAir){ mesh=buildDrone(0x6e3838, {kamikaze:Math.random()<0.4}); y=gy+(16+Math.random()*12)*M*5; hp=40; radius=1.1*M; tag='tank'; }
+  else if(isJammer){ mesh=buildJammer(); y=gy; hp=65; radius=2.4*M; tag='jammer'; }
+  else if(isTurret){ mesh=buildTurret(); y=gy; hp=70; radius=1.8*M; tag='turret'; }
+  else if(isPerro){ mesh=buildPerro(0x4b4238); y=gy; hp=32; radius=0.9*M; tag='perro'; }
+  else { mesh=buildVehicle({color:0x6b4a3f, accent:0x3a2a24, led:0xff5a4a}); y=gy; hp=90; radius=1.8*M; tag='tank'; }
   mesh.position.set(x,y,z); scene.add(mesh);
   const e={ mesh, kind, tag, pos:new THREE.Vector3(x,y,z), yaw:Math.random()*TAU,
     vel:new THREE.Vector3(), hp, hpMax:hp, alive:true, radius,
@@ -2946,11 +2981,11 @@ function buildPerro(color){
      casi la mitad de un blindado. Un Vision 60 real mide 1 m frente a los 7 m
      de un tanque. Se encoge para que la proporción se lea bien; sigue siendo
      generoso a propósito, porque hay que poder verlo y acertarle. */
-  g.scale.setScalar(PERRO_ESC);
+  g.scale.setScalar(ESC_PERRO);
   g.userData={patas, led, rifleBoca:new THREE.Vector3(0,0.7,1.45)};
   return g;
 }
-const PERRO_ESC=0.6, PERRO_ALTO=0.86*0.6;   // alto del vientre, ya escalado
+const PERRO_ESC=ESC_PERRO, PERRO_ALTO=0.86*ESC_PERRO;   // alto del vientre, ya escalado
 /* ---------------------------------------------------------------------
    CÓMO CAMINA
    Trote diagonal: delantera izquierda con trasera derecha, y al revés.
@@ -3005,6 +3040,7 @@ function buildJammer(){
     arr.position.set(Math.cos(i*2.1)*0.7,5.6,Math.sin(i*2.1)*0.7); arr.rotation.z=0.3; g.add(arr); }
   const led=new THREE.Mesh(new THREE.SphereGeometry(0.18,8,8), new THREE.MeshStandardMaterial({color:0xa030ff,emissive:0xa030ff,emissiveIntensity:2}));
   led.position.y=6.9; g.add(led); g.userData.led=led;
+  g.scale.setScalar(ESC_JAMMER);
   return g;
 }
 function buildTurret(){
@@ -3017,7 +3053,8 @@ function buildTurret(){
   const barrelPiv=new THREE.Group(); barrelPiv.position.set(0,0.4,0.4);
   const barrel=new THREE.Mesh(new THREE.CylinderGeometry(0.16,0.2,3,8), new THREE.MeshStandardMaterial({color:0x20242b,flatShading:true})); barrel.rotation.x=Math.PI/2; barrel.position.z=1.5; barrelPiv.add(barrel);
   turret.add(barrelPiv); g.add(turret);
-  g.userData={turret, barrelPiv, barrelLen:3.0};
+  g.scale.setScalar(ESC_TORRETA);
+  g.userData={turret, barrelPiv, barrelLen:3.0*ESC_TORRETA};
   return g;
 }
 function pickWaypoint(e){ const a=Math.random()*TAU, r=30+Math.random()*120; e.wp.set(Math.cos(a)*r, 0, Math.sin(a)*r); }
@@ -3025,7 +3062,7 @@ function damageEnemy(e, dmg){
   if(!e.alive) return; e.hp-=dmg;
   if(e.ia) IA.anotarDanio(e);                       // le están disparando → puede buscar cobertura
   if(e.hp<=0){ e.alive=false; e.mesh.visible=false; if(e.ia) IA.cambiar(e,'DESTRUIDO','destruido');
-    spawnExplosion(e.pos, e.air?6:8, 0xffa040); spawnSmoke(e.pos);
+    spawnExplosion(e.pos, (e.air?4:6)*M*3, 0xffa040); spawnSmoke(e.pos);
     killCount.enemy++; killCount[e.tag]=(killCount[e.tag]||0)+1;
     const nm = e.kind==='airdrone'?'Dron derribado' : e.kind==='jammer'?'Jammer destruido · enlace libre'
              : e.kind==='perro'?'Perro robot abatido' : e.tag==='turret'?'Torreta destruida' : 'Blindado destruido';
@@ -3444,15 +3481,16 @@ function moverUnidad(e, orden, dt){
   // ---------- TERRESTRE (blindado / torreta / perro robot) ----------
   if(e.mobile && orden.ir){
     const dx=orden.ir.x-e.pos.x, dz=orden.ir.z-e.pos.z, L=Math.hypot(dx,dz);
-    const cerca=e.perro?1.8:3.5;
+    const cerca=(e.perro?2:5)*M;
     if(L>cerca){
       // el perro gira y corre mucho más que un blindado: es su gracia
       e.yaw=angLerp(e.yaw, Math.atan2(dx,dz), (e.perro?3.4:1.4)*dt);
-      const sp=(e.perro?12:9)*(orden.prisa||1);
+      // 1,7 u/s = 32 km/h el blindado; 1,25 u/s = 23 km/h el perro corriendo
+      const sp=(e.perro?1.25:1.7)*(orden.prisa||1);
       e.vel.set(Math.sin(e.yaw)*sp, 0, Math.cos(e.yaw)*sp);
       e.pos.addScaledVector(e.vel, dt);
       e.pos.x=clamp(e.pos.x,-HALF+6,HALF-6); e.pos.z=clamp(e.pos.z,-HALF+6,HALF-6);
-      resolveColliders(e.pos, e.perro?0.9:2.2);
+      resolveColliders(e.pos, (e.perro?0.5:1.3)*M);
     } else e.vel.set(0,0,0);
   } else e.vel.set(0,0,0);
   e.pos.y=damp(e.pos.y, terrainHeight(e.pos.x,e.pos.z)+(e.perro?PERRO_ALTO:0), 12, dt);
@@ -3504,10 +3542,10 @@ function moverUnidad(e, orden, dt){
       return;
     }
     e.reload=1.6+Math.random()*1.1; gastarMunicion(e);
-    const muzzle=e.pos.clone().setY(e.pos.y+2.0);
+    const muzzle=e.pos.clone().setY(e.pos.y+1.2*M);
     const d=_toP.copy(mirar).sub(e.pos).normalize(), disp=disp0;
     d.x+=(Math.random()-0.5)*disp; d.y+=(Math.random()-0.5)*disp*0.6; d.z+=(Math.random()-0.5)*disp; d.normalize();
-    muzzle.addScaledVector(d, 3);
+    muzzle.addScaledVector(d, 1.6*M);
     fireProjectile(muzzle, d, {speed:150, dmg:e.tag==='turret'?14:12, from:'enemy', color:0xff6a4a, splash:2, life:3});
     fogonazo(muzzle, d, 1.5);
   }
@@ -3531,7 +3569,7 @@ function spawnAlly(idx, lvl){
   const a={ mesh, pos:new THREE.Vector3(), vel:new THREE.Vector3(), yaw:0, hp:L.hp, hpMax:L.hp,
     alive:true, state:'follow', target:null, reload:Math.random(), L, lvl, offset:idx, bob:Math.random()*TAU,
     mobile:true, aim:0, wp:new THREE.Vector3() };
-  a.pos.copy(player.pos).add(new THREE.Vector3((idx%2?1:-1)*8, 16+idx*2, -5));
+  a.pos.copy(player.pos).add(new THREE.Vector3((idx%2?1:-1)*5*M, (9+idx*3)*M, -4*M));
   IA.iaInit(a, 'azul', 'aliado');      // sensores + memoria táctica propios
   allies.push(a);
 }
@@ -3646,6 +3684,7 @@ function setModoEntrada(touch){
   if(IS_TOUCH===touch) return;
   IS_TOUCH=touch;
   $('touch').classList.toggle('on', touch && playing);
+  $('utiles').classList.toggle('on', !!playing);   // este NO depende de ratón o dedo
   if(!touch && document.exitPointerLock && !playing) {}
   checkRotate(); avisoRaton();
 }
@@ -3669,7 +3708,8 @@ addEventListener('keydown',e=>{ keys[e.code]=true;
   if(e.code==='KeyM'){ toggleGaze(); }
   if(e.code==='KeyG' && gaze.ready){ calibrateGaze(); }
   if(e.code==='KeyH' && gaze.ready){ gaze.invertYaw=!gaze.invertYaw; feed('Mirada '+(gaze.invertYaw?'normal':'invertida')); }
-  if(e.code==='KeyB' && playing && mode==='drone'){ drone.acro=!drone.acro; feed('Vuelo: '+(drone.acro?'ACRO (manual)':'ÁNGULO (auto-nivel)')); updateChips(); }
+  if(e.code==='KeyB' && playing && mode==='drone'){ drone.acro=!drone.acro;
+    feed('Vuelo: '+(drone.acro?'ACRO — dron de carreras, sigue avanzando al soltar':'FÁCIL — sueltas y se para, mantiene la altura')); updateChips(); }
   if(['Space','KeyW','KeyA','KeyS','KeyD','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code)) e.preventDefault();
 });
 addEventListener('keyup',e=>{ keys[e.code]=false; });
@@ -3991,7 +4031,7 @@ function updatePlayer(dt, inp){
     player.vel.set(fX*player.speed, 0, fZ*player.speed);
     player.pos.addScaledVector(player.vel, dt);
     player.pos.x=clamp(player.pos.x,-HALF+6,HALF-6); player.pos.z=clamp(player.pos.z,-HALF+6,HALF-6);
-    resolveColliders(player.pos, 2.2);
+    resolveColliders(player.pos, 1.3*M);
     // impulso: consume/recupera
     if(inp.boost&&Math.abs(inp.moveF)>0.05) player.boost=clamp(player.boost-dt*0.4,0,1); else player.boost=clamp(player.boost+dt*0.18,0,1);
     // SUSPENSIÓN: muestrea las 4 esquinas del casco -> cabeceo y balanceo reales
@@ -4117,7 +4157,7 @@ function deployDrone(){
   else { drone.mesh=buildDrone(stats.color); scene.add(drone.mesh); addHeat(drone.mesh, 0.4, 4); }
   drone.active=true; drone.hp=60; drone.kamikaze=false; drone.diving=false; drone.acro=false;
   droneCam = stats.drone.view360?1:0;   // los de larga distancia arrancan en 360°
-  drone.pos.copy(player.pos).add(new THREE.Vector3(0,14,0));
+  drone.pos.copy(player.pos).add(new THREE.Vector3(0,8*M,0));
   drone.vel.set(0,0,0); drone.yaw=player.yaw; drone.pitch=0; drone.roll=0;
   drone.gimbal=0; drone.gimbalManual=false;   // cámara al frente, en automático
 }
@@ -4131,6 +4171,12 @@ function deployDrone(){
    --------------------------------------------------------------------- */
 const GIMBAL_MIN=-Math.PI/2, GIMBAL_MAX=0.35;      // -90° = a plomo · +20° = algo arriba
 let _gimbalVisto=999;                              // último grado pintado en el HUD
+/* Velocidades del dron, en metros por segundo llevados a unidades.
+   30 m/s son 108 km/h: lo que da de sí un FPV rápido de verdad, y lo justo
+   para cruzar el mapa sin que se haga eterno. Subir a 15 m/s pone el dron a
+   300 m —la altura desde la que mejor se ve la ciudad— en veinte segundos. */
+const VEL_DRON=30*M, VEL_SUBE=15*M;
+const _dv1=new THREE.Vector3(), _dv2=new THREE.Vector3(), _dv3=new THREE.Vector3();
 function gimbalAuto(){
   // altura sobre el SUELO, no sobre el nivel del mar
   const h=drone.pos.y-terrainHeight(drone.pos.x, drone.pos.z);
@@ -4154,7 +4200,7 @@ function armKamikaze(){
 function toggleDrone(){
   if(mode==='tank'){
     if(!drone.active) deployDrone();
-    mode='drone'; feed('Dron aéreo · IZQ vuela/gira, DER sube/baja','good');
+    mode='drone'; feed('Dron aéreo · W/S adelante-atrás · A/D girar · Espacio sube · Mayús baja','good');
   } else {
     mode='tank'; feed('Control · UGV terrestre');
     $('btnUp').style.display='none'; $('btnDown').style.display='none';
@@ -4162,9 +4208,9 @@ function toggleDrone(){
   updateChips();
 }
 function detonateDrone(){
-  spawnExplosion(drone.pos, 16, 0xffb030); spawnSmoke(drone.pos);
+  spawnExplosion(drone.pos, 9*M*3, 0xffb030); spawnSmoke(drone.pos);
   const fl=new THREE.PointLight(0xffa040,8,60); fl.position.copy(drone.pos); scene.add(fl); effects.push({mesh:fl,t:0,life:0.35,kind:'light'});
-  for(const e of enemies){ if(e.alive && e.pos.distanceTo(drone.pos)<15) damageEnemy(e, 130); }
+  for(const e of enemies){ if(e.alive && e.pos.distanceTo(drone.pos)<9*M) damageEnemy(e, 130); }
   drone.active=false; drone.kamikaze=false; drone.diving=false; if(drone.mesh)drone.mesh.visible=false;
   feed('💥 Munición merodeadora: impacto','good');
   mode='tank'; updateChips(); $('btnUp').style.display='none'; $('btnDown').style.display='none';
@@ -4182,45 +4228,63 @@ function updateDrone(dt, inp){
   // batería: se agota volando; sin carga, casi no sostiene vuelo
   drone.batt=clamp(drone.batt - dt*0.018*(1+(inp.up?0.6:0)), 0, 1);
   const power = drone.batt>0.04 ? 1 : 0.3;
-  // kamikaze: al disparar, se compromete al picado
   // yaw — derecha = gira a la derecha (signo negativo, ver nota en updatePlayer)
   drone.yaw -= (inp.dr_yaw||0)*2.6*dt;
-  // inclinación -> aceleración. Dos modos FPV:
   const inPitch=clamp(inp.dr_pitch||0,-1,1), inRoll=clamp(inp.dr_roll||0,-1,1);
-  if(drone.acro){ // ACRO: control por tasa, la actitud se mantiene (FPV manual real)
-    drone.pitch=clamp(drone.pitch+inPitch*1.9*dt, -1, 1); drone.roll=clamp(drone.roll+inRoll*1.9*dt, -1, 1);
-  } else {        // ÁNGULO: auto-nivelado al soltar (más vivo que antes)
-    drone.pitch=damp(drone.pitch, inPitch*0.5, 8, dt); drone.roll=damp(drone.roll, inRoll*0.5, 8, dt);
-  }
+  const lift=(inp.up?1:0)-(inp.down?1:0);
   const cy=Math.cos(drone.yaw), sy=Math.sin(drone.yaw);
   // "right" es la DERECHA DE LA PANTALLA (comprobado con la matriz de la cámara):
   // con el signo anterior, inclinar a la derecha desplazaba el dron a la izquierda.
-  const fwd=new THREE.Vector3(sy,0,cy), right=new THREE.Vector3(-cy,0,sy);
-  const accel=38*power;
-  drone.vel.addScaledVector(fwd, drone.pitch*accel*dt);   // empuje según la actitud real del dron
-  drone.vel.addScaledVector(right, drone.roll*accel*dt);
-  drone.vel.addScaledVector(windVec, dt);                 // viento (clima)
-  // vertical
-  const lift=(inp.up?1:0)-(inp.down?1:0);
-  drone.vel.y += lift*22*power*dt;
-  drone.vel.y -= 4*dt; // leve descenso natural si no subes
-  // arrastre
-  drone.vel.x*=Math.pow(0.12,dt); drone.vel.z*=Math.pow(0.12,dt); drone.vel.y*=Math.pow(0.5,dt);
-  // picado kamikaze: se lanza adelante-abajo, acelerando
-  if(drone.diving){ drone.vel.set(sy*44, drone.vel.y-46*dt, cy*44); }
+  const fwd=_dv1.set(sy,0,cy), right=_dv2.set(-cy,0,sy);
+
+  if(drone.acro){
+    /* ACRO — el dron de carreras de siempre: la palanca inclina el aparato y
+       la inclinación genera el empuje. Sigue avanzando al soltar, se hunde si
+       no das gas y el viento te arrastra. Es lo realista para un FPV de
+       competición y es difícil a propósito. */
+    drone.pitch=clamp(drone.pitch+inPitch*1.9*dt, -1, 1);
+    drone.roll =clamp(drone.roll +inRoll *1.9*dt, -1, 1);
+    const accel=38*power;
+    drone.vel.addScaledVector(fwd, drone.pitch*accel*dt);
+    drone.vel.addScaledVector(right, drone.roll*accel*dt);
+    drone.vel.addScaledVector(windVec, dt);
+    drone.vel.y += lift*22*power*dt;
+    drone.vel.y -= 4*dt;
+    drone.vel.x*=Math.pow(0.12,dt); drone.vel.z*=Math.pow(0.12,dt); drone.vel.y*=Math.pow(0.5,dt);
+  } else {
+    /* FÁCIL — como vuela un dron comercial de hoy, que es lo que hace que
+       cualquiera pueda pilotarlo:
+         · la palanca pide una VELOCIDAD, no un empuje → sueltas y se PARA
+         · mantiene la altura sola: si no das gas, no se hunde
+         · el viento lo compensa la controladora; solo notas un empujón
+       Y la inclinación pasa a ser lo que es en realidad: la CONSECUENCIA de
+       acelerar, no la forma de pilotar. Por eso se calcula de la palanca y
+       solo sirve para que el aparato se vea inclinado al arrancar y frenar. */
+    _dv3.set(0,0,0).addScaledVector(fwd, inPitch*VEL_DRON*power)
+                   .addScaledVector(right, inRoll*VEL_DRON*power);
+    _dv3.y = lift*VEL_SUBE*power;
+    _dv3.x += windVec.x*0.18; _dv3.z += windVec.z*0.18;   // el viento se nota, no manda
+    drone.vel.x=damp(drone.vel.x, _dv3.x, 5.5, dt);
+    drone.vel.z=damp(drone.vel.z, _dv3.z, 5.5, dt);
+    drone.vel.y=damp(drone.vel.y, _dv3.y, 6.5, dt);
+    drone.pitch=damp(drone.pitch, inPitch*0.40, 6, dt);
+    drone.roll =damp(drone.roll,  inRoll *0.40, 6, dt);
+  }
+  // picado kamikaze: se lanza adelante-abajo, acelerando (igual en los dos modos)
+  if(drone.diving){ drone.vel.set(sy*8.4, drone.vel.y-8.8*dt, cy*8.4); }
   drone.pos.addScaledVector(drone.vel, dt);
   // límites y suelo
   drone.pos.x=clamp(drone.pos.x,-HALF+4,HALF-4); drone.pos.z=clamp(drone.pos.z,-HALF+4,HALF-4);
   const dom=stats.drone.domain, gy=terrainHeight(drone.pos.x,drone.pos.z);
   const wl = (water&&water.visible)? water.position.y : -9999;
   let minY;
-  if(dom==='sub'||dom==='amph') minY=gy+0.6;                       // se sumergen hasta el fondo
-  else if(dom==='surface') minY=Math.max(gy+0.6, wl+0.4);          // flota en el mar
-  else minY=Math.max(gy+2.2, wl+1.5);                              // aéreos no se sumergen
+  if(dom==='sub'||dom==='amph') minY=gy+0.4*M;                     // se sumergen hasta el fondo
+  else if(dom==='surface') minY=Math.max(gy+0.4*M, wl+0.3*M);      // flota en el mar
+  else minY=Math.max(gy+1.2*M, wl+1*M);                            // aéreos no se sumergen
   // impacto kamikaze
   if(drone.diving){
     let boom = drone.pos.y<=minY;
-    for(const e of enemies){ if(e.alive && e.pos.distanceTo(drone.pos)<6){ boom=true; break; } }
+    for(const e of enemies){ if(e.alive && e.pos.distanceTo(drone.pos)<4*M){ boom=true; break; } }
     if(boom){ detonateDrone(); return; }
   }
   if(drone.pos.y<minY){ drone.pos.y=minY; if(drone.vel.y<0)drone.vel.y=0; }
@@ -4231,7 +4295,7 @@ function updateDrone(dt, inp){
   for(const r of drone.mesh.userData.rotors) r.rotation.y+=dt*60*power;
   // reconocimiento: marca puntos cercanos
   drone.dropReload-=dt;
-  for(const rp of reconPoints){ if(!rp.done && Math.hypot(drone.pos.x-rp.pos.x, drone.pos.z-rp.pos.z)<20){ rp.done=true; reconDone++;
+  for(const rp of reconPoints){ if(!rp.done && Math.hypot(drone.pos.x-rp.pos.x, drone.pos.z-rp.pos.z)<45*M){ rp.done=true; reconDone++;
     if(rp.marker&&rp.marker.userData.ring)rp.marker.userData.ring.material.color.setHex(0x3ff0c0);
     feed('Blanco marcado ('+reconDone+')','good'); checkObjectives(); } }
   // soltar carga / disparar
@@ -4267,23 +4331,23 @@ let flashT=0; function hudFlash(){ flashT=0.18; }
 function updateCamera(dt){
   if(mode==='drone' && drone.active){
     if(droneCam===2){ // CENITAL (recon/bombardeo, mira hacia abajo)
-      V.set(drone.pos.x, drone.pos.y+24, drone.pos.z+0.01); camera.position.lerp(V, clamp(9*dt,0,1));
+      V.set(drone.pos.x, drone.pos.y+12*M, drone.pos.z+0.01); camera.position.lerp(V, clamp(9*dt,0,1));
       camera.lookAt(drone.pos.x, drone.pos.y, drone.pos.z);
     } else if(droneCam===1){ // 360°: cámara libre alrededor del dron (ratón/stick/gyro)
       const cy=Math.cos(player.view.yaw), sy=Math.sin(player.view.yaw), cp=Math.cos(player.view.pitch);
-      const dist=8;
-      V.set(drone.pos.x - sy*cp*dist, drone.pos.y - player.view.pitch*dist + 1.5, drone.pos.z - cy*cp*dist);
+      const dist=4*M;
+      V.set(drone.pos.x - sy*cp*dist, drone.pos.y - player.view.pitch*dist + 0.8*M, drone.pos.z - cy*cp*dist);
       camera.position.lerp(V, clamp(13*dt,0,1));
-      V2.set(drone.pos.x + sy*8, drone.pos.y + player.view.pitch*8, drone.pos.z + cy*8); camera.lookAt(V2);
+      V2.set(drone.pos.x + sy*30*M, drone.pos.y + player.view.pitch*30*M, drone.pos.z + cy*30*M); camera.lookAt(V2);
     } else { // FPV: mira hacia donde apunta el gimbal (al frente o hacia abajo)
       const cy=Math.cos(drone.yaw), sy=Math.sin(drone.yaw);
       const g=drone.gimbal||0, cg=Math.cos(g), sg=Math.sin(g);
       const dx=sy*cg, dy=sg, dz=cy*cg;                 // hacia dónde mira la cámara
       // la cámara va DETRÁS del dron sobre esa misma línea: al mirar a plomo,
       // sube encima del dron sola, sin saltos ni cambios de modo
-      V.set(drone.pos.x-dx*7, drone.pos.y-dy*7+2.2, drone.pos.z-dz*7);
+      V.set(drone.pos.x-dx*3.6*M, drone.pos.y-dy*3.6*M+1.2*M, drone.pos.z-dz*3.6*M);
       camera.position.lerp(V, clamp(10*dt,0,1));
-      V2.set(drone.pos.x+dx*12, drone.pos.y+dy*12, drone.pos.z+dz*12);
+      V2.set(drone.pos.x+dx*30*M, drone.pos.y+dy*30*M, drone.pos.z+dz*30*M);
       camera.lookAt(V2);
     }
     return;
@@ -4291,19 +4355,19 @@ function updateCamera(dt){
   const tp=player.pos;
   if(camMode===1){ // FPV torreta
     const dir=aimDir(); const ud=player.mesh.userData; ud.turret.getWorldPosition(V);
-    V.y+=0.6; V.addScaledVector(dir,0.6);
+    V.y+=0.35*M; V.addScaledVector(dir,0.5*M);
     camera.position.lerp(V, clamp(20*dt,0,1));
-    V2.copy(V).addScaledVector(dir, 40); camera.lookAt(V2);
+    V2.copy(V).addScaledVector(dir, 200*M); camera.lookAt(V2);
   } else if(camMode===2){ // táctica (arriba)
-    V.set(tp.x, tp.y+70, tp.z-0.01); camera.position.lerp(V, clamp(8*dt,0,1)); camera.lookAt(tp.x,tp.y,tp.z);
+    V.set(tp.x, tp.y+45*M, tp.z-0.01); camera.position.lerp(V, clamp(8*dt,0,1)); camera.lookAt(tp.x,tp.y,tp.z);
   } else { // persecución
     const cy=Math.cos(player.view.yaw), sy=Math.sin(player.view.yaw);
-    const dist=15, height=7;
+    const dist=7*M, height=3*M;      // 7 m detras y 3 m arriba de un vehiculo de 2,4 m
     V.set(tp.x - sy*dist, tp.y + height - player.view.pitch*dist*0.8, tp.z - cy*dist);
     // recoil
-    if(recoilT>0){ recoilT-=dt; V.addScaledVector(aimDir(), -1.2*recoilT*8); }
+    if(recoilT>0){ recoilT-=dt; V.addScaledVector(aimDir(), -1.2*recoilT*8*M*3); }
     camera.position.lerp(V, clamp(9*dt,0,1));
-    V2.set(tp.x, tp.y+1.6, tp.z); camera.lookAt(V2);
+    V2.set(tp.x, tp.y+1.0*M, tp.z); camera.lookAt(V2);   // 1 m sobre el vehiculo, no 8
   }
 }
 function updateUnderwater(){
@@ -4383,6 +4447,7 @@ function deployMission(m){
   $('menu').classList.remove('on'); $('briefing').classList.remove('on'); $('result').classList.remove('on'); $('pause').classList.remove('on');
   $('hud').classList.add('on'); $('backPlaza').classList.remove('on');
   if(IS_TOUCH) $('touch').classList.add('on');
+  $('utiles').classList.add('on');
   $('reticle').classList.add('on');
   updateChips(); updateObjText();
   if(gaze.active){ gaze.calibViewPitch=player.view.pitch; } // reancla el pitch de la mirada
@@ -4444,7 +4509,7 @@ function endMission(win, reason){
     save();
   }
   setTimeout(()=>{
-    $('hud').classList.remove('on'); $('touch').classList.remove('on'); $('rotate').classList.remove('on');
+    $('hud').classList.remove('on'); $('touch').classList.remove('on'); $('utiles').classList.remove('on'); $('rotate').classList.remove('on');
     $('resTitle').textContent=win?'MISIÓN CUMPLIDA':'MISIÓN FALLIDA';
     $('resTitle').style.color=win?'var(--hud)':'var(--rojo-2)';
     $('resDesc').textContent=win? '¡Operación completada, comandante!' : (reason||'Vuelve a intentarlo.');
@@ -4672,7 +4737,7 @@ function updateChips(){
   if(mode==='drone' && droneCam===0 && drone.active)
     cam+=' '+Math.round((drone.gimbal||0)*180/Math.PI)+'°'+(drone.gimbalManual?'':' auto');
   $('chipCam').textContent='CÁMARA · '+cam;
-  $('chipMode').textContent= mode==='drone'?('DRON · '+(drone.acro?'ACRO':'ÁNGULO')):'UGV TERRESTRE';
+  $('chipMode').textContent= mode==='drone'?('DRON · '+(drone.acro?'ACRO':'FÁCIL')):'UGV TERRESTRE';
   $('chipMode').className='chip '+(mode==='drone'?'hot':'');
   let w;
   if(mode==='drone') w = drone.kamikaze?'⚠ KAMIKAZE' : (stats.drone.armed?'CARGA EXPL.':'RECON/MARCA');
@@ -4826,7 +4891,7 @@ function doPause(){ paused=true; if(document.exitPointerLock)document.exitPointe
   $('pauseObj').innerHTML=mission?mission.name:''; $('pause').classList.add('on'); }
 function resume(){ paused=false; $('pause').classList.remove('on'); }
 function toMenu(){ playing=false; paused=false;
-  $('pause').classList.remove('on'); $('result').classList.remove('on'); $('hud').classList.remove('on'); $('touch').classList.remove('on'); $('rotate').classList.remove('on');
+  $('pause').classList.remove('on'); $('result').classList.remove('on'); $('hud').classList.remove('on'); $('touch').classList.remove('on'); $('utiles').classList.remove('on'); $('rotate').classList.remove('on');
   setSensor(0); $('linkFx').style.opacity=0; $('linkWarn').classList.remove('on'); $('underFx').classList.remove('on');   // limpia overlays
   IA.dbgOff();
   $('menu').classList.add('on'); $('backPlaza').classList.add('on'); renderMissions(); }
@@ -5091,6 +5156,21 @@ if(location.search.indexOf('dbg')>=0) window.DRONES={
     return { pasos:n||60, ms:+(performance.now()-t0).toFixed(1), msPorPaso:+((performance.now()-t0)/(n||60)).toFixed(3) }; },
   fireTest:()=>{ mouseFire=true; },
   secTest:(on)=>{ mouseSec=(on!==false); return mouseSec; },
+  /* Mide de verdad las máquinas: caja envolvente en METROS. Es la unica forma
+     de saber si un vehiculo tiene el tamano que dice tener. */
+  medidas:()=>{
+    const caja=new THREE.Box3(), v=new THREE.Vector3(), r={};
+    const mide=(nombre,obj)=>{ if(!obj) return; caja.setFromObject(obj); caja.getSize(v);
+      r[nombre]={ ancho:+(v.x*MPU).toFixed(2), alto:+(v.y*MPU).toFixed(2), largo:+(v.z*MPU).toFixed(2) }; };
+    mide('UGV_jugador', player.mesh);
+    const pe=enemies.find(e=>e.kind==='perro'); if(pe) mide('perro_robot', pe.mesh);
+    const tk=enemies.find(e=>e.kind==='tank'); if(tk) mide('UGV_enemigo', tk.mesh);
+    const tu=enemies.find(e=>e.kind==='turret'); if(tu) mide('torreta', tu.mesh);
+    if(drone.active) mide('dron', drone.mesh);
+    r.velocidades_kmh={ UGV:+(stats.speed*MPU*3.6).toFixed(0),
+      dron_horizontal:+(VEL_DRON*MPU*3.6).toFixed(0), dron_subida:+(VEL_SUBE*MPU*3.6).toFixed(0) };
+    r.camara_m={ persecucion:+(7).toFixed(0), dron_fpv:+(3.6).toFixed(1) };
+    return r; },
   /* lleva el dron junto a un enemigo de ese tipo, para poder mirarlo de cerca */
   verEnemigo:(tipo, dist)=>{ const e=enemies.find(x=>x.alive && x.kind===tipo);
     if(!e) return 'no hay '+tipo;

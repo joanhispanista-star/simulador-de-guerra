@@ -1,7 +1,7 @@
 /* Service worker de Drones de Combate — instalable + arranque de la página offline.
    Red primero; si falla, sirve la copia en caché de la página. Los recursos
    grandes (motor 3D, física, modelos) se bajan de sus CDN (necesitan internet). */
-const CACHE = 'drones-v0_14';
+const CACHE = 'drones-v0_15';
 self.addEventListener('install', e => { self.skipWaiting(); });
 /* Solo se borran las cachés propias. caches.keys() no lista las cachés de esta app:
    lista las de TODO el dominio. Sin el filtro por prefijo, Drones al activarse le
