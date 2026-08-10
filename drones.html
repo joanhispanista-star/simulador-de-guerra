@@ -1132,6 +1132,19 @@ function updateWeather(dt){
    TERRENO + PROPS por bioma
    ===================================================================== */
 let terrainMesh=null, propGroup=null, colliders=[], biome=null, REAL=null;
+/* Altura del punto MÁS ALTO del mundo, en unidades. La necesita el techo de
+   vuelo del dron: si el techo es un número fijo, en una montaña el suelo puede
+   quedar por encima de él y el dron se queda enterrado y sin poder moverse.
+   Se calcula una vez por mundo, al terminar de construirlo. */
+let MUNDO_ALTO=0;
+function calcularMundoAlto(){
+  let m=0;
+  for(let x=-HALF; x<=HALF; x+=8) for(let z=-HALF; z<=HALF; z+=8){
+    const h=terrainHeight(x,z); if(h>m) m=h;
+  }
+  MUNDO_ALTO=m;
+  return m;
+}
 function terrainHeight(x,z){ return REAL ? realHeightAt(x,z) : biomeHeight(biome, x, z); }
 function terrainNormal(x,z){ // aproximada por diferencias
   const e=1.2;
@@ -1162,6 +1175,7 @@ function buildWorld(bkey){
   REAL=null;
   biome=BIOMES[bkey]; SEED=biome.seed*97+7;
   clearTerrain();
+  calcularMundoAlto();     // igual que en el mundo real: el techo del dron cuelga de esto
   worldBase={ skyTop:biome.skyTop||biome.sky, fog:biome.fog, fogN:biome.fogN, amb:biome.amb };
   setWater(biome.waterLevel||0, biome.waterLevel!=null);
   applyEnvironment();
@@ -1467,6 +1481,7 @@ async function buildRealWorld(map){
   geo.computeVertexNormals();
   terrainMesh=new THREE.Mesh(geo, mat); terrainMesh.receiveShadow=true; terrainMesh.castShadow=true;
   scene.add(terrainMesh);
+  calcularMundoAlto();          // el techo de vuelo del dron cuelga de esto
   propGroup=new THREE.Group(); scene.add(propGroup);
   // ambiente
   /* Niebla del mundo real. Antes 0.0011, que daba 23% de bruma en el borde del
@@ -3608,7 +3623,8 @@ function moverAliado(a, orden, dt){
   a.vel.lerp(_al, clamp(3*dt,0,1));
   a.pos.addScaledVector(a.vel, dt);
   a.pos.x=clamp(a.pos.x,-HALF+4,HALF-4); a.pos.z=clamp(a.pos.z,-HALF+4,HALF-4);
-  const minY=terrainHeight(a.pos.x,a.pos.z)+6; if(a.pos.y<minY)a.pos.y=minY; a.pos.y=Math.min(a.pos.y,160);
+  const minY=terrainHeight(a.pos.x,a.pos.z)+6*M; if(a.pos.y<minY)a.pos.y=minY;
+  a.pos.y=Math.min(a.pos.y, MUNDO_ALTO+120);   // relativo a la cumbre, no absoluto
   a.bob+=dt*3;
   const my = orden.mirar ? Math.atan2(orden.mirar.x-a.pos.x, orden.mirar.z-a.pos.z)
                          : (Math.hypot(a.vel.x,a.vel.z)>1 ? Math.atan2(a.vel.x,a.vel.z) : a.yaw);
@@ -4288,7 +4304,17 @@ function updateDrone(dt, inp){
     if(boom){ detonateDrone(); return; }
   }
   if(drone.pos.y<minY){ drone.pos.y=minY; if(drone.vel.y<0)drone.vel.y=0; }
-  drone.pos.y=clamp(drone.pos.y, minY, stats.drone.maxAlt||130);
+  /* ⚠ El techo del dron se mide desde el punto MÁS ALTO DEL MAPA, no desde el
+     cero del mundo. Antes era una altura absoluta y en una montaña eso dejaba
+     al dron ENTERRADO: en el Nevado del Ruiz el terreno sube a 145 unidades y
+     el techo eran 130, así que en el 21% del mapa el suelo estaba por encima
+     de donde el dron tenía permiso de volar. No es que no pudiera subir: es
+     que quedaba clavado a 78 m bajo tierra, sin poder moverse.
+     Se mide desde la cumbre del mapa y no desde el suelo que tiene debajo, para
+     que al cruzar de un pico a un valle el techo no se desplome de golpe y te
+     arrastre hacia abajo. */
+  const techo=Math.max(minY+1, MUNDO_ALTO + (stats.drone.maxAlt||130));
+  drone.pos.y=clamp(drone.pos.y, minY, techo);
   drone.mesh.position.copy(drone.pos);
   drone.mesh.rotation.set(drone.pitch, drone.yaw, -drone.roll);
   // rotores (más lento si sin batería)
