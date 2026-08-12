@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Máquinas · Joan te presta</title>
+<meta name="description" content="Simulador de vehículos no tripulados sobre el mundo real, y un duelo de tanques 2D.">
+<meta name="theme-color" content="#0c0e13">
+<link rel="icon" href="icon-192.png">
+<meta property="og:title" content="Máquinas · Drones de Combate">
+<meta property="og:description" content="Pilota un dron sobre Bogotá de verdad: terreno, satélite y edificios reales.">
+<meta property="og:image" content="icon-512.png">
+<style>
+  :root{ --fondo:#0c0e13; --carta:#131720; --linea:#232a36; --hud:#3ff0c0;
+         --texto:#e8edf4; --gris:#8b96a8; --ambar:#f5b301; }
+  *{box-sizing:border-box}
+  body{margin:0;background:radial-gradient(120% 80% at 50% 0,#16202b,#0c0e13 65%);
+    color:var(--texto);font:16px/1.6 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+    min-height:100vh;padding:clamp(20px,5vw,56px)}
+  .caja{max-width:860px;margin:0 auto}
+  h1{font-size:clamp(28px,6vw,46px);margin:0;letter-spacing:-.02em;font-weight:900}
+  h1 small{display:block;font-size:13px;letter-spacing:.22em;color:var(--hud);
+    font-weight:800;margin-bottom:10px}
+  .sub{color:var(--gris);margin:14px 0 34px;font-size:clamp(15px,2.4vw,18px);max-width:62ch}
+  .juegos{display:grid;gap:18px;grid-template-columns:repeat(auto-fit,minmax(260px,1fr))}
+  .j{display:block;text-decoration:none;color:inherit;background:var(--carta);
+    border:1px solid var(--linea);border-radius:16px;padding:22px;transition:.15s}
+  .j:hover{border-color:var(--hud);transform:translateY(-2px)}
+  .j .ic{font-size:34px;line-height:1}
+  .j h2{margin:12px 0 6px;font-size:20px;font-weight:800}
+  .j p{margin:0;color:var(--gris);font-size:14px}
+  .j .ir{margin-top:14px;color:var(--hud);font-weight:800;font-size:13px;letter-spacing:.06em}
+  .tag{display:inline-block;font-size:11px;font-weight:800;letter-spacing:.1em;
+    padding:3px 9px;border-radius:99px;border:1px solid var(--linea);color:var(--gris);margin-left:8px}
+  .tag.obra{color:var(--ambar);border-color:rgba(245,179,1,.4)}
+  h3{margin:38px 0 12px;font-size:14px;letter-spacing:.16em;color:var(--hud);font-weight:800}
+  .fila{display:grid;grid-template-columns:auto 1fr;gap:8px 16px;font-size:14px;
+    color:var(--gris);align-items:baseline}
+  kbd{display:inline-block;min-width:22px;text-align:center;background:#0a0d12;
+    border:1px solid var(--linea);border-bottom-width:2px;border-radius:5px;
+    padding:2px 6px;font:700 12px ui-monospace,Consolas,monospace;color:var(--texto)}
+  .aviso{margin-top:34px;padding:16px 18px;border-radius:12px;
+    background:rgba(63,240,192,.06);border:1px solid rgba(63,240,192,.22);font-size:14px}
+  .aviso b{color:var(--hud)}
+  footer{margin-top:44px;padding-top:18px;border-top:1px solid var(--linea);
+    color:#5c6675;font-size:12px}
+</style>
+</head>
+<body>
+<div class="caja">
+
+  <h1><small>JOAN TE PRESTA</small>Máquinas</h1>
+  <p class="sub">Dos juegos que se abren y ya. No hay que instalar nada, ni registrarse,
+     ni dar ningún dato.</p>
+
+  <div class="juegos">
+    <a class="j" href="drones.html">
+      <div class="ic">🚁</div>
+      <h2>Drones de Combate <span class="tag obra">en obra</span></h2>
+      <p>Simulador de vehículos <b>no tripulados</b> sobre el mundo real: se descargan
+         el relieve, la imagen satelital y los <b>edificios de verdad</b> del lugar que
+         elijas. Puedes volar sobre Bogotá, el Nevado del Ruiz o cualquier coordenada
+         del planeta.</p>
+      <div class="ir">Jugar →</div>
+    </a>
+    <a class="j" href="tanques.html">
+      <div class="ic">🎯</div>
+      <h2>Batalla de Tanques <span class="tag">listo</span></h2>
+      <p>Duelo 2D al estilo del Atari Combat de 1977. Dos jugadores en el mismo
+         teclado, o tú contra la máquina. Funciona sin internet.</p>
+      <div class="ir">Jugar →</div>
+    </a>
+  </div>
+
+  <h3>CONTROLES DE DRONES</h3>
+  <div class="fila">
+    <span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span><span>conducir el vehículo terrestre</span>
+    <span><kbd>F</kbd></span><span>lanzar el dron / volver al vehículo</span>
+    <span><kbd>Espacio</kbd></span><span>con el dron: subir · con el vehículo: disparar</span>
+    <span><kbd>Mayús</kbd></span><span>bajar el dron</span>
+    <span><kbd>Q</kbd><kbd>R</kbd></span><span>inclinar la cámara del dron (o la rueda del ratón).
+      <b>Al subir baja sola</b>, para que veas la ciudad</span>
+    <span><kbd>C</kbd></span><span>cambiar de cámara</span>
+    <span><kbd>V</kbd></span><span>sensor: óptico / térmico / nocturno</span>
+    <span><kbd>B</kbd></span><span>modo de vuelo: fácil (por defecto) o acro</span>
+    <span><kbd>Esc</kbd></span><span>pausa</span>
+  </div>
+
+  <div class="aviso">
+    <b>Para volar sobre una ciudad de verdad:</b> entra a <b>Mundo real</b> y elige una
+    ciudad, o pega unas coordenadas cualesquiera. Tarda unos segundos en descargar el
+    terreno y los edificios — y si dice que no hay edificios, vuelve a intentarlo:
+    OpenStreetMap es un servicio gratuito y a veces se satura.
+    <br><br>
+    Va mejor en <b>Chrome o Edge en un computador</b>. En el móvil funciona, pero con
+    menos detalle.
+  </div>
+
+  <footer>
+    Hecho por Joan · <b>Drones de Combate</b> está en desarrollo, así que puede tener
+    fallos. Si encuentras uno, cuéntale qué estabas haciendo cuando pasó.
+  </footer>
+
+</div>
+</body>
+</html>
