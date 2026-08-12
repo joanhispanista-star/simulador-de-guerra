@@ -4920,7 +4920,25 @@ function toMenu(){ playing=false; paused=false;
   $('pause').classList.remove('on'); $('result').classList.remove('on'); $('hud').classList.remove('on'); $('touch').classList.remove('on'); $('utiles').classList.remove('on'); $('rotate').classList.remove('on');
   setSensor(0); $('linkFx').style.opacity=0; $('linkWarn').classList.remove('on'); $('underFx').classList.remove('on');   // limpia overlays
   IA.dbgOff();
-  $('menu').classList.add('on'); $('backPlaza').classList.add('on'); renderMissions(); }
+  $('menu').classList.add('on'); mostrarEnlacePlaza(); renderMissions(); }
+/* ---------------------------------------------------------------------
+   EL ENLACE "← Plaza" SOLO APARECE SI PLAZA ESTÁ AHÍ.
+   plaza.html es el índice de TODOS los proyectos de Joan (el CRM de Tu
+   Garantía, MATRIX, Centinela, Portero, Renta, Cámaras…). Cuando el juego
+   se publica suelto para que lo pruebe alguien de fuera, ese enlace es una
+   puerta a cosas que esa persona no tiene por qué ver — y ya pasó una vez.
+   En vez de acordarse de borrarlo a mano en cada publicación, el juego
+   comprueba UNA vez si plaza.html existe a su lado: dentro de Plaza sale, y
+   suelto no sale. Se configura solo y no hay nada que recordar.
+   --------------------------------------------------------------------- */
+let _plazaVista=null;
+function mostrarEnlacePlaza(){
+  const el=$('backPlaza'); if(!el) return;
+  if(_plazaVista!==null){ el.classList.toggle('on', _plazaVista); return; }
+  fetch('plaza.html', {method:'HEAD'})
+    .then(r=>{ _plazaVista=r.ok; el.classList.toggle('on', r.ok); })
+    .catch(()=>{ _plazaVista=false; el.classList.remove('on'); });
+}
 
 /* =====================================================================
    MANDO REMOTO (Supabase Realtime) · BETA · aislado
@@ -5153,7 +5171,7 @@ function boot(){
     setSensor(0);
     camera.position.set(0,60,120); camera.lookAt(0,0,0);
     window.__BOOTED=true; $('boot').style.display='none';
-    $('backPlaza').classList.add('on');
+    mostrarEnlacePlaza();
     frame();
   }catch(e){ window.__fatal('Error al iniciar el juego.', (e&&e.stack)||e&&e.message||e); }
 }
