@@ -1,0 +1,48 @@
+# Publica el sitio en GitHub Pages en cada push a main.
+#
+# Por qué así y no dándole a Settings → Pages: este flujo ENCIENDE Pages él solo
+# (configure-pages con enablement:true) usando el permiso que GitHub le da al
+# propio repositorio. No hace falta que nadie entre a la configuración, y no hay
+# ninguna clave personal de por medio: el token es del repositorio y se muere al
+# terminar el trabajo.
+name: Publicar en GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:        # y también se puede lanzar a mano desde la pestaña Actions
+
+permissions:
+  contents: read
+  pages: write              # esto es lo que le deja encender y desplegar Pages
+  id-token: write
+
+# Si se empujan dos cambios seguidos, que no se pisen: se publica el último,
+# pero sin cancelar un despliegue a medias.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  publicar:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.desplegar.outputs.page_url }}
+    steps:
+      - name: Traer el repositorio
+        uses: actions/checkout@v4
+
+      - name: Encender Pages si aún no lo está
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - name: Empaquetar el sitio
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: .           # el juego está en la raíz: index.html, drones.html, tanques.html
+
+      - name: Publicar
+        id: desplegar
+        uses: actions/deploy-pages@v4
