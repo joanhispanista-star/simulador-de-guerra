@@ -1,0 +1,7 @@
+.claude/
+.git/
+.gitignore
+README.md
+capturas/
+servidor.js
+JUGAR.bat

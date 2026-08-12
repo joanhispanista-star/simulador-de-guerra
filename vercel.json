@@ -1,0 +1,28 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "cleanUrls": true,
+  "rewrites": [
+    { "source": "/", "destination": "/drones.html" }
+  ],
+  "headers": [
+    {
+      "comment": "El juego es UN archivo grande. Se cachea, pero se revalida siempre: si no, el jugador se queda con la version vieja sin enterarse.",
+      "source": "/drones.html",
+      "headers": [{ "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }]
+    },
+    {
+      "comment": "El service worker NUNCA se cachea. Es el que decide que version ve el jugador; si el propio sw queda cacheado, no hay forma de sacarlo de una version vieja.",
+      "source": "/sw-drones.js",
+      "headers": [{ "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }]
+    },
+    {
+      "comment": "La camara solo se puede pedir desde https, y solo en esta pagina.",
+      "source": "/(.*)",
+      "headers": [
+        { "key": "Permissions-Policy", "value": "camera=(self), microphone=(self), geolocation=()" },
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" }
+      ]
+    }
+  ]
+}
