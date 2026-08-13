@@ -359,8 +359,8 @@
 <script type="importmap">
 {
   "imports": {
-    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
-    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    "three": "./vendor/three/three.module.js",
+    "three/addons/": "./vendor/three/addons/"
   }
 }
 </script>
@@ -4555,7 +4555,7 @@ function endMission(win, reason){
 async function initPhysics(){
   if(physReady || CANNON===false) return;
   try{
-    CANNON=await import('https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/dist/cannon-es.js');
+    CANNON=await import('./vendor/cannon-es.js');
     physWorld=new CANNON.World({ gravity:new CANNON.Vec3(0,-22,0) });
     physWorld.broadphase=new CANNON.SAPBroadphase(physWorld);
     physWorld.allowSleep=true; physWorld.defaultContactMaterial.friction=0.4; physWorld.defaultContactMaterial.restitution=0.15;
