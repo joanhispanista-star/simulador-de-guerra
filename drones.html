@@ -3840,7 +3840,11 @@ async function toggleGaze(){
     setTimeout(calibrateGaze, 1600);
     updateChips();
   }catch(e){ gaze.loading=false; disableGaze();
-    alert('No se pudo activar “apuntar con la mirada”:\n'+((e&&e.message)||e)+'\n\nNecesita permiso de cámara y estar PUBLICADO (HTTPS), no abierto como archivo local.');
+    alert('No se pudo activar “apuntar con la mirada”:\n'+((e&&e.message)||e)+
+      '\n\nNecesita tres cosas: permiso de cámara, estar PUBLICADO (HTTPS, no abierto '+
+      'como archivo local) y CONEXIÓN A INTERNET — el modelo de visión se descarga '+
+      'cada vez y no cabe dentro de la app.'+
+      (navigator.onLine ? '' : '\n\nAhora mismo estás SIN CONEXIÓN: es eso.'));
   }
 }
 function disableGaze(){
@@ -4491,6 +4495,17 @@ function realMissionFor(map){
     objs: map.objs||[{type:'destroy',tag:'enemy',n:6,text:'Limpia la zona (6)'}] };
 }
 async function startRealMission(map){
+  /* El mundo real es lo ÚNICO que no puede funcionar sin conexión: el relieve,
+     la imagen satelital y los edificios se descargan del lugar elegido. Vale
+     más decirlo de frente que dejar que falle con un error de red que no
+     explica nada. Las misiones normales sí corren enteras sin internet. */
+  if(!navigator.onLine){
+    alert('El mundo real necesita internet.\n\n'+
+          'El relieve, la imagen del satélite y los edificios de '+map.name+
+          ' se descargan en el momento: no están dentro de la app y no caben.\n\n'+
+          'Sin conexión sí puedes jugar las MISIONES del menú principal, que van completas.');
+    return;
+  }
   currentReal=map; missionIdx=-1;
   resetPlay();
   showLoading('Descargando terreno real', map.name+' · elevación + satélite');
