@@ -1,48 +1,46 @@
-# Publica el sitio en GitHub Pages en cada push a main.
+# Publica el juego en GitHub Pages en cada push a main.
 #
-# Por qué así y no dándole a Settings → Pages: este flujo ENCIENDE Pages él solo
-# (configure-pages con enablement:true) usando el permiso que GitHub le da al
-# propio repositorio. No hace falta que nadie entre a la configuración, y no hay
-# ninguna clave personal de por medio: el token es del repositorio y se muere al
-# terminar el trabajo.
+# Cómo funciona: Pages está servido desde la rama `gh-pages`, y este flujo la
+# reconstruye con SOLO lo publicable. Todo lo demás —el servidor de desarrollo,
+# el .bat, las capturas de prueba y sobre todo plaza.html, que es el índice de
+# todos los proyectos de Joan— se queda fuera a propósito.
+#
+# Se usa la rama y no el despliegue por Actions porque encender Pages por API
+# devolvía 403: el token del repositorio no tiene ese permiso por defecto.
 name: Publicar en GitHub Pages
 
 on:
   push:
     branches: [main]
-  workflow_dispatch:        # y también se puede lanzar a mano desde la pestaña Actions
+  workflow_dispatch:
 
 permissions:
-  contents: read
-  pages: write              # esto es lo que le deja encender y desplegar Pages
-  id-token: write
+  contents: write        # lo único que necesita: escribir la rama gh-pages
 
-# Si se empujan dos cambios seguidos, que no se pisen: se publica el último,
-# pero sin cancelar un despliegue a medias.
 concurrency:
-  group: pages
+  group: publicar
   cancel-in-progress: false
 
 jobs:
   publicar:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.desplegar.outputs.page_url }}
     steps:
       - name: Traer el repositorio
         uses: actions/checkout@v4
 
-      - name: Encender Pages si aún no lo está
-        uses: actions/configure-pages@v5
-        with:
-          enablement: true
-
-      - name: Empaquetar el sitio
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: .           # el juego está en la raíz: index.html, drones.html, tanques.html
-
-      - name: Publicar
-        id: desplegar
-        uses: actions/deploy-pages@v4
+      - name: Armar el sitio y empujarlo a gh-pages
+        run: |
+          set -e
+          # lista blanca: si algo no está aquí, NO se publica
+          mkdir ../sitio
+          cp -r index.html drones.html tanques.html drones.webmanifest sw-drones.js \
+                icon-192.png icon-512.png LEEME-tanques.txt .nojekyll \
+                vendor capturas-app ../sitio/
+          cd ../sitio
+          git init -q -b gh-pages
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Publicar ${GITHUB_SHA::7}"
+          git push -qf "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" gh-pages
+          echo "publicado: $(ls | tr '\n' ' ')"
