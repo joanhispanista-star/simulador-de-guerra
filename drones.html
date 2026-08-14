@@ -538,6 +538,23 @@
 
       <!-- AYUDA -->
       <div id="tab-help" style="display:none">
+        <div class="h-sec">▶ Primeros pasos (60 segundos)</div>
+        <div class="kbd-help">
+          <span><b>1.</b> Elige una misión y pulsa <b>JUGAR</b>. Conduces con <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> y apuntas con el ratón.</span>
+          <span><b>2.</b> Pulsa <kbd>F</kbd>: sale el <b>dron</b>. Sube con <kbd>Espacio</kbd>.</span>
+          <span><b>3.</b> Al subir, <b>la cámara se inclina sola</b> hacia abajo. Ahí es donde se ve todo.</span>
+          <span><b>4.</b> <kbd>F</kbd> otra vez para volver al vehículo.</span>
+          <span><b>5.</b> Y lo mejor: pestaña <b>🌍 Mundo real</b> → elige <b>Bogotá</b>. Espera unos segundos.</span>
+        </div>
+        <div class="h-sec">🌍 El mundo real · la razón de ser de esto</div>
+        <div class="subtitle" style="margin:0 0 8px">No es un mapa inventado. Le das unas coordenadas —cualquiera del planeta— y se
+          descargan la <b>altura real</b> del terreno, la <b>foto del satélite</b> y de <b>OpenStreetMap</b> los
+          <b>edificios con su forma real</b>, las calles, los ríos y el arbolado. Bogotá es Bogotá: la Plaza de Bolívar,
+          los cerros orientales al fondo, la plaza de toros. El campo abarca <b>2,4 km</b> a escala correcta
+          (un UGV mide 2,4 m de verdad) y el horizonte llega a <b>21 km</b>.
+          <br><br>
+          <b>Tarda unos segundos</b> y necesita internet. Si dice que no hay edificios, <b>vuelve a intentarlo</b>:
+          OpenStreetMap es gratuito y a veces se satura. Sin conexión puedes jugar las misiones del menú, que van completas.</div>
         <div class="h-sec">UGV terrestre (tanque‑dron)</div>
         <div class="kbd-help">
           <span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> o <kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd> conducir</span>
@@ -558,6 +575,8 @@
           <span><kbd>Espacio</kbd> subir · <kbd>Shift</kbd> bajar</span>
           <span><kbd>Q</kbd><kbd>R</kbd> o <b>rueda del ratón</b>: inclinar la cámara (gimbal)</span>
           <span>La cámara <b>baja sola al subir</b>, para que veas la ciudad</span>
+          <span><kbd>B</kbd> modo de vuelo: <b>FÁCIL</b> (sueltas y se para, mantiene la altura)
+            o <b>ACRO</b> (dron de carreras: sigue avanzando al soltar)</span>
           <span><b>Clic</b> / DISPARAR: soltar carga o marcar</span>
           <span>💥 <b>KAMIKAZE</b> (botón) o <kbd>K</kbd> = picar y explotar</span>
           <span><b>Barriles rojos</b> explotan en cadena — física real</span>
@@ -571,7 +590,14 @@
         <div class="h-sec">🎥 Control por cámara y 🎤 voz (manos libres)</div>
         <div class="subtitle" style="margin:0 0 8px">Con <b>👁️ MIRADA</b> activa (cámara): <b>gira la cabeza / mira</b> para apuntar, <b>haz un beso 💋</b> (juntar los labios) para <b>disparar</b>, y <b>señala con el dedo índice</b> para mover — apunta arriba = adelante, abajo = reversa, a los lados = girar; <b>esconde el dedo y se detiene</b>. Con <b>🎤 VOZ</b>: di <b>"desplegar dron"</b>, <b>"tanque"</b>, <b>"fuego"</b>, <b>"kamikaze"</b>, <b>"cámara"</b>, <b>"sensor"</b>. (Todo necesita permiso de cámara/micrófono y HTTPS.)</div>
         <div class="h-sec">📲 Instalar como app</div>
-        <div class="subtitle" style="margin:0 0 8px">En el <b>iPhone</b> (Safari): botón <b>Compartir → “Agregar a inicio”</b>. En <b>Android/PC</b> (Chrome): aparece <b>“Instalar”</b> en la barra. Queda como una app a pantalla completa.</div>
+        <div class="subtitle" style="margin:0 0 8px">En <b>Windows</b> con <b>Edge</b> (o Chrome): el icono de <b>instalar</b> en la barra de
+          direcciones, o menú <b>···</b> → Aplicaciones → Instalar. Queda con su icono en Inicio y su propia ventana.
+          Pesa <b>2 MB</b> y <b>abre sin internet</b>: el motor 3D va dentro. En el <b>iPhone</b> (Safari):
+          <b>Compartir → “Agregar a inicio”</b>.
+          <br><br>
+          Sin conexión van <b>las misiones del menú, completas</b>. Lo único que necesita internet es el
+          <b>mundo real</b> (el terreno y los edificios se descargan) y <b>apuntar con la mirada</b>
+          (el modelo de visión se baja cada vez).</div>
         <div class="h-sec">En el celular</div>
         <div class="subtitle" style="margin:0">Palanca IZQ = conducir/volar y girar · palanca DER = apuntar (o subir/bajar el dron). Botones a los lados: disparar, sensor, cámara, mirada, voz y 💥 kamikaze. Juega en horizontal.</div>
       </div>
@@ -1870,6 +1896,106 @@ function geomTecho(pts, baseY, hU, escala){
   g.setAttribute('uv', new THREE.BufferAttribute(uv,2));
   return g;
 }
+/* ---------------------------------------------------------------------
+   PRETIL — el murito del borde de una azotea.
+   Un techo plano sin pretil se lee como una tapa apoyada encima. Con él, el
+   edificio termina donde debe y desde el aire aparece la sombra fina del
+   borde, que es la pista que usa el ojo para leer altura.
+   Va con las DOS caras: desde arriba se ve la interior, y si solo se dibujara
+   la de fuera, mirando en diagonal se vería a través del murito.
+   --------------------------------------------------------------------- */
+function geomPretil(pts, cx, cz, yTecho, alto, escala){
+  const pos=[], uv=[], idx=[]; let v=0, u0=0;
+  for(let i=0;i<pts.length;i++){
+    const p0=pts[i], p1=pts[(i+1)%pts.length];
+    const dx=p1.x-p0.x, dz=p1.z-p0.z, L=Math.hypot(dx,dz);
+    if(L<0.02) continue;
+    const u1=u0+L/escala, vT=alto/escala;
+    const yb=yTecho-alto*0.15, yt=yTecho+alto;   // arranca un poco por debajo: no deja costura
+    pos.push(p0.x,yb,p0.z,  p1.x,yb,p1.z,  p1.x,yt,p1.z,  p0.x,yt,p0.z);
+    uv.push(u0,0,  u1,0,  u1,vT,  u0,vT);
+    const mx=(p0.x+p1.x)/2-cx, mz=(p0.z+p1.z)/2-cz;
+    if(mx*(-dz)+mz*dx > 0){ idx.push(v,v+1,v+2, v,v+2,v+3, v,v+2,v+1, v,v+3,v+2); }
+    else                  { idx.push(v,v+2,v+1, v,v+3,v+2, v,v+1,v+2, v,v+2,v+3); }
+    v+=4; u0=u1;
+  }
+  if(!v) return null;
+  const g=new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos,3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv,2));
+  g.setIndex(idx); g.computeVertexNormals();
+  return g;
+}
+/* ---------------------------------------------------------------------
+   TEJADO A DOS AGUAS — La Candelaria es casi toda teja de barro.
+   Se monta sobre la caja ORIENTADA de la huella, no sobre la caja alineada
+   a los ejes: las manzanas de Bogotá van en diagonal respecto al norte, y con
+   una caja recta los caballetes saldrían todos torcidos respecto a la calle.
+   Solo se pone si la huella se parece de verdad a un rectángulo; en una casa
+   en forma de L un tejado a dos aguas queda flotando y se nota.
+   --------------------------------------------------------------------- */
+function cajaOrientada(pts){
+  // se prueba la orientación de cada arista y gana la que da menos área
+  let mejor=null;
+  for(let i=0;i<pts.length;i++){
+    const p0=pts[i], p1=pts[(i+1)%pts.length];
+    const dx=p1.x-p0.x, dz=p1.z-p0.z, L=Math.hypot(dx,dz);
+    if(L<0.05) continue;
+    const ex=dx/L, ez=dz/L;                       // eje de esta arista
+    let a0=1e9,a1=-1e9,b0=1e9,b1=-1e9;
+    for(const p of pts){
+      const a=p.x*ex+p.z*ez, b=-p.x*ez+p.z*ex;
+      if(a<a0)a0=a; if(a>a1)a1=a; if(b<b0)b0=b; if(b>b1)b1=b;
+    }
+    const area=(a1-a0)*(b1-b0);
+    if(!mejor || area<mejor.area) mejor={ area, ex, ez, a0, a1, b0, b1 };
+  }
+  return mejor;
+}
+function geomDosAguas(pts, yAlero, altoCaballete, escala){
+  const c=cajaOrientada(pts);
+  if(!c) return null;
+  const largo=c.a1-c.a0, ancho=c.b1-c.b0;
+  if(largo<0.15 || ancho<0.15) return null;
+  // ¿la huella LLENA su caja? si no, no es un rectángulo y no lleva dos aguas
+  if(areaPoly(pts)/c.area < 0.78) return null;
+  const { ex, ez } = c;
+  // el caballete corre a lo LARGO; el agua cae hacia los lados cortos
+  const pun=(a,b)=>({ x:a*ex - b*ez, z:a*ez + b*ex });
+  const A=pun(c.a0,c.b0), B=pun(c.a1,c.b0), C=pun(c.a1,c.b1), D=pun(c.a0,c.b1);
+  const bm=(c.b0+c.b1)/2;
+  const R0=pun(c.a0,bm), R1=pun(c.a1,bm);        // los dos extremos del caballete
+  const yC=yAlero+altoCaballete;
+  const pos=[], uv=[], idx=[];
+  const media=largo/escala, medioAncho=(ancho/2)/escala;
+  // faldón 1 (A-B hacia el caballete) y faldón 2 (D-C hacia el caballete)
+  const faldon=(P,Q)=>{
+    const n=pos.length/3;
+    pos.push(P.x,yAlero,P.z,  Q.x,yAlero,Q.z,  R1.x,yC,R1.z,  R0.x,yC,R0.z);
+    uv.push(0,0, media,0, media,medioAncho, 0,medioAncho);
+    idx.push(n,n+1,n+2, n,n+2,n+3, n,n+2,n+1, n,n+3,n+2);   // dos caras: se ve por dentro al volar bajo
+  };
+  faldon(A,B); faldon(D,C);
+  // los dos hastiales (los triángulos de los extremos)
+  const hastial=(P,Q,R)=>{
+    const n=pos.length/3;
+    pos.push(P.x,yAlero,P.z,  Q.x,yAlero,Q.z,  R.x,yC,R.z);
+    uv.push(0,0, medioAncho*2,0, medioAncho,medioAncho);
+    idx.push(n,n+1,n+2, n,n+2,n+1);
+  };
+  hastial(A,D,R0); hastial(B,C,R1);
+  const g=new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos,3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv,2));
+  g.setIndex(idx); g.computeVertexNormals();
+  return g;
+}
+/* Teja de barro bogotana: naranja quemado, más rojo cuanto más vieja. Coherente
+   por cuadra, como las fachadas: una calle de La Candelaria es toda del mismo tono. */
+function COLOR_TEJA(cx,cz){
+  const r=ruidoCuadra(cx-3.7, cz+9.1, 8);
+  return [0.46+r*0.20, 0.20+r*0.09, 0.13+r*0.05];
+}
 /* Tiñe una malla entera de un color, con una variación pequeña para que dos
    edificios vecinos del mismo tipo no salgan calcados. */
 function pintarMalla(g, rgb, variacion){
@@ -2101,6 +2227,7 @@ async function buildOSM(tok){
   const escalaTecho=11*REAL.hScale;     // la losa se repite cada 11 m (a 6 m hacía muaré)
   const mH=REAL.hScale;
   let masAlto=null;                     // para poder cazar alturas absurdas de OSM
+  let nTejado=0, nPretil=0;
   for(const e of edifs){
     const areaM2=e.areaU*REAL.mPerU*REAL.mPerU;
     const alturaM=alturaEdificio(e.tags, areaM2);
@@ -2117,8 +2244,26 @@ async function buildOSM(tok){
     const gt=geomTecho(e.pts, baseY, hU, escalaTecho);
     if(!gt){ gm.dispose(); continue; }
     pintarMalla(gm, colorFachada(alturaM, e.tipo, e.cx, e.cz), 0.16);
-    pintarMalla(gt, colorTecho(alturaM, e.tipo, e.cx, e.cz), 0.10);
+    const rgbTecho=colorTecho(alturaM, e.tipo, e.cx, e.cz);
+    pintarMalla(gt, rgbTecho, 0.10);
     geosMuro.push(gm); geosTecho.push(gt);
+    /* Casa baja, chica y con la huella rectangular → TEJADO A DOS AGUAS.
+       Es lo que hay en La Candelaria y en media Bogotá vieja; un techo plano
+       ahí es lo que hacía que el centro histórico pareciera un polígono
+       industrial. El caballete sube 1/3 del ancho, que es la pendiente de una
+       teja de barro de verdad. */
+    let dosAguas=null;
+    if(alturaM<=12 && areaM2<=520 && e.pts.length<=9){
+      const ancho=Math.sqrt(e.areaU);
+      dosAguas=geomDosAguas(e.pts, baseY+hU, Math.min(ancho*0.34, 3.2*M2U), escalaTecho);
+      if(dosAguas){ pintarMalla(dosAguas, COLOR_TEJA(e.cx,e.cz), 0.14); geosTecho.push(dosAguas); nTejado++; }
+    }
+    /* Si NO lleva tejado, lleva PRETIL: el murito del borde de la azotea.
+       Sin él un techo plano se lee como una tapa apoyada encima. */
+    if(!dosAguas && e.areaU>1.2){
+      const gp=geomPretil(e.pts, e.cx, e.cz, baseY+hU, 0.85*M2U, escalaTecho);
+      if(gp){ pintarMalla(gp, rgbTecho, 0.08); geosTecho.push(gp); nPretil++; }
+    }
     colliders.push({ x:e.cx, z:e.cz, r:Math.max(1.2,Math.sqrt(e.areaU/Math.PI)*0.85), h:hU });
     if(alturaM<=45 && e.areaU>3) ponerTrastos(e, baseY+hU, areaM2, trastos);
     nB++;
@@ -2281,6 +2426,7 @@ async function buildOSM(tok){
     ciudad.add(tI); ciudad.add(cI); ciudad.add(aI); nV=N;
   }
   REAL.osm={ edificios:nB, traidos, agua:nA, arboles:nV, calles:nC, azotea:trastos.length, recortados,
+             tejados:nTejado, pretiles:nPretil,
              masAlto, trastoMasAlto:trastos.reduce((a,t)=>Math.max(a,t.y),0) };
   feed('🏙️ '+nB+' edificios · '+nC+' calles · '+nA+' aguas · '+nV+' árboles · '+
        trastos.length+' trastos de azotea','good');
