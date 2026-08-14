@@ -435,6 +435,7 @@
     <button class="tbtn util" id="btnSensor"><span class="ic">🌡️</span>SENSOR</button>
     <button class="tbtn util" id="btnGaze"><span class="ic">👁️</span>MIRADA</button>
     <button class="tbtn util" id="btnVoice"><span class="ic">🎤</span>VOZ</button>
+    <button class="tbtn util" id="btnVol"><span class="ic">🔊</span>SONIDO</button>
     <button class="tbtn util sec" id="btnUp" style="display:none"><span class="ic">▲</span>SUBIR</button>
     <button class="tbtn util sec" id="btnDown" style="display:none"><span class="ic">▼</span>BAJAR</button>
   </div>
@@ -566,6 +567,7 @@
           <span><kbd>C</kbd> cambiar cámara</span>
           <span><kbd>V</kbd> sensor (óptico / térmico / nocturno)</span>
           <span><kbd>F1</kbd> depuración IA: conos de visión y estado</span>
+          <span><kbd>N</kbd> sonido: silencio / bajo / normal / alto</span>
           <span><kbd>Esc</kbd> pausa · soltar ratón</span>
         </div>
         <div class="h-sec">Dron aéreo · munición merodeadora</div>
@@ -735,9 +737,10 @@ const damp=(a,b,l,dt)=>lerp(a,b,1-Math.exp(-l*dt)); // suavizado estable con dt
 
 /* ---------- Persistencia ---------- */
 const SKEY='drones_v1';
-const store={ prog:{}, loadout:null, best:{}, env:{tod:'dia',wx:'despejado'} };
+const store={ prog:{}, loadout:null, best:{}, env:{tod:'dia',wx:'despejado'}, vol:0.7 };
 function load(){ try{ const s=JSON.parse(localStorage.getItem(SKEY)||'{}');
   store.prog=s.prog||{}; store.loadout=s.loadout||null; store.best=s.best||{};
+  store.vol=(typeof s.vol==='number')?s.vol:0.7;
   store.env=Object.assign({tod:'dia',wx:'despejado'}, s.env||{}); }catch(e){} }
 function save(){ try{ localStorage.setItem(SKEY, JSON.stringify(store)); }catch(e){} }
 load();
@@ -977,6 +980,264 @@ const MISSIONS=[
       {type:'destroy',tag:'enemy',n:7,text:'Domina el archipiélago (7)'} ] },
 ];
 function missionUnlocked(i){ if(i===0) return true; return !!store.prog[MISSIONS[i-1].id]; }
+
+/* =====================================================================
+   SONIDO
+   Todo SINTETIZADO, ni un solo archivo de audio. Tres razones:
+     · la app pesa 2 MB y abre sin internet — unos cuantos MP3 se cargarían eso
+     · un motor que cambia de tono con el gas no se puede hacer con un archivo:
+       o suena a bucle o suena a mentira
+     · nada de licencias de terceros que revisar el día que esto se venda
+   El navegador prohíbe sonar hasta que el jugador toca algo, así que el
+   AudioContext no se crea al cargar: se crea en el primer gesto.
+   ===================================================================== */
+const SONIDO=(()=>{
+  let ac=null, master=null, comp=null, ruidoBuf=null, listo=false;
+  const bucles={};                 // sonidos continuos: rotores, motor, viento
+  const _p=new THREE.Vector3();
+
+  function despertar(){
+    if(ac){ if(ac.state==='suspended') ac.resume(); return; }
+    try{
+      ac=new (window.AudioContext||window.webkitAudioContext)();
+      /* Un compresor al final. Sin él, una explosión mientras dispara la
+         ametralladora satura y suena a lata rota. */
+      comp=ac.createDynamicsCompressor();
+      comp.threshold.value=-14; comp.knee.value=22; comp.ratio.value=8;
+      comp.attack.value=0.004; comp.release.value=0.22;
+      master=ac.createGain(); master.gain.value=store.vol;
+      master.connect(comp); comp.connect(ac.destination);
+      // ruido blanco de 2 s: lo reusan explosiones, viento, orugas y disparos
+      ruidoBuf=ac.createBuffer(1, ac.sampleRate*2, ac.sampleRate);
+      const d=ruidoBuf.getChannelData(0);
+      for(let i=0;i<d.length;i++) d[i]=Math.random()*2-1;
+      listo=true;
+    }catch(e){ listo=false; }
+  }
+  ['pointerdown','keydown','touchend'].forEach(ev=>
+    addEventListener(ev, despertar, {capture:true, passive:true}));
+
+  /* Cuánto se oye algo que pasa en `pos`: el oído está en la CÁMARA, no en el
+     jugador. Es lo que hace que al pilotar el dron el tanque suene lejos. */
+  function oir(pos, alcance){
+    if(!camera||!pos) return 1;
+    const d=camera.position.distanceTo(pos), R=alcance||90;
+    return clamp(1-d/R, 0, 1)**1.6;
+  }
+  function ruido(dur, vol, f0, f1, tipo){
+    if(!listo||vol<=0.001) return null;
+    const t=ac.currentTime;
+    const s=ac.createBufferSource(); s.buffer=ruidoBuf; s.loop=true;
+    const f=ac.createBiquadFilter(); f.type=tipo||'lowpass';
+    f.frequency.setValueAtTime(f0, t);
+    if(f1) f.frequency.exponentialRampToValueAtTime(Math.max(40,f1), t+dur);
+    const g=ac.createGain();
+    g.gain.setValueAtTime(vol, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t+dur);
+    s.connect(f); f.connect(g); g.connect(master);
+    s.start(t); s.stop(t+dur+0.02);
+    s.onended=()=>{ try{s.disconnect();f.disconnect();g.disconnect();}catch(e){} };
+    return g;
+  }
+  function tono(tipo, f0, f1, dur, vol, retardo){
+    if(!listo||vol<=0.001) return;
+    const t=ac.currentTime+(retardo||0);
+    const o=ac.createOscillator(), g=ac.createGain();
+    o.type=tipo; o.frequency.setValueAtTime(f0,t);
+    if(f1&&f1!==f0) o.frequency.exponentialRampToValueAtTime(Math.max(1,f1), t+dur);
+    g.gain.setValueAtTime(0.0001,t);
+    g.gain.exponentialRampToValueAtTime(vol, t+0.006);
+    g.gain.exponentialRampToValueAtTime(0.0001, t+dur);
+    o.connect(g); g.connect(master);
+    o.start(t); o.stop(t+dur+0.02);
+    o.onended=()=>{ try{o.disconnect();g.disconnect();}catch(e){} };
+  }
+
+  /* ---- bucle continuo: un zumbido que se puede modular en vivo ---- */
+  function bucle(clave, hacer){
+    if(!listo) return null;
+    if(bucles[clave]) return bucles[clave];
+    const b=hacer(); bucles[clave]=b; return b;
+  }
+  function pararBucles(){
+    for(const k in bucles){ const b=bucles[k];
+      try{ b.parar&&b.parar(); }catch(e){}
+      delete bucles[k]; }
+  }
+
+  return {
+    despertar,
+    get activo(){ return listo; },
+    volumen(v){ store.vol=clamp(v,0,1); if(master) master.gain.value=store.vol; save(); },
+    get vol(){ return store.vol; },
+
+    /* ---------- DISPAROS ---------- */
+    canon(pos, calibre){
+      const a=oir(pos,190); if(a<=0.01) return; despertar();
+      const k=calibre||1;
+      // el golpe: un seno que cae de golpe. Es el "pecho" del disparo.
+      tono('sine', 120/k, 34/k, 0.34, 0.55*a);
+      tono('square', 74/k, 26/k, 0.20, 0.20*a);
+      // el chasquido y la cola de aire
+      ruido(0.10, 0.55*a, 3800, 700, 'bandpass');
+      ruido(0.55, 0.22*a, 900, 120, 'lowpass');
+    },
+    ametralladora(pos){
+      const a=oir(pos,120); if(a<=0.01) return;
+      /* Corto y SECO. El error clásico es alargarlo: una ametralladora no hace
+         "pum", hace "tac", y lo que se oye como ráfaga es el ritmo, no la cola. */
+      ruido(0.045, 0.5*a, 5200, 1400, 'bandpass');
+      tono('square', 190, 70, 0.05, 0.16*a);
+      ruido(0.16, 0.10*a, 700, 200, 'lowpass');
+    },
+    rifle(pos){
+      const a=oir(pos,100); if(a<=0.01) return;
+      ruido(0.035, 0.34*a, 6000, 1800, 'bandpass');
+      tono('square', 240, 90, 0.04, 0.10*a);
+    },
+    /* ---------- IMPACTOS ---------- */
+    explosion(pos, tam){
+      const a=oir(pos, 150+tam*14); if(a<=0.01) return;
+      const t=clamp(tam/8,0.4,2.2);
+      tono('sine', 90/t, 22, 0.5*t, 0.6*a);
+      ruido(0.09, 0.6*a, 5000, 900, 'bandpass');
+      ruido(0.9*t, 0.34*a, 1400, 90, 'lowpass');
+    },
+    impacto(pos){
+      const a=oir(pos,90); if(a<=0.01) return;
+      ruido(0.05, 0.22*a, 3000, 900, 'bandpass');
+    },
+    rebote(pos){
+      const a=oir(pos,110); if(a<=0.01) return;
+      // el "piu" del rebote: un tono que cae rápido y raro
+      tono('sawtooth', 1800+Math.random()*900, 380, 0.24, 0.16*a);
+      ruido(0.05, 0.18*a, 4200, 1200, 'bandpass');
+    },
+    /* ---------- AVISOS ---------- */
+    ui(clase){
+      despertar(); if(!listo) return;
+      if(clase==='ok')      { tono('sine',660,990,0.10,0.16); tono('sine',990,1320,0.12,0.12,0.09); }
+      else if(clase==='mal'){ tono('sawtooth',300,110,0.35,0.20); }
+      else if(clase==='logro'){ [523,659,784,1047].forEach((f,i)=>tono('triangle',f,f,0.16,0.15,i*0.10)); }
+      else if(clase==='dano'){ tono('square',150,60,0.16,0.22); ruido(0.2,0.18,800,200,'lowpass'); }
+      else                  { tono('sine',520,520,0.05,0.10); }
+    },
+
+    /* ---------- ROTORES DEL DRON ----------
+       El sonido que define un dron. Cuatro motores casi iguales pero NO
+       idénticos: ese pequeño desafine es lo que produce el batido que hace que
+       suene a cuatro hélices y no a un zumbador. La frecuencia sigue al gas. */
+    rotores(activo, gas, dist){
+      if(!listo){ return; }
+      if(!activo){ const b=bucles.rotor; if(b){ b.parar(); delete bucles.rotor; } return; }
+      const b=bucle('rotor', ()=>{
+        const g=ac.createGain(); g.gain.value=0; g.connect(master);
+        const osc=[], gan=[];
+        // los cuatro motores, con su desafine
+        [1, 1.008, 0.994, 1.013].forEach(k=>{
+          const o=ac.createOscillator(); o.type='sawtooth'; o.frequency.value=190*k;
+          const og=ac.createGain(); og.gain.value=0.06;
+          const f=ac.createBiquadFilter(); f.type='lowpass'; f.frequency.value=1200;
+          o.connect(og); og.connect(f); f.connect(g); o.start();
+          osc.push({o,f}); gan.push(og);
+        });
+        // el aire que mueven: ruido filtrado por encima
+        const s=ac.createBufferSource(); s.buffer=ruidoBuf; s.loop=true;
+        const nf=ac.createBiquadFilter(); nf.type='bandpass'; nf.frequency.value=1800; nf.Q.value=0.7;
+        const ng=ac.createGain(); ng.gain.value=0.05;
+        s.connect(nf); nf.connect(ng); ng.connect(g); s.start();
+        return { g, osc, ng, nf,
+          parar(){ try{ osc.forEach(x=>x.o.stop()); s.stop(); g.disconnect(); }catch(e){} } };
+      });
+      if(!b) return;
+      const f=170+gas*130;                       // más gas, más agudo
+      b.osc.forEach((x,i)=>{ x.o.frequency.setTargetAtTime(f*[1,1.008,0.994,1.013][i], ac.currentTime, 0.08);
+                             x.f.frequency.setTargetAtTime(900+gas*1400, ac.currentTime, 0.1); });
+      b.nf.frequency.setTargetAtTime(1400+gas*1600, ac.currentTime, 0.1);
+      b.g.gain.setTargetAtTime(0.34*clamp(dist,0,1), ac.currentTime, 0.08);
+    },
+    /* ---------- MOTOR DEL UGV ----------
+       Diésel: grave, con el traqueteo de las orugas encima. */
+    motor(activo, rpm, dist){
+      if(!listo) return;
+      if(!activo){ const b=bucles.motor; if(b){ b.parar(); delete bucles.motor; } return; }
+      const b=bucle('motor', ()=>{
+        const g=ac.createGain(); g.gain.value=0; g.connect(master);
+        const o=ac.createOscillator(); o.type='sawtooth'; o.frequency.value=55;
+        const o2=ac.createOscillator(); o2.type='square'; o2.frequency.value=27;
+        const f=ac.createBiquadFilter(); f.type='lowpass'; f.frequency.value=340;
+        const og=ac.createGain(); og.gain.value=0.5;
+        const o2g=ac.createGain(); o2g.gain.value=0.3;
+        o.connect(og); og.connect(f); o2.connect(o2g); o2g.connect(f); f.connect(g);
+        o.start(); o2.start();
+        // orugas: ruido rasposo que sube con la velocidad
+        const s=ac.createBufferSource(); s.buffer=ruidoBuf; s.loop=true;
+        const nf=ac.createBiquadFilter(); nf.type='bandpass'; nf.frequency.value=900; nf.Q.value=1.2;
+        const ng=ac.createGain(); ng.gain.value=0;
+        s.connect(nf); nf.connect(ng); ng.connect(g); s.start();
+        return { g, o, o2, ng,
+          parar(){ try{ o.stop(); o2.stop(); s.stop(); g.disconnect(); }catch(e){} } };
+      });
+      if(!b) return;
+      b.o.frequency.setTargetAtTime(48+rpm*46, ac.currentTime, 0.12);
+      b.o2.frequency.setTargetAtTime(24+rpm*23, ac.currentTime, 0.12);
+      b.ng.gain.setTargetAtTime(0.02+rpm*0.07, ac.currentTime, 0.12);
+      b.g.gain.setTargetAtTime(0.3*clamp(dist,0,1), ac.currentTime, 0.1);
+    },
+    /* ---------- VIENTO ---------- */
+    viento(activo, fuerza){
+      if(!listo) return;
+      if(!activo){ const b=bucles.viento; if(b){ b.parar(); delete bucles.viento; } return; }
+      const b=bucle('viento', ()=>{
+        const g=ac.createGain(); g.gain.value=0; g.connect(master);
+        const s=ac.createBufferSource(); s.buffer=ruidoBuf; s.loop=true;
+        const f=ac.createBiquadFilter(); f.type='lowpass'; f.frequency.value=420;
+        s.connect(f); f.connect(g); s.start();
+        return { g, f, parar(){ try{ s.stop(); g.disconnect(); }catch(e){} } };
+      });
+      if(!b) return;
+      b.f.frequency.setTargetAtTime(280+fuerza*700, ac.currentTime, 0.5);
+      b.g.gain.setTargetAtTime(0.03+fuerza*0.10, ac.currentTime, 0.5);
+    },
+    parar: pararBucles,
+    /* ganancia de cada bucle por separado: la mezcla total no dice cuál sube */
+    ganancias(){ const r={};
+      for(const k in bucles){ const b=bucles[k];
+        r[k]=+(b.g?b.g.gain.value:0).toFixed(4);
+        if(k==='motor'&&b.o) r.motor_hz=Math.round(b.o.frequency.value);
+        if(k==='rotor'&&b.osc&&b.osc[0]) r.rotor_hz=Math.round(b.osc[0].o.frequency.value);
+      }
+      return r; },
+    /* Mide lo que SALE de verdad. "No dio error" no es "suena": esto engancha
+       un analizador al master y devuelve el nivel real, que es la única forma
+       de comprobar el sonido sin oírlo. */
+    medir(ms){
+      if(!listo) return Promise.resolve({error:'audio no despierto'});
+      const an=ac.createAnalyser(); an.fftSize=2048;
+      master.connect(an);
+      const buf=new Float32Array(an.fftSize);
+      let pico=0, sum=0, n=0;
+      /* Con temporizador y NO con requestAnimationFrame: si la ventana está
+         oculta, rAF no se ejecuta y la medición se cuelga para siempre. El hilo
+         de audio, en cambio, sigue corriendo igual. */
+      const vueltas=Math.max(4, Math.round((ms||400)/40));
+      return new Promise(res=>{
+        let i=0;
+        (function tic(){
+          an.getFloatTimeDomainData(buf);
+          let p=0, s=0;
+          for(let k=0;k<buf.length;k++){ const v=Math.abs(buf[k]); if(v>p)p=v; s+=v*v; }
+          if(p>pico) pico=p; sum+=Math.sqrt(s/buf.length); n++;
+          if(++i<vueltas) setTimeout(tic, 20);
+          else { try{ master.disconnect(an); }catch(e){}
+                 res({ estado:ac.state, volumen:+store.vol.toFixed(2),
+                       pico:+pico.toFixed(4), medio:+(sum/Math.max(1,n)).toFixed(4),
+                       suena: pico>0.005 }); }
+        })();
+      });
+    },
+  };
+})();
 
 /* =====================================================================
    MOTOR 3D
@@ -2842,6 +3103,9 @@ let windVec=new THREE.Vector3();
 /* pools de efectos simples */
 function spawnExplosion(p, size, color){
   size=size||4;
+  /* Un solo sitio para todo lo que revienta. Por debajo de 1,2 no es una
+     explosion: es una bala pegando, y suena distinto. */
+  if(size<1.2) SONIDO.impacto(p); else SONIDO.explosion(p, size);
   // bola de fuego
   const fb=new THREE.Mesh(new THREE.SphereGeometry(1,12,10), new THREE.MeshBasicMaterial({color:color||0xffa53a, transparent:true, opacity:1}));
   fb.position.copy(p); scene.add(fb); effects.push({mesh:fb, t:0, life:0.5, size, kind:'boom'});
@@ -2978,6 +3242,7 @@ function penetration(p, center){
   return {rico:false, dmg:p.dmg*fall*(0.6+0.4*cosHit)};
 }
 function spawnSpark(pos, vel){
+  SONIDO.rebote(pos);
   spawnExplosion(pos, 1.3, 0xfff0c0);
   V.set(vel.x, Math.abs(vel.y)+12+Math.random()*18, vel.z).normalize();
   spawnTracer(pos, pos.clone().addScaledVector(V, 9), 0xfff2c0);
@@ -3700,6 +3965,7 @@ function moverUnidad(e, orden, dt){
       fireProjectile(boca, d, {speed:MG_VELOCIDAD, dmg:5.5, from:'enemy', kind:'bala',
         traza:(e.rafaga%2===0), life:1.8});
       fogonazo(boca, d, 0.6);
+      SONIDO.rifle(boca);
       return;
     }
     e.reload=1.6+Math.random()*1.1; gastarMunicion(e);
@@ -3709,6 +3975,7 @@ function moverUnidad(e, orden, dt){
     muzzle.addScaledVector(d, 1.6*M);
     fireProjectile(muzzle, d, {speed:150, dmg:e.tag==='turret'?14:12, from:'enemy', color:0xff6a4a, splash:2, life:3});
     fogonazo(muzzle, d, 1.5);
+    SONIDO.canon(muzzle, 0.85);
   }
 }
 function alignToGround(mesh, pos, yaw, l, dt){
@@ -3863,6 +4130,7 @@ addEventListener('keydown',e=>{ keys[e.code]=true;
   if(e.code==='KeyC' && playing){ cycleCam(); }
   if(e.code==='KeyF' && playing){ toggleDrone(); }
   if(e.code==='KeyV' && playing){ cycleSensor(); }
+  if(e.code==='KeyN'){ cicloVolumen(); }
   if(e.code==='KeyK' && playing){ armKamikaze(); }
   if(e.code==='F1' || e.code==='Backquote'){ e.preventDefault();
     CONFIG_IA.debug=!CONFIG_IA.debug; if(!CONFIG_IA.debug) IA.dbgOff();
@@ -4243,6 +4511,13 @@ function updatePlayer(dt, inp){
   if(player.detTimer>0){ player.detTimer-=dt; if(player.detTimer<=0) player.detected=false; }
 }
 
+/* Cuánto se oye algo que está en `pos`: el oído va en la CÁMARA, no en el
+   jugador. Es lo que hace que al pilotar el dron el tanque suene lejos, y que
+   al volver al tanque sea el dron el que se aleja. */
+function oirDesdeCamara(pos, alcance){
+  if(!camera) return 1;
+  return clamp(1 - camera.position.distanceTo(pos)/(alcance||80), 0, 1)**1.4;
+}
 function aimDir(){ // dirección de disparo (mundo) según view
   const cy=Math.cos(player.view.yaw), sy=Math.sin(player.view.yaw), cp=Math.cos(player.view.pitch), sp=Math.sin(player.view.pitch);
   return new THREE.Vector3(sy*cp, sp, cy*cp).normalize();
@@ -4269,6 +4544,7 @@ function rwsMuzzle(){
 function firePlayerCannon(){
   const dir=aimDir(); const from=turretMuzzle();
   fireProjectile(from, dir, {speed:stats.cannon.pspeed, dmg:stats.cannon.dmg, splash:stats.cannon.splash, from:'player', color:0x9ff0ff, r:0.4, life:5, grav:CANNON_GRAV});
+  SONIDO.canon(from, stats.cannon.dmg>50?1.35:1);
   spawnExplosion(from.clone().addScaledVector(dir,0.4), 1.8, 0xffe08a);
   const fl=new THREE.PointLight(0xffd080, 5, 26); fl.position.copy(from); scene.add(fl);
   effects.push({mesh:fl, t:0, life:0.09, kind:'light'});
@@ -4297,6 +4573,7 @@ function firePlayerSecondary(dt){
     fireProjectile(from, dir, { speed:MG_VELOCIDAD, dmg:sec.dps*0.115, from:'player',
       kind:'bala', traza:(mgRonda%TRAZA_CADA===0), life:2.2, r:0.1 });
     fogonazo(from, dir, 0.8);
+    SONIDO.ametralladora(from);
     // una sola luz, y solo en la boca: una por bala hundiría el rendimiento
     if(mgRonda%2===0){ const fl=new THREE.PointLight(0xffc070, 2.4, 14); fl.position.copy(from);
       scene.add(fl); effects.push({mesh:fl, t:0, life:0.05, kind:'light'}); }
@@ -4469,6 +4746,11 @@ function updateDrone(dt, inp){
   drone.mesh.rotation.set(drone.pitch, drone.yaw, -drone.roll);
   // rotores (más lento si sin batería)
   for(const r of drone.mesh.userData.rotors) r.rotation.y+=dt*60*power;
+  /* El zumbido sigue al ESFUERZO, no a la velocidad: un dron parado en el aire
+     también trabaja, y uno cayendo casi no. Por eso el gas mezcla la inclinación
+     con el mando de subir, que es lo que de verdad pide potencia. */
+  const gasR=clamp(Math.abs(drone.pitch)+Math.abs(drone.roll)+(inp.up?0.55:0)+0.28, 0, 1)*power;
+  SONIDO.rotores(true, gasR, oirDesdeCamara(drone.pos, 60));
   // reconocimiento: marca puntos cercanos
   drone.dropReload-=dt;
   for(const rp of reconPoints){ if(!rp.done && Math.hypot(drone.pos.x-rp.pos.x, drone.pos.z-rp.pos.z)<45*M){ rp.done=true; reconDone++;
@@ -4494,7 +4776,7 @@ function updateDrone(dt, inp){
    ===================================================================== */
 function damagePlayer(amt){
   if(!player.alive) return; player.hp-=amt; player.detected=true; player.detTimer=3;
-  hudFlash();
+  hudFlash(); SONIDO.ui('dano');
   if(amt>=10 && player.hp>0) hitComponent();   // impactos fuertes pueden inutilizar un componente
   if(navigator.vibrate)try{navigator.vibrate(20)}catch(x){}
   if(player.hp<=0){ player.hp=0; player.alive=false; spawnExplosion(player.pos, 12, 0xff6030); endMission(false,'Tu UGV fue destruido'); }
@@ -5026,6 +5308,31 @@ function fmtTime(t){ const s=Math.floor(t); return String(Math.floor(s/60)).padS
    BUCLE PRINCIPAL
    ===================================================================== */
 /* Un paso de simulación · lo usan tanto el bucle real como las pruebas */
+/* ---------------------------------------------------------------------
+   SONIDO AMBIENTE, en un solo sitio.
+   Los bucles (rotores, motor, viento) no se pueden disparar y olvidar como un
+   disparo: hay que decirles en CADA cuadro cuánto se oyen, o se quedan sonando
+   igual de fuerte aunque te alejes — o peor, sonando cuando ya no hay nada.
+   --------------------------------------------------------------------- */
+function sonidoAmbiente(dt){
+  if(!SONIDO.activo) return;
+  /* El MOTOR se actualiza aquí y no dentro de la rama del tanque. Estaba allí y
+     al pilotar el dron esa rama no corre: el motor se quedaba CONGELADO al
+     último volumen, así que el tanque sonaba a todo trapo en tu oído aunque
+     estuvieras a 500 m de él. Todo lo continuo va en un sitio que corra SIEMPRE. */
+  if(player.alive && stats)
+    SONIDO.motor(true, clamp(Math.abs(player.speed)/Math.max(1,stats.speed),0,1),
+                 oirDesdeCamara(player.pos, 70));
+  // el dron sigue volando aunque pilotes el UGV: se oye, pero lejos
+  if(drone.active && mode!=='drone') SONIDO.rotores(true, 0.42, oirDesdeCamara(drone.pos, 60));
+  else if(!drone.active) SONIDO.rotores(false);
+  /* Viento: sube con el clima y con la ALTURA. A ras de suelo casi no se oye;
+     a 300 m es lo único que se oye, y es lo que hace que subir se sienta. */
+  const alto = mode==='drone' && drone.active
+    ? clamp((drone.pos.y-terrainHeight(drone.pos.x,drone.pos.z))/90, 0, 1) : 0;
+  const clima = (WX==='niebla'||WX==='polvo') ? 0.45 : (WX==='lluvia'||WX==='nieve') ? 0.6 : 0.12;
+  SONIDO.viento(true, clamp(clima + alto*0.55, 0, 1));
+}
 function simulate(dt){
   const F=(n)=>{ if(window.__trace) window.__fase=n; };   // marcador de diagnóstico (inactivo por defecto)
   F('inicio');
@@ -5039,6 +5346,7 @@ function simulate(dt){
   F('aliados');  updateAllies(dt);
   F('proyectiles'); updateProjectiles(dt);
   F('efectos');  updateEffects(dt);
+  F('sonido');   sonidoAmbiente(dt);
   F('fisica');   stepPhysics(dt);
   if(mode==='tank') computeGunnery();
   // objetivo "llegar a la zona"
@@ -5077,7 +5385,20 @@ function frame(){
 function doPause(){ paused=true; if(document.exitPointerLock)document.exitPointerLock();
   $('pauseObj').innerHTML=mission?mission.name:''; $('pause').classList.add('on'); }
 function resume(){ paused=false; $('pause').classList.remove('on'); }
-function toMenu(){ playing=false; paused=false;
+/* Cuatro pasos en vez de un interruptor: apagado / bajo / normal / alto.
+   Un juego con motor y viento continuos necesita poder BAJARSE, no solo
+   callarse — que es lo que uno quiere cuando lo tiene de fondo. */
+const VOLS=[0, 0.3, 0.7, 1.0], VOLS_NOM=['SILENCIO','BAJO','NORMAL','ALTO'];
+function cicloVolumen(){
+  SONIDO.despertar();
+  let i=VOLS.findIndex(v=>Math.abs(v-SONIDO.vol)<0.02);
+  i=(i<0?2:i+1)%VOLS.length;
+  SONIDO.volumen(VOLS[i]);
+  const b=$('btnVol'); if(b) b.querySelector('.ic').textContent = VOLS[i]===0?'🔇':'🔊';
+  feed((VOLS[i]===0?'🔇 ':'🔊 ')+'Sonido: '+VOLS_NOM[i]);
+  if(VOLS[i]>0) SONIDO.ui('');
+}
+function toMenu(){ playing=false; paused=false; SONIDO.parar();
   $('pause').classList.remove('on'); $('result').classList.remove('on'); $('hud').classList.remove('on'); $('touch').classList.remove('on'); $('utiles').classList.remove('on'); $('rotate').classList.remove('on');
   setSensor(0); $('linkFx').style.opacity=0; $('linkWarn').classList.remove('on'); $('underFx').classList.remove('on');   // limpia overlays
   IA.dbgOff();
@@ -5268,6 +5589,8 @@ function wireUI(){
   $('btnDrone').onclick=()=>{ if(playing)toggleDrone(); }; $('btnCam').onclick=()=>{ if(playing)cycleCam(); };
   $('btnSensor').onclick=()=>{ if(playing)cycleSensor(); };
   $('btnGaze').onclick=()=>toggleGaze();
+  $('btnVol').onclick=()=>cicloVolumen();
+  { const b=$('btnVol'); if(b) b.querySelector('.ic').textContent = store.vol===0?'🔇':'🔊'; }
   $('btnVoice').onclick=()=>toggleVoice();
   $('gazeCal').onclick=(e)=>{ e.stopPropagation(); calibrateGaze(); };
   $('gazeInv').onclick=(e)=>{ e.stopPropagation(); gaze.invertYaw=!gaze.invertYaw; feed('Mirada '+(gaze.invertYaw?'invertida':'normal')); };
@@ -5361,6 +5684,11 @@ if(location.search.indexOf('dbg')>=0) window.DRONES={
     return { pasos:n||60, ms:+(performance.now()-t0).toFixed(1), msPorPaso:+((performance.now()-t0)/(n||60)).toFixed(3) }; },
   fireTest:()=>{ mouseFire=true; },
   secTest:(on)=>{ mouseSec=(on!==false); return mouseSec; },
+  audio:(ms)=>SONIDO.medir(ms),
+  bucles:()=>SONIDO.ganancias(),
+  sonar:(que,a,b)=>{ SONIDO.despertar();
+    const p=(a!==undefined)? new THREE.Vector3(a,b||0,0) : (camera?camera.position.clone():new THREE.Vector3());
+    if(SONIDO[que]) SONIDO[que](p, 1); return 'sonó '+que; },
   /* Mide de verdad las máquinas: caja envolvente en METROS. Es la unica forma
      de saber si un vehiculo tiene el tamano que dice tener. */
   medidas:()=>{
