@@ -91,6 +91,7 @@ DRONES.normales()        // normales en cero por malla: tiene que salir 0
 DRONES.sombra()          // metrosPorPunto del mapa de sombras
 DRONES.quemado()         // % de píxeles pegados al blanco
 DRONES.foto64(700)       // la imagen en base64, para verla fuera del navegador
+DRONES.aTejado(210,14,7) // te posa junto a una casa de teja y te la apunta
 ```
 
 > Con la ventana oculta `innerWidth` vale 0, el lienzo queda en 0×0 y dibujar no

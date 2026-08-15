@@ -33,6 +33,9 @@ mostraba media ciudad. Ahora:
 | **Copia del progreso** | ⬇ guardar / ⬆ restaurar en un archivo `.json` (14-ago) |
 | **Teja de barro** | textura propia con canales de 16 cm y relieve (14-ago) |
 | **Sombras** | siguen a la máquina y se afinan: 1,25 m → 0,33 m por punto (14-ago) |
+| **Alero y cumbrera** | el tejado vuela 42 cm y remata en su hilera (14-ago) |
+| **Chimeneas** | ~1.400, a caballo del caballete, instanciadas (14-ago) |
+| **Losa de concreto** | de 0,46–0,56 de albedo a 0,30–0,40: ya no sale blanca |
 
 ## El error que hacía que los techos se vieran "lisos"
 
@@ -84,12 +87,26 @@ Lo que sí pasa es que los techos de losa son muy **claros y de poco contraste**
 `colorTecho` los devuelve en torno a 0,47–0,56 de albedo, y un hormigón viejo de
 Bogotá está más cerca de 0,30. Eso ya es gusto, no defecto — decisión de Joan.
 
+## Los cuatro números que deciden cómo se ve la ciudad
+
+Están todos juntos a propósito: son de gusto, se tocan en un segundo y no hay
+que entender nada del motor para moverlos.
+
+| Dónde | Qué es | Ahora |
+|---|---|---|
+| `ALERO_M` | cuánto vuela el tejado sobre el muro | 0,42 m |
+| `losa()` | albedo del concreto visto desde arriba | 0,30–0,40 |
+| `colorTecho` → `r<0.72` | cuántas casas con faldón llevan teja | 72 % |
+| `ruidoCuadra(...) < 0.62` | cuántos tejados llevan chimenea | 62 % |
+
 ## Lo que falta, por orden de lo que yo haría
 
-1. **Techos planos con color de teja.** `colorTecho` pinta de teja el 46 % de los
-   techos bajos, pero un techo PLANO con color de teja es un plano naranja liso:
-   desde el aire canta. O se les da tejado, o se les da color de losa.
-2. **Los techos de losa, más oscuros** (ver arriba). Es un número, y es gusto.
+1. **La losa, ¿aún más oscura?** Se bajó de 0,46–0,56 a 0,30–0,40 y la ciudad
+   dejó de ser un mar de sábanas, pero en picado sigue clara. Un concreto viejo
+   de verdad está en 0,22–0,30. Es un número, y es gusto tuyo.
+2. **Ventana en el hastial.** El triángulo del remate está liso; en La
+   Candelaria casi todos tienen su ventanuco. Es la última cosa que se nota al
+   pasar a ras de tejado.
 3. **Microsoft Store** (19 USD una vez, la firma Microsoft, sin advertencia de
    SmartScreen). PWABuilder toma lo que ya hay. Solo cuando el juego esté más
    terminado.
@@ -151,6 +168,7 @@ DRONES.quemado(1280,720)  // % de píxeles pegados al blanco; el p99 dice más
 DRONES.normales()         // normales en cero por malla — tiene que ser 0
 DRONES.sombra()           // metrosPorPunto: lo fino que es el borde de sombra
 DRONES.foto64(700)        // la imagen en base64, para MIRARLA fuera del navegador
+DRONES.aTejado(210,14,7)  // te pone al lado de una casa de teja y te la apunta
 ```
 
 **Para revisar un cambio VISUAL sin poder ver la ventana** (que es lo normal

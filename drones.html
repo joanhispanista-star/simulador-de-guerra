@@ -2228,15 +2228,35 @@ function hacerTexturaTecho(){
 }
 /* Color de la cubierta vista desde arriba. En Bogotá: teja de barro en lo bajo
    (La Candelaria es casi toda teja roja) y losa de concreto gris en lo demás. */
-function colorTecho(alturaM, tipo, cx, cz){
+/* `conTejado` dice si ESE edificio va a acabar llevando dos aguas. Importa:
+   antes esto pintaba de teja el 46 % de los techos bajos sin mirar su forma, y
+   un techo PLANO de color teja es un plano naranja liso de veinte metros —
+   desde el aire canta, porque en la vida real lo naranja es naranja por ser
+   teja, y la teja siempre está inclinada. Ahora el color de barro solo lo
+   llevan los que de verdad tienen faldón; los demás son losa. */
+function colorTecho(alturaM, tipo, cx, cz, conTejado){
   // escala más chica que la fachada: los techos varían más de casa a casa,
   // pero siguen agrupándose por zona (La Candelaria es casi toda teja)
   const r = (cx===undefined) ? Math.random() : ruidoCuadra(cx+7.3, cz-4.1, 5);
-  if(alturaM>45) return [0.44,0.46,0.49];                                   // torres: cubierta técnica
-  if(alturaM>22) return r<0.75 ? [0.47,0.48,0.50] : [0.52,0.50,0.48];
-  if(/^(industrial|warehouse|hangar|farm)$/.test(tipo||'')) return [0.50,0.52,0.54];
-  if(r<0.46) return [0.46+Math.random()*0.12, 0.20+Math.random()*0.05, 0.13+Math.random()*0.04]; // teja
-  return [0.46+Math.random()*0.10, 0.46+Math.random()*0.09, 0.45+Math.random()*0.08];            // losa
+  if(alturaM>45) return losa(r, 0.02);                                      // torres: cubierta técnica
+  if(alturaM>22) return losa(r, 0.04);
+  if(/^(industrial|warehouse|hangar|farm)$/.test(tipo||'')) return losa(r, 0.05);
+  if(conTejado && r<0.72) return [0.46+Math.random()*0.12, 0.20+Math.random()*0.05, 0.13+Math.random()*0.04]; // teja
+  return losa(r, 0);
+}
+/* LOSA DE CONCRETO vista desde arriba.
+   Estaba entre 0,46 y 0,56 de albedo, y con el sol de mediodía eso sale CASI
+   BLANCO: media Bogotá aparecía como un mar de sábanas y se comía la ciudad.
+   No es que estuviera quemado — se midió y no hay un solo píxel pegado al
+   blanco — es que el número no era el de un techo. Un concreto viejo y sucio
+   está entre 0,22 y 0,35; aquí se queda en 0,30–0,40, que dentro del juego
+   sigue leyéndose como "claro" al lado de la teja pero ya no deslumbra.
+   La variación por edificio sube: un tejado de zinc, uno alquitranado y uno de
+   concreto no son el mismo gris, y desde el aire esa mezcla es la que hace que
+   una manzana no parezca de plástico. */
+function losa(r, mas){
+  const g=0.30+r*0.10+(mas||0);
+  return [g*1.02, g*1.0, g*0.97];    // un pelo cálido: el gris puro se ve muerto
 }
 /* Muros: un cuadrilátero por arista, con las UVs en metros y pisos para que la
    fachada salga a escala. La cara de cada muro se orienta comparando con el
@@ -2365,7 +2385,7 @@ function cajaOrientada(pts){
        muro por encima del alero. Antes salía todo en una malla y pintado del
        color de la teja, así que cada casa remataba en dos triángulos rojos.
        En La Candelaria ese remate es del color de la fachada, no del tejado. */
-function geomDosAguas(pts, yAlero, altoCaballete, escalaTeja, escalaMuro){
+function geomDosAguas(pts, yAlero, altoCaballete, escalaTeja, escalaMuro, alero){
   const c=cajaOrientada(pts);
   if(!c) return null;
   const largo=c.a1-c.a0, ancho=c.b1-c.b0;
@@ -2375,10 +2395,23 @@ function geomDosAguas(pts, yAlero, altoCaballete, escalaTeja, escalaMuro){
   const { ex, ez } = c;
   // el caballete corre a lo LARGO; el agua cae hacia los lados cortos
   const pun=(a,b)=>({ x:a*ex - b*ez, z:a*ez + b*ex });
-  const A=pun(c.a0,c.b0), B=pun(c.a1,c.b0), C=pun(c.a1,c.b1), D=pun(c.a0,c.b1);
   const bm=(c.b0+c.b1)/2;
-  const R0=pun(c.a0,bm), R1=pun(c.a1,bm);        // los dos extremos del caballete
   const yC=yAlero+altoCaballete;
+
+  /* EL ALERO. Un tejado que muere justo en el borde del muro se lee como una
+     tapa: es la silueta de una caja, no la de una casa. El tejado de verdad
+     VUELA unos 40 cm por fuera, y lo que se ve desde el aire no es el vuelo —
+     es la RAYA DE SOMBRA que el vuelo deja sobre la fachada, todo alrededor.
+     Esa raya es la que dice "aquí acaba el muro y empieza el tejado".
+     El borde del alero queda más BAJO que el muro, porque el agua sigue
+     cayendo con la misma pendiente mientras vuela; si se dejara a la altura
+     del muro, el faldón se doblaría hacia arriba en el último palmo. */
+  const vuelo=Math.min(alero||0, ancho*0.22, largo*0.22);
+  const pend=altoCaballete/(ancho/2);            // cuánto baja por unidad horizontal
+  const yV=yAlero-vuelo*pend;
+  const A0=c.a0-vuelo, A1=c.a1+vuelo, B0=c.b0-vuelo, B1=c.b1+vuelo;
+  const A=pun(c.a0,c.b0), B=pun(c.a1,c.b0), C=pun(c.a1,c.b1), D=pun(c.a0,c.b1);
+  const R0=pun(A0,bm), R1=pun(A1,bm);            // los dos extremos del caballete
 
   /* UNA sola vuelta por triángulo (el porqué está en el aviso del pretil), y el
      sentido se COMPRUEBA contra una dirección de referencia en vez de deducirlo:
@@ -2408,21 +2441,43 @@ function geomDosAguas(pts, yAlero, altoCaballete, escalaTeja, escalaMuro){
   /* La v de la teja va por la LONGITUD REAL del faldón (la hipotenusa), no por
      su sombra en el suelo: con la proyección horizontal las hiladas salían
      apretadas y el tejado parecía más plano de lo que es. */
-  const pendiente=Math.hypot(ancho/2, altoCaballete);
-  const uT=largo/escalaTeja, vT=pendiente/escalaTeja;
-  const faldon=(P,Q)=>cara(F,
-    [ {x:P.x,y:yAlero,z:P.z}, {x:Q.x,y:yAlero,z:Q.z}, {x:R1.x,y:yC,z:R1.z}, {x:R0.x,y:yC,z:R0.z} ],
+  const pendiente=Math.hypot(ancho/2+vuelo, yC-yV);
+  const uT=(A1-A0)/escalaTeja, vT=pendiente/escalaTeja;
+  const faldon=(bAlero)=>cara(F,
+    [ {...pun(A0,bAlero), y:yV}, {...pun(A1,bAlero), y:yV},
+      {x:R1.x,y:yC,z:R1.z}, {x:R0.x,y:yC,z:R0.z} ],
     [ [0,0], [uT,0], [uT,vT], [0,vT] ], ARRIBA);
-  faldon(A,B); faldon(D,C);
-  // los dos hastiales: pared, con la u por el ancho y la v por la altura
+  faldon(B0); faldon(B1);
+
+  /* LA CUMBRERA: la hilera de tejas que tapa el encuentro de las dos aguas.
+     Es una raya de un palmo, pero desde el aire es LA línea que dice por dónde
+     va la casa — el ojo lee la orientación de una manzana entera por ellas.
+     Se apoya en la propia agua (yC menos lo que ha bajado el faldón en ese
+     palmo), no a la altura del caballete, o flotaría un dedo por encima. */
+  const uPorM=escalaTeja/TEJA_REPITE_M;          // unidades de mundo por metro
+  const anchoCum=Math.min(0.17*uPorM, ancho*0.10);   // 17 cm a cada lado
+  const altoCum=Math.min(0.09*uPorM, altoCaballete*0.25);
+  const yBaseCum=yC-anchoCum*pend;
+  const uC=uT, vC=(anchoCum/escalaTeja)*1.6;
+  const cumbrera=(lado)=>cara(F,
+    [ {...pun(A0,bm+lado*anchoCum), y:yBaseCum}, {...pun(A1,bm+lado*anchoCum), y:yBaseCum},
+      {x:R1.x,y:yC+altoCum,z:R1.z}, {x:R0.x,y:yC+altoCum,z:R0.z} ],
+    [ [0,0], [uC,0], [uC,vC], [0,vC] ], ARRIBA);
+  cumbrera(-1); cumbrera(1);
+
+  // los dos hastiales: pared, con la u por el ancho y la v por la altura.
+  // Van en el muro ORIGINAL, no en el alero: el tejado vuela por encima de ellos.
   const uH=ancho/escalaMuro, vH=altoCaballete/escalaMuro;
   const hastial=(P,Q,R,sx,sz)=>cara(H,
     [ {x:P.x,y:yAlero,z:P.z}, {x:Q.x,y:yAlero,z:Q.z}, {x:R.x,y:yC,z:R.z} ],
     [ [0,0], [uH,0], [uH/2,vH] ], {x:sx,y:0,z:sz});
-  hastial(A,D,R0, -ex,-ez); hastial(B,C,R1, ex, ez);
+  const M0=pun(c.a0,bm), M1=pun(c.a1,bm);
+  hastial(A,D,M0, -ex,-ez); hastial(B,C,M1, ex, ez);
   const faldones=cerrar(F);
   if(!faldones) return null;
-  return { faldones, hastiales:cerrar(H) };
+  // el caballete, para que quien llame pueda plantar una chimenea encima
+  return { faldones, hastiales:cerrar(H),
+           caballete:{ x0:R0.x, z0:R0.z, x1:R1.x, z1:R1.z, y:yC+altoCum } };
 }
 /* ---------------------------------------------------------------------
    TEJA DE BARRO — su propia textura, con relieve.
@@ -2439,6 +2494,7 @@ function geomDosAguas(pts, yAlero, altoCaballete, escalaTeja, escalaMuro){
    bumpMap y no normalMap a propósito: el normalMap pide tangentes, y estas
    mallas van fusionadas y sin ellas. --------------------------------------- */
 const TEJA_REPITE_M=2.56, TEJA_CANALES=16, TEJA_HILADAS=8;
+const ALERO_M=0.42;                              // cuánto vuela el tejado sobre el muro
 let TEX_TEJA=null, TEX_TEJA_REL=null;
 function hacerTexturasTeja(){
   if(TEX_TEJA) return;
@@ -2708,7 +2764,7 @@ async function buildOSM(tok){
      perder la silueta se nota; perder casitas sueltas, no. Antes se quedaban
      los primeros que llegaran, que es un orden sin sentido, y la ciudad salía
      con parches vacíos en mitad del centro. */
-  const geosMuro=[], geosTecho=[], geosTeja=[], trastos=[];
+  const geosMuro=[], geosTecho=[], geosTeja=[], trastos=[], chimeneas=[];
   let recortados=0;
   if(edifs.length>MAX_EDIFICIOS){
     edifs.sort((a,b)=>b.areaU-a.areaU);
@@ -2735,30 +2791,41 @@ async function buildOSM(tok){
     if(!gm) continue;
     const gt=geomTecho(e.pts, baseY, hU, escalaTecho);
     if(!gt){ gm.dispose(); continue; }
-    pintarMalla(gm, colorFachada(alturaM, e.tipo, e.cx, e.cz), 0.16);
-    const rgbTecho=colorTecho(alturaM, e.tipo, e.cx, e.cz);
-    pintarMalla(gt, rgbTecho, 0.10);
-    geosMuro.push(gm); geosTecho.push(gt);
+    const rgbFachada=colorFachada(alturaM, e.tipo, e.cx, e.cz);
+    pintarMalla(gm, rgbFachada, 0.16);
+    geosMuro.push(gm);
     /* Casa baja, chica y con la huella rectangular → TEJADO A DOS AGUAS.
        Es lo que hay en La Candelaria y en media Bogotá vieja; un techo plano
        ahí es lo que hacía que el centro histórico pareciera un polígono
        industrial. El caballete sube 1/3 del ancho, que es la pendiente de una
-       teja de barro de verdad. */
+       teja de barro de verdad.
+       Se resuelve ANTES de elegir el color de la cubierta, porque ese color
+       depende de si va a haber faldón o no. */
     let dosAguas=null;
     if(alturaM<=12 && areaM2<=520 && e.pts.length<=9){
       const ancho=Math.sqrt(e.areaU);
-      dosAguas=geomDosAguas(e.pts, baseY+hU, Math.min(ancho*0.34, 3.2*M2U), escalaTeja, escalaTecho);
+      dosAguas=geomDosAguas(e.pts, baseY+hU, Math.min(ancho*0.34, 3.2*M2U),
+                            escalaTeja, escalaTecho, ALERO_M*mH);
       if(dosAguas){
         // el agua va con teja; el hastial es pared y va con el color de la fachada
         pintarMalla(dosAguas.faldones, COLOR_TEJA(e.cx,e.cz), 0.14);
         geosTeja.push(dosAguas.faldones);
-        if(dosAguas.hastiales){
-          pintarMalla(dosAguas.hastiales, colorFachada(alturaM, e.tipo, e.cx, e.cz), 0.12);
-          geosTecho.push(dosAguas.hastiales);
+        if(dosAguas.hastiales){ pintarMalla(dosAguas.hastiales, rgbFachada, 0.12);
+                                geosTecho.push(dosAguas.hastiales); }
+        /* Chimenea a caballo del caballete: en La Candelaria casi ninguna casa
+           se libra de una. Se planta en un punto cualquiera del lomo, nunca en
+           los extremos (ahí quedaría a medias sobre el hastial). */
+        if(ruidoCuadra(e.cx-11.3, e.cz+2.7, 3) < 0.62){
+          const t=0.22+Math.random()*0.56, cb=dosAguas.caballete;
+          chimeneas.push({ x:cb.x0+(cb.x1-cb.x0)*t, z:cb.z0+(cb.z1-cb.z0)*t, y:cb.y,
+                           giro:Math.atan2(cb.z1-cb.z0, cb.x1-cb.x0), esc:0.85+Math.random()*0.45 });
         }
         nTejado++;
       }
     }
+    const rgbTecho=colorTecho(alturaM, e.tipo, e.cx, e.cz, !!dosAguas);
+    pintarMalla(gt, rgbTecho, 0.10);
+    geosTecho.push(gt);
     /* Si NO lleva tejado, lleva PRETIL: el murito del borde de la azotea.
        Sin él un techo plano se lee como una tapa apoyada encima. */
     if(!dosAguas && e.areaU>1.2){
@@ -2766,7 +2833,11 @@ async function buildOSM(tok){
       if(gp){ pintarMalla(gp, rgbTecho, 0.08); geosTecho.push(gp); nPretil++; }
     }
     colliders.push({ x:e.cx, z:e.cz, r:Math.max(1.2,Math.sqrt(e.areaU/Math.PI)*0.85), h:hU });
-    if(alturaM<=45 && e.areaU>3) ponerTrastos(e, baseY+hU, areaM2, trastos);
+    /* Trastos de azotea SOLO donde hay azotea. Se estaban plantando también en
+       las casas con tejado, y a la altura del alero: el tanque de agua salía
+       atravesando el faldón, medio dentro y medio fuera. Una casa de teja no
+       tiene azotea — tiene chimenea, que es lo que se le pone arriba. */
+    if(!dosAguas && alturaM<=45 && e.areaU>3) ponerTrastos(e, baseY+hU, areaM2, trastos);
     nB++;
   }
   if(geosMuro.length){
@@ -2817,6 +2888,26 @@ async function buildOSM(tok){
     // caja de escalera o cuarto de máquinas: 3 × 3 × 2,4 m
     sembrar(cajas, new THREE.BoxGeometry(3*mH, 2.4*M2U, 3*mH),
             new THREE.MeshStandardMaterial({color:0x8a8578, roughness:0.9, metalness:0.03}), 2.4*M2U);
+  }
+  /* ---- chimeneas sobre los tejados de teja ----
+     Una caja de 50 × 40 cm y metro y medio, girada para ir a lo largo del
+     caballete. Sale barata (una llamada de dibujo para todas) y es lo que
+     rompe la fila de lomos idénticos cuando miras una manzana desde arriba.
+     Como los trastos, NO proyecta sombra: la pasada de sombras es la mitad
+     del coste del cuadro, y a esta escala su relieve ya lo dan sus propias
+     caras — una al sol y tres en penumbra. */
+  if(chimeneas.length){
+    const d=new THREE.Object3D();
+    const geo=new THREE.BoxGeometry(0.5*mH, 1.5*M2U, 0.4*mH);
+    const mat=new THREE.MeshStandardMaterial({color:0x7d6a5c, roughness:0.93, metalness:0});
+    const im=new THREE.InstancedMesh(geo, mat, chimeneas.length); im.castShadow=false;
+    im.name='chimeneas';           // para que DRONES.aTejado() no la confunda con las cajas de escalera
+    chimeneas.forEach((t,i)=>{
+      // se hunde un tercio: apoyada justo encima flotaría en cuanto el tejado tenga pendiente
+      d.position.set(t.x, t.y+1.5*M2U*t.esc*0.5-0.5*M2U*t.esc, t.z);
+      d.rotation.set(0,-t.giro,0); d.scale.setScalar(t.esc); d.updateMatrix(); im.setMatrixAt(i,d.matrix);
+    });
+    im.instanceMatrix.needsUpdate=true; ciudad.add(im);
   }
   /* ---- calles: acera + asfalto + línea central ----
      Tres cintas a alturas ligeramente distintas (12, 16 y 19 cm sobre el
@@ -2936,7 +3027,7 @@ async function buildOSM(tok){
     ciudad.add(tI); ciudad.add(cI); ciudad.add(aI); nV=N;
   }
   REAL.osm={ edificios:nB, traidos, agua:nA, arboles:nV, calles:nC, azotea:trastos.length, recortados,
-             tejados:nTejado, pretiles:nPretil,
+             tejados:nTejado, pretiles:nPretil, chimeneas:chimeneas.length,
              masAlto, trastoMasAlto:trastos.reduce((a,t)=>Math.max(a,t.y),0) };
   feed('🏙️ '+nB+' edificios · '+nC+' calles · '+nA+' aguas · '+nV+' árboles · '+
        trastos.length+' trastos de azotea','good');
@@ -6200,6 +6291,24 @@ if(location.search.indexOf('dbg')>=0) window.DRONES={
       unidadesPorPunto:+(lado/sun.shadow.mapSize.width).toFixed(4),
       metrosPorPunto:+(lado/sun.shadow.mapSize.width*(REAL?REAL.mPerU:5.22)).toFixed(2),
       centro:[+sun.target.position.x.toFixed(1), +sun.target.position.z.toFixed(1)] }; },
+  /* Pone el dron al lado de un tejado de teja y lo apunta. Buscar una casa a
+     ojo moviendo el dron a ciegas cuesta cinco intentos; las chimeneas van
+     instanciadas y cada una está sobre un caballete, así que sirven de índice
+     de "aquí hay un tejado". n elige cuál, para poder ver varias. */
+  aTejado:(n, dist, alto)=>{
+    if(!REAL||!REAL.osmGroup) return 'no hay ciudad';
+    let im=null; REAL.osmGroup.traverse(o=>{ if(o.name==='chimeneas') im=o; });
+    if(!im) return 'no hay chimeneas';
+    const m=new THREE.Matrix4(); im.getMatrixAt(Math.abs(n||0)%im.count, m);
+    const x=m.elements[12], y=m.elements[13], z=m.elements[14];
+    const d=dist||9, h=alto||3;
+    if(!drone.active) toggleDrone();
+    drone.pos.set(x-d, y+h, z-d);
+    const ang=Math.atan2(x-drone.pos.x, z-drone.pos.z);
+    drone.yaw=ang; player.view.yaw=ang;
+    ajustarGimbal(-Math.atan2(h, Math.hypot(d,d))-(drone.gimbal||0));
+    return { casa:[+x.toFixed(1),+y.toFixed(1),+z.toFixed(1)], de:im.count };
+  },
   killOne:()=>{ const e=enemies.find(x=>x.alive); if(e){ damageEnemy(e,9999); return e.tag; } return 'none'; },
   hitPlayer:(d)=>{ damagePlayer(d||50); return +player.hp.toFixed(1); },
   tp:(x,z)=>{ player.pos.x=x; player.pos.z=z; return player.pos.toArray().map(n=>+n.toFixed(1)); },
