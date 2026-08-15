@@ -37,6 +37,10 @@ mostraba media ciudad. Ahora:
 | **Chimeneas** | ~1.400, a caballo del caballete, instanciadas (14-ago) |
 | **Losa de concreto** | de 0,46–0,56 de albedo a 0,30–0,40: ya no sale blanca |
 | **Vuelo del dron** | inercia de giro, banqueo, horizonte que se inclina, FOV con la marcha, respiración en vuelo (14-ago) |
+| **Batería** | 20 minutos de vuelo (eran 55 s) — decisión de Joan, 15-ago |
+| **Misiones** | ciudades ×3 (24 enemigos con torretas y jammers), montañas ×2 |
+| **Perros robot aliados** | garaje → Compañeros: ×2 veterano o Jauría ×4 élite; escoltan por tierra, ráfagas de 3 |
+| **Plan de guerra** | `PLAN-GUERRA.md`: campo grande, duelo 1v1, guerra por territorios — fases con tiempos |
 
 ## El vuelo del dron: qué se pulió y cómo se prueba
 
@@ -59,12 +63,16 @@ y mirar `DRONES.vuelo()` (yawVel, roll, fov, camRoll). `palanca(null)` devuelve
 los controles. Verificado: rampa 1,1→2,6 rad/s en ⅓ s; girando a la derecha
 roll +0,40 y camRoll −0,23; a fondo vel 5,75 u/s y FOV 68,0.
 
-**Decisión pendiente de Joan — la batería.** El dron vuela **55 segundos** en
-total por misión (`0.018/s`, y subir gasta 60 % más; al agotarse queda al 30 %
-de potencia y el despliegue siguiente NO la recarga). Un DJI real vuela 20–30
-min. Es la primera queja que tendría un jugador que esté disfrutando el vuelo —
-pero alargarla cambia el equilibrio de las misiones (recon y kamikaze), así que
-es decisión de diseño, no un bug. Es UN número en `updateDrone`.
+**La batería quedó en 20 minutos** (Joan, 15-ago) y las misiones se alargaron
+a juego: ciudades con 24 enemigos (tanques, torretas, drones, perros y
+jammers), montañas al doble. El redespliegue sigue sin recargar.
+
+**Los perros robot aliados** reutilizan el cuerpo, la marcha y la ráfaga del
+enemigo (en azul): dos perros que caminan distinto se notaría más que dos del
+mismo color. El anillo de escolta va en UNIDADES (1,9 u ≈ 10 m) — el primer
+intento lo puso a 7 creyendo metros y escoltaban a 36 m, invisibles a escala
+real. `DRONES.pantalla(x,y,z)` dice en qué píxel cae un punto del mundo: es lo
+que permitió fotografiarlos sin adivinar el encuadre.
 
 ## El error que hacía que los techos se vieran "lisos"
 

@@ -989,6 +989,9 @@ const CATALOG={
     {id:'duo', name:'Escolta ×2', cost:16, count:2, lvl:'vet', note:'2 drones · IA Veterano'},
     {id:'elite', name:'Élite ×2', cost:28, count:2, lvl:'eli', note:'2 drones · IA Élite (anticipan)'},
     {id:'enjambre', name:'Enjambre ×3', cost:30, count:3, lvl:'vet', note:'3 drones · IA Veterano'},
+    /* van por TIERRA: mismo cerebro que los drones, cuerpo y arma del perro */
+    {id:'perros', name:'Perros robot ×2', cost:24, count:2, lvl:'vet', tierra:true, note:'2 perros con ametralladora · escoltan por tierra'},
+    {id:'jauria', name:'Jauría ×4', cost:40, count:4, lvl:'eli', tierra:true, note:'4 perros · IA Élite · fuego cruzado'},
   ]},
 };
 const AI_LVL={
@@ -1713,31 +1716,31 @@ function buildProps(b){
 const REAL_MAPS=[
   { id:'chicamocha', name:'Cañón del Chicamocha', pais:'Colombia 🇨🇴', lat:6.79, lon:-72.97, zoom:13, tiles:3, vexag:1.35,
     desc:'Uno de los cañones más grandes del planeta, en Santander.',
-    enemies:[{t:'tank',n:4},{t:'turret',n:2}], objs:[{type:'destroy',tag:'enemy',n:6,text:'Limpia el cañón (6)'}] },
+    enemies:[{t:'tank',n:8},{t:'turret',n:4}], objs:[{type:'destroy',tag:'enemy',n:12,text:'Limpia el cañón (12)'}] },
   { id:'ruiz', name:'Nevado del Ruiz', pais:'Colombia 🇨🇴', lat:4.892, lon:-75.324, zoom:13, tiles:3, vexag:1.1,
     desc:'Volcán nevado de la cordillera Central.',
-    enemies:[{t:'tank',n:5}], objs:[{type:'destroy',tag:'enemy',n:5,text:'Neutraliza la patrulla (5)'}] },
+    enemies:[{t:'tank',n:10}], objs:[{type:'destroy',tag:'enemy',n:10,text:'Neutraliza la patrulla (10)'}] },
   { id:'santamarta', name:'Sierra Nevada de Santa Marta', pais:'Colombia 🇨🇴', lat:10.83, lon:-73.72, zoom:12, tiles:3, vexag:1.0,
     desc:'La montaña costera más alta del mundo.',
-    enemies:[{t:'tank',n:4},{t:'turret',n:3}], objs:[{type:'destroy',tag:'enemy',n:7,text:'Domina la sierra (7)'}] },
+    enemies:[{t:'tank',n:8},{t:'turret',n:6}], objs:[{type:'destroy',tag:'enemy',n:14,text:'Domina la sierra (14)'}] },
   { id:'grancanon', name:'Gran Cañón', pais:'EE. UU. 🇺🇸', lat:36.15, lon:-112.05, zoom:12, tiles:3, vexag:1.25,
     desc:'El cañón del río Colorado, en Arizona.',
-    enemies:[{t:'tank',n:4},{t:'turret',n:2}], objs:[{type:'destroy',tag:'enemy',n:6,text:'Patrulla el cañón (6)'}] },
+    enemies:[{t:'tank',n:8},{t:'turret',n:4}], objs:[{type:'destroy',tag:'enemy',n:12,text:'Patrulla el cañón (12)'}] },
   { id:'fuji', name:'Monte Fuji', pais:'Japón 🇯🇵', lat:35.363, lon:138.731, zoom:12, tiles:3, vexag:1.0,
     desc:'El volcán símbolo de Japón.',
-    enemies:[{t:'tank',n:5},{t:'turret',n:2}], objs:[{type:'destroy',tag:'enemy',n:7,text:'Asciende y limpia (7)'}] },
+    enemies:[{t:'tank',n:10},{t:'turret',n:4}], objs:[{type:'destroy',tag:'enemy',n:14,text:'Asciende y limpia (14)'}] },
   { id:'everest', name:'Everest', pais:'Nepal 🇳🇵', lat:27.988, lon:86.925, zoom:12, tiles:3, vexag:0.85,
     desc:'El techo del mundo, 8.849 m.',
-    enemies:[{t:'tank',n:4}], objs:[{type:'destroy',tag:'enemy',n:4,text:'Operación en altura (4)'}] },
+    enemies:[{t:'tank',n:8}], objs:[{type:'destroy',tag:'enemy',n:8,text:'Operación en altura (8)'}] },
   { id:'cotopaxi', name:'Volcán Cotopaxi', pais:'Ecuador 🇪🇨', lat:-0.684, lon:-78.437, zoom:13, tiles:3, vexag:1.1,
     desc:'Uno de los volcanes activos más altos del mundo.',
-    enemies:[{t:'tank',n:3},{t:'airdrone',n:2},{t:'perro',n:3}], objs:[{type:'destroy',tag:'enemy',n:6,text:'Domina el volcán (6)'}] },
+    enemies:[{t:'tank',n:6},{t:'airdrone',n:4},{t:'perro',n:6}], objs:[{type:'destroy',tag:'enemy',n:16,text:'Domina el volcán (16)'}] },
   { id:'paine', name:'Torres del Paine', pais:'Chile 🇨🇱', lat:-50.94, lon:-73.03, zoom:13, tiles:3, vexag:1.3,
     desc:'Picos de granito de la Patagonia.',
-    enemies:[{t:'tank',n:5},{t:'turret',n:2}], objs:[{type:'destroy',tag:'enemy',n:7,text:'Patrulla los picos (7)'}] },
+    enemies:[{t:'tank',n:10},{t:'turret',n:4}], objs:[{type:'destroy',tag:'enemy',n:14,text:'Patrulla los picos (14)'}] },
   { id:'aconcagua', name:'Aconcagua', pais:'Argentina 🇦🇷', lat:-32.653, lon:-70.011, zoom:12, tiles:4, vexag:1.0,
     desc:'La cumbre más alta de América (6.961 m). Mapa de alta resolución (4×4).',
-    enemies:[{t:'tank',n:5},{t:'airdrone',n:3}], objs:[{type:'destroy',tag:'enemy',n:8,text:'Conquista la cumbre (8)'}] },
+    enemies:[{t:'tank',n:10},{t:'airdrone',n:6}], objs:[{type:'destroy',tag:'enemy',n:16,text:'Conquista la cumbre (16)'}] },
 ];
 /* Ciudades listas para desplegar: se levantan sus edificios reales (OpenStreetMap).
    Añadir una es poner su nombre y sus coordenadas del centro. */
@@ -4331,14 +4334,24 @@ function angDiff(a,b){ let d=(a-b)%TAU; if(d>Math.PI)d-=TAU; if(d<-Math.PI)d+=TA
 /* =====================================================================
    COMPAÑEROS IA (escuadrón de drones aliados) · IA de comportamiento
    ===================================================================== */
-function spawnAlly(idx, lvl){
+function spawnAlly(idx, lvl, tierra){
   const L=AI_LVL[lvl]||AI_LVL.vet;
-  const mesh=buildDrone(0x2f9bff); scene.add(mesh); addHeat(mesh,0.4,4);
-  const a={ mesh, pos:new THREE.Vector3(), vel:new THREE.Vector3(), yaw:0, hp:L.hp, hpMax:L.hp,
+  /* el perro aliado REUTILIZA el cuerpo y la marcha del enemigo, en azul; lo
+     único propio es el bando. Un modelo nuevo sería deuda: dos perros que
+     caminan distinto se nota más que dos perros del mismo color. */
+  const mesh=tierra ? buildPerro(0x2f6ba8) : buildDrone(0x2f9bff);
+  scene.add(mesh); addHeat(mesh,0.4,4);
+  const a={ mesh, pos:new THREE.Vector3(), vel:new THREE.Vector3(), yaw:0, hp:L.hp+(tierra?25:0), hpMax:L.hp+(tierra?25:0),
     alive:true, state:'follow', target:null, reload:Math.random(), L, lvl, offset:idx, bob:Math.random()*TAU,
-    mobile:true, aim:0, wp:new THREE.Vector3() };
-  a.pos.copy(player.pos).add(new THREE.Vector3((idx%2?1:-1)*5*M, (9+idx*3)*M, -4*M));
-  IA.iaInit(a, 'azul', 'aliado');      // sensores + memoria táctica propios
+    mobile:true, aim:0, wp:new THREE.Vector3(), tierra:!!tierra, paso:Math.random(), rafaga:0 };
+  if(tierra){
+    a.pos.copy(player.pos).add(new THREE.Vector3((idx%2?1:-1)*(4+idx)*M, 0, -5*M));
+    a.pos.y=terrainHeight(a.pos.x,a.pos.z)+PERRO_ALTO;
+  } else {
+    a.pos.copy(player.pos).add(new THREE.Vector3((idx%2?1:-1)*5*M, (9+idx*3)*M, -4*M));
+  }
+  // el perro percibe como perro: pegado al suelo, ancho y corto (CONFIG_IA.SENSOR)
+  IA.iaInit(a, 'azul', tierra?'perro':'aliado');   // sensores + memoria táctica propios
   allies.push(a);
 }
 function damageAlly(a, dmg){
@@ -4365,6 +4378,32 @@ function updateAllies(dt){
 function moverAliado(a, orden, dt){
   const enFormacion = (a.ia.estado==='PATRULLA' || a.ia.estado==='IDLE' || !orden.ir);
   let goal=orden.ir;
+  if(a.tierra){
+    /* PERRO ALIADO: mismo cerebro, cuerpo por tierra. Escolta en un anillo
+       CORTO (7 u, no 13): un perro guardaespaldas va al lado, no dando vueltas
+       a media manzana. Y esquiva los edificios con el mismo resolveColliders
+       que el enemigo — sin eso atraviesa la primera casa de La Candelaria. */
+    /* ⚠ el anillo va en UNIDADES (1 u ≈ 5,2 m): 1,9 u ≈ 10 m. El primer intento
+       lo puso a 7 u creyendo que eran metros y los perros escoltaban a 36 m —
+       a escala real (90 cm de perro) ni se veían. */
+    if(enFormacion){ const ang=a.offset*2.6+missionTime*0.1;
+      goal={ x:player.pos.x+Math.cos(ang)*1.9, z:player.pos.z+Math.sin(ang)*1.9 }; }
+    const dx=goal.x-a.pos.x, dz=goal.z-a.pos.z, L=Math.hypot(dx,dz)||1;
+    const lejos=L>0.7;
+    const my = lejos ? Math.atan2(dx,dz)
+             : (orden.mirar ? Math.atan2(orden.mirar.x-a.pos.x, orden.mirar.z-a.pos.z) : a.yaw);
+    a.yaw=angLerp(a.yaw, my, 4.5*dt); a.aim=a.yaw;
+    const sp=lejos ? Math.min(2.1, L*0.5)*(orden.prisa||1) : 0;
+    a.vel.set(Math.sin(a.yaw)*sp, 0, Math.cos(a.yaw)*sp);
+    a.pos.addScaledVector(a.vel, dt);
+    a.pos.x=clamp(a.pos.x,-HALF+6,HALF-6); a.pos.z=clamp(a.pos.z,-HALF+6,HALF-6);
+    resolveColliders(a.pos, 0.5*M);
+    a.pos.y=damp(a.pos.y, terrainHeight(a.pos.x,a.pos.z)+PERRO_ALTO, 12, dt);
+    a.mesh.position.copy(a.pos); a.mesh.rotation.set(0, a.yaw, 0);
+    animarPerro(a, dt);
+    if(a.mesh.userData.led) a.mesh.userData.led.material.emissiveIntensity=1.4+Math.sin(missionTime*6)*0.8;
+    a.target=a.ia.blanco;
+  } else {
   if(enFormacion){                                   // vuela en formación alrededor del jugador
     const ang=a.offset*2.2+missionTime*0.15;
     goal={ x:player.pos.x+Math.cos(ang)*13, z:player.pos.z+Math.sin(ang)*13 };
@@ -4385,8 +4424,28 @@ function moverAliado(a, orden, dt){
   a.mesh.position.copy(a.pos); a.mesh.rotation.set(0.1, a.yaw, Math.sin(a.bob)*0.08);
   if(a.mesh.userData.rotors) for(const r of a.mesh.userData.rotors) r.rotation.y+=dt*80;
   a.target=a.ia.blanco;
+  }
   // ---- fuego con anticipación según el nivel de la IA ----
   a.reload-=dt;
+  if(a.tierra && orden.fuego && orden.mirar && a.reload<=0){
+    /* AMETRALLADORA del perro aliado: la misma ráfaga de tres del enemigo
+       (90 ms entre tiros, ~un segundo entre ráfagas) — es lo que suena a arma
+       automática y no a artillería. Solo cambian el bando y la traza azul. */
+    a.rafaga=(a.rafaga||0)+1;
+    const finRafaga=a.rafaga%3===0;
+    a.reload = finRafaga ? 0.8+Math.random()*0.5 : 0.09;
+    if(finRafaga && a.ia.gun) a.ia.gun.municion=Math.max(0, a.ia.gun.municion-1);  // la máquina de estados decide cuándo recargar
+    const boca=a.pos.clone().setY(a.pos.y+0.7*PERRO_ESC).addScaledVector(_al.set(Math.sin(a.yaw),0,Math.cos(a.yaw)), 1.45*PERRO_ESC);
+    const t=a.ia.blanco;
+    _al.copy(orden.mirar); if(t && t.vel) _al.addScaledVector(t.vel, (boca.distanceTo(_al)/MG_VELOCIDAD)*a.L.lead);
+    const d=_al.sub(boca).normalize(), disp=a.L.disp*1.4;
+    d.x+=(Math.random()-0.5)*disp; d.y+=(Math.random()-0.5)*disp*0.5; d.z+=(Math.random()-0.5)*disp; d.normalize();
+    fireProjectile(boca, d, {speed:MG_VELOCIDAD, dmg:5.5, from:'player', kind:'bala',
+      traza:(a.rafaga%2===0), life:1.8, color:0x8be0ff});
+    fogonazo(boca, d, 0.6);
+    SONIDO.rifle(boca);
+    return;
+  }
   if(orden.fuego && orden.mirar && a.reload<=0){
     a.reload=a.L.reload;
     if(a.ia) a.ia.gun.municion=Math.max(0, a.ia.gun.municion-1);
@@ -5020,8 +5079,11 @@ function updateDrone(dt, inp){
     const gr=Math.round(drone.gimbal*180/Math.PI);
     if(gr!==_gimbalVisto){ _gimbalVisto=gr; updateChips(); }
   }
-  // batería: se agota volando; sin carga, casi no sostiene vuelo
-  drone.batt=clamp(drone.batt - dt*0.018*(1+(inp.up?0.6:0)), 0, 1);
+  /* Batería: 20 MINUTOS de vuelo (decisión de Joan, 15-ago-2026; antes eran
+     55 segundos). Subir sigue gastando 60 % más. Con esto la batería deja de
+     ser el reloj de la misión y pasa a ser lo que es en un dron real: el
+     límite de las salidas MUY largas. 1/(20*60) = 0.000833. */
+  drone.batt=clamp(drone.batt - dt*0.000833*(1+(inp.up?0.6:0)), 0, 1);
   const power = drone.batt>0.04 ? 1 : 0.3;
   /* yaw — derecha = gira a la derecha (signo negativo, ver nota en updatePlayer).
      Con INERCIA: antes el giro arrancaba y paraba EN SECO en el mismo cuadro, y
@@ -5283,7 +5345,7 @@ function deployMission(m){
   (m.enemies||[]).forEach(spec=>{ for(let i=0;i<spec.n;i++){ const [x,z]=enemySpot(spec.t==='airdrone'); spawnEnemy(spec.t, x, z); } });
   spawnClutter();   // barriles/cajas del campo de batalla (motor de física)
   // escuadrón de compañeros IA
-  if(stats.allies && stats.allies.count>0){ for(let i=0;i<stats.allies.count;i++) spawnAlly(i, stats.allies.lvl); }
+  if(stats.allies && stats.allies.count>0){ for(let i=0;i<stats.allies.count;i++) spawnAlly(i, stats.allies.lvl, stats.allies.tierra); }
   if(m.objs.some(o=>o.type==='reach')){
     const a=Math.random()*TAU, r=150; extractZone=new THREE.Vector3(Math.cos(a)*r,0,Math.sin(a)*r);
     extractZone.y=terrainHeight(extractZone.x,extractZone.z);
@@ -6134,9 +6196,11 @@ function wireUI(){
     $('cityGo').onclick=()=>{
       const [la,lo]=sel.value.split(',').map(Number);
       const nombre=sel.options[sel.selectedIndex].textContent;
+      /* Con la batería de 20 min (antes 55 s) la ciudad da para una OPERACIÓN,
+         no una escaramuza: el triple de fuerzas enemigas (decisión de Joan). */
       startRealMission({ id:'city_'+sel.value, name:nombre, pais:'🏙️ '+nombre, lat:la, lon:lo, vexag:1.0,
-        enemies:[{t:'tank',n:3},{t:'airdrone',n:2},{t:'perro',n:3}],
-        objs:[{type:'destroy',tag:'enemy',n:6,text:'Limpia el sector (6)'}] });
+        enemies:[{t:'tank',n:7},{t:'turret',n:3},{t:'airdrone',n:5},{t:'perro',n:7},{t:'jammer',n:2}],
+        objs:[{type:'destroy',tag:'enemy',n:18,text:'Limpia el sector (18)'}] });
     };
   })();
   // "tu zona": jugar en cualquier coordenada real
@@ -6144,7 +6208,8 @@ function wireUI(){
     if(isNaN(lat)||isNaN(lon)||lat<-85||lat>85||lon<-180||lon>180){ alert('Coordenadas inválidas.\nEjemplo (Bogotá): 4.60, -74.08'); return; }
     startRealMission({ id:'custom_'+lat.toFixed(2)+'_'+lon.toFixed(2), name:'Tu zona', pais:'📍 '+lat.toFixed(3)+', '+lon.toFixed(3),
       lat, lon, vexag:1.0,
-      enemies:[{t:'tank',n:3},{t:'airdrone',n:2},{t:'perro',n:3}], objs:[{type:'destroy',tag:'enemy',n:6,text:'Limpia tu zona (6)'}] }); };
+      enemies:[{t:'tank',n:7},{t:'turret',n:3},{t:'airdrone',n:5},{t:'perro',n:7},{t:'jammer',n:2}],
+      objs:[{type:'destroy',tag:'enemy',n:18,text:'Limpia tu zona (18)'}] }); };
   // pad
   const padHold=(id,flag)=>{ const el=$(id); el.addEventListener('pointerdown',e=>{pad[flag]=true; e.preventDefault();}); ['pointerup','pointercancel','pointerleave'].forEach(ev=>el.addEventListener(ev,()=>pad[flag]=false)); };
   padHold('padUp','throttleUp'); padHold('padDown','throttleDown'); padHold('padFire','fire');
@@ -6349,6 +6414,12 @@ if(location.search.indexOf('dbg')>=0) window.DRONES={
   vuelo:()=>({ vel:+Math.hypot(drone.vel.x,drone.vel.z).toFixed(2), yawVel:+(drone.yawVel||0).toFixed(3),
     pitch:+drone.pitch.toFixed(3), roll:+drone.roll.toFixed(3), fov:+camera.fov.toFixed(1),
     camRoll:+(typeof camRollFPV!=='undefined'?camRollFPV:0).toFixed(3), batt:+drone.batt.toFixed(2) }),
+  /* ¿En qué píxel cae este punto del mundo? Para recortar capturas SIN adivinar:
+     apuntar, foto, pantalla(x,y,z), recorte justo ahí. */
+  pantalla:(x,y,z)=>{ const v=new THREE.Vector3(x,y,z).project(camera);
+    return { x:Math.round((v.x*0.5+0.5)*renderer.domElement.width),
+             y:Math.round((1-(v.y*0.5+0.5))*renderer.domElement.height),
+             delante:v.z<1 && v.z>-1 }; },
   aTejado:(n, dist, alto)=>{
     if(!REAL||!REAL.osmGroup) return 'no hay ciudad';
     let im=null; REAL.osmGroup.traverse(o=>{ if(o.name==='chimeneas') im=o; });
@@ -6375,7 +6446,9 @@ if(location.search.indexOf('dbg')>=0) window.DRONES={
   setEnv:(tod,wx)=>{ if(tod)TOD=tod; if(wx)WX=wx; applyEnvironment(); return {TOD,WX,NIGHT,vis:visRange}; },
   air:()=>enemies.filter(e=>e.alive&&e.air).length,
   jammers:()=>enemies.filter(e=>e.alive&&e.jammer).length,
-  allies:()=>({total:allies.length, alive:allies.filter(a=>a.alive).length, engaging:allies.filter(a=>a.alive&&a.state==='engage').length, lvl:allies[0]&&allies[0].L.name}),
+  allies:()=>({total:allies.length, alive:allies.filter(a=>a.alive).length, engaging:allies.filter(a=>a.alive&&a.state==='engage').length, lvl:allies[0]&&allies[0].L.name,
+    pos:allies.map(a=>({t:a.tierra?'perro':'dron', vivo:a.alive, x:+a.pos.x.toFixed(1), y:+a.pos.y.toFixed(1), z:+a.pos.z.toFixed(1), estado:a.ia&&a.ia.estado,
+      mesh:{visible:a.mesh.visible, enEscena:!!a.mesh.parent, my:+a.mesh.position.y.toFixed(2), escala:+a.mesh.scale.x.toFixed(2)}}))}),
   droneInfo:()=>({type:stats&&stats.drone.id, fiber:!!(stats&&stats.drone.fiber), maxAlt:stats&&stats.drone.maxAlt, domain:stats&&stats.drone.domain, cam:DRONECAM_NAMES[droneCam], y:+drone.pos.y.toFixed(1),
     gimbal:Math.round((drone.gimbal||0)*180/Math.PI), gimbalManual:!!drone.gimbalManual}),
   setGimbal:(grados)=>{ ajustarGimbal(grados*Math.PI/180-(drone.gimbal||0)); return Math.round((drone.gimbal||0)*180/Math.PI); },
