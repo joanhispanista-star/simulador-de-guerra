@@ -1,9 +1,9 @@
 # Publica el juego en GitHub Pages en cada push a main.
 #
 # Cómo funciona: Pages está servido desde la rama `gh-pages`, y este flujo la
-# reconstruye con SOLO lo publicable. Todo lo demás —el servidor de desarrollo,
-# el .bat, las capturas de prueba y sobre todo plaza.html, que es el índice de
-# todos los proyectos de Joan— se queda fuera a propósito.
+# reconstruye con SOLO lo publicable. Es una LISTA BLANCA a propósito: si un
+# archivo no está aquí, NO viaja. Drones es un proyecto independiente y no
+# publica nada que no sea suyo.
 #
 # Se usa la rama y no el despliegue por Actions porque encender Pages por API
 # devolvía 403: el token del repositorio no tiene ese permiso por defecto.
@@ -33,8 +33,8 @@ jobs:
           set -e
           # lista blanca: si algo no está aquí, NO se publica
           mkdir ../sitio
-          cp -r index.html drones.html tanques.html drones.webmanifest sw-drones.js \
-                icon-192.png icon-512.png LEEME-tanques.txt .nojekyll \
+          cp -r index.html drones.html drones.webmanifest sw-drones.js \
+                icon-192.png icon-512.png .nojekyll \
                 vendor capturas-app ../sitio/
           cd ../sitio
           git init -q -b gh-pages

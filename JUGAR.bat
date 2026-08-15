@@ -1,10 +1,10 @@
 @echo off
-title Maquinas - Drones de Combate
+title Drones de Combate
 cd /d "%~dp0"
 
 echo.
 echo   ===========================================
-echo    MAQUINAS - Drones de Combate
+echo        DRONES DE COMBATE
 echo   ===========================================
 echo.
 echo   Levantando el servidor...

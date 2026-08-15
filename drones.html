@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#0c0e13">
-<title>Drones de Combate · Joan te presta</title>
+<title>Drones de Combate</title>
 <!-- App instalable (PWA) -->
 <link rel="manifest" href="drones.webmanifest">
 <link rel="icon" href="icon-192.png">
@@ -269,9 +269,6 @@
     border-bottom-width:2px;border-radius:5px;padding:1px 5px;font-size:11px;font-weight:800;color:#cfe9df;font-family:inherit}
   .foot{margin-top:14px;font-size:11px;color:var(--gris-2);text-align:center;line-height:1.6}
   .foot a{color:var(--azul);cursor:pointer}
-  .backlink{position:fixed;top:var(--sa-t);left:var(--sa-l);z-index:30;background:rgba(8,10,14,.6);
-    border:1px solid var(--linea);color:var(--gris);border-radius:10px;padding:7px 11px;font-size:12px;font-weight:800;display:none}
-  .backlink.on{display:block}
 
   /* pairing / mando */
   .code-in{display:flex;gap:8px;margin:10px 0}
@@ -483,7 +480,6 @@
       <button class="salir" id="fotoSalir">Volver</button>
     </div>
   </div>
-  <a class="backlink" id="backPlaza" href="plaza.html">← Plaza</a>
 
   <!-- vista previa de la webcam para apuntar con la mirada -->
   <div id="gazeBox">
@@ -4953,7 +4949,7 @@ function deployMission(m){
   objState=m.objs.map(o=>({def:o, done:false}));
   missionResult=null;
   $('menu').classList.remove('on'); $('briefing').classList.remove('on'); $('result').classList.remove('on'); $('pause').classList.remove('on');
-  $('hud').classList.add('on'); $('backPlaza').classList.remove('on');
+  $('hud').classList.add('on');
   if(IS_TOUCH) $('touch').classList.add('on');
   $('utiles').classList.add('on');
   $('reticle').classList.add('on');
@@ -5548,25 +5544,7 @@ function toMenu(){ playing=false; paused=false; SONIDO.parar();
   $('pause').classList.remove('on'); $('result').classList.remove('on'); $('hud').classList.remove('on'); $('touch').classList.remove('on'); $('utiles').classList.remove('on'); $('rotate').classList.remove('on');
   setSensor(0); $('linkFx').style.opacity=0; $('linkWarn').classList.remove('on'); $('underFx').classList.remove('on');   // limpia overlays
   IA.dbgOff();
-  $('menu').classList.add('on'); mostrarEnlacePlaza(); renderMissions(); }
-/* ---------------------------------------------------------------------
-   EL ENLACE "← Plaza" SOLO APARECE SI PLAZA ESTÁ AHÍ.
-   plaza.html es el índice de TODOS los proyectos de Joan (el CRM de Tu
-   Garantía, MATRIX, Centinela, Portero, Renta, Cámaras…). Cuando el juego
-   se publica suelto para que lo pruebe alguien de fuera, ese enlace es una
-   puerta a cosas que esa persona no tiene por qué ver — y ya pasó una vez.
-   En vez de acordarse de borrarlo a mano en cada publicación, el juego
-   comprueba UNA vez si plaza.html existe a su lado: dentro de Plaza sale, y
-   suelto no sale. Se configura solo y no hay nada que recordar.
-   --------------------------------------------------------------------- */
-let _plazaVista=null;
-function mostrarEnlacePlaza(){
-  const el=$('backPlaza'); if(!el) return;
-  if(_plazaVista!==null){ el.classList.toggle('on', _plazaVista); return; }
-  fetch('plaza.html', {method:'HEAD'})
-    .then(r=>{ _plazaVista=r.ok; el.classList.toggle('on', r.ok); })
-    .catch(()=>{ _plazaVista=false; el.classList.remove('on'); });
-}
+  $('menu').classList.add('on'); renderMissions(); }
 
 /* =====================================================================
    MANDO REMOTO (Supabase Realtime) · BETA · aislado
@@ -5803,7 +5781,6 @@ function boot(){
     setSensor(0);
     camera.position.set(0,60,120); camera.lookAt(0,0,0);
     window.__BOOTED=true; $('boot').style.display='none';
-    mostrarEnlacePlaza();
     frame();
   }catch(e){ window.__fatal('Error al iniciar el juego.', (e&&e.stack)||e&&e.message||e); }
 }

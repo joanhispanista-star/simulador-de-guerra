@@ -1,4 +1,4 @@
-# Estado de Máquinas · 6 de agosto de 2026
+# Estado de Drones de Combate · 6 de agosto de 2026
 
 Documento para retomar sin releer el historial. Lo que está hecho, lo que falta,
 y las trampas que ya costaron tiempo una vez.
@@ -52,10 +52,12 @@ negocio.**
 
 ## Trampas que ya costaron tiempo
 
-- **`plaza.html` no puede publicarse NUNCA.** Es el índice de todos los
-  proyectos de Joan. Se publicó una vez por error. El flujo de despliegue usa
-  lista blanca y el juego solo pinta el enlace "← Plaza" si el archivo existe a
-  su lado.
+- **Drones es INDEPENDIENTE: no enlaza a nada.** Se sacaron del repositorio
+  `plaza.html` (el índice de todos los proyectos de Joan, que se publicó una vez
+  por error), `tanques.html` y su LEEME. El enlace "← Plaza" se eliminó del
+  juego entero. El despliegue usa **lista blanca**: si un archivo no está en
+  `publicar.yml`, no viaja. La copia buena de Tanques vive en
+  `Desktop/plaza-miniapps/tanques/` y está publicada aparte, en Vercel.
 - **El service worker sirve versiones viejas.** Al probar, subir `VERSION` en
   `sw-drones.js` o Ctrl+F5. Pasó varias veces.
 - **Al medir, fijar el tamaño primero:** `DRONES.tamano(1280,720)`. Con la
