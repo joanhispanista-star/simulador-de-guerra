@@ -1350,7 +1350,9 @@ function initEngine(){
   hemi=new THREE.HemisphereLight(0xffffff, 0x40484f, 0.7); scene.add(hemi);
   sun=new THREE.DirectionalLight(0xffffff, 2.4);
   sun.position.set(150,240,110); sun.castShadow=true;
-  sun.shadow.mapSize.set(2048,2048);
+  sun.shadow.mapSize.set(SOMBRA_LADO,SOMBRA_LADO);
+  // el tamaño de la caja lo decide actualizarSombra cuadro a cuadro; esto es
+  // solo el arranque, para el mundo de muestra que gira detrás del menú
   const sc=sun.shadow.camera; sc.near=10; sc.far=900; sc.left=-245; sc.right=245; sc.top=245; sc.bottom=-245;
   sun.shadow.bias=-0.0004; sun.shadow.normalBias=0.6;
   scene.add(sun); scene.add(sun.target);
@@ -1394,7 +1396,52 @@ async function initPostFX(){
   }catch(e){ console.warn('Bloom no disponible:', e&&e.message); useComposer=false; }
 }
 let RENDER_ON = location.search.indexOf('norender')<0;   // ?norender: mide la lógica sin dibujar
+/* ---------------------------------------------------------------------
+   LA SOMBRA SIGUE A LA MÁQUINA.
+   El mapa de sombras es de 2048 y hasta ahora cubría el mundo ENTERO, fijo en
+   el origen: 490 unidades de lado ÷ 2048 = 1,25 m por punto de sombra. Con el
+   UGV midiendo 2,4 m, su sombra entera cabía en dos puntos — por eso las
+   sombras de cerca se veían de escalera y las máquinas parecían no apoyar en
+   el suelo. La caja no tiene por qué cubrir el mundo: basta con que cubra lo
+   que se está mirando.
+
+   El radio SUBE con la altura a propósito. Pegado al suelo interesa una caja
+   pequeña (sombra fina donde está el ojo); desde el dron a 200 m se ve media
+   ciudad, y con la caja pequeña saldría un disco de ciudad con sombra y el
+   resto sin ella — que se nota muchísimo más que una sombra blanda.
+
+   Los dos redondeos NO son manía: sin ellos las sombras HIERVEN al andar.
+   El mapa se muestrea en su propia rejilla, y si la rejilla se desplaza
+   fracciones de punto cada cuadro, cada borde de sombra parpadea. Por eso el
+   centro se pega a múltiplos de un punto y el radio sube de 16 en 16.
+   --------------------------------------------------------------------- */
+const SOMBRA_LADO=2048;
+let SOL_BASE=new THREE.Vector3(150,240,110);   // dirección+distancia del sol, desde su blanco
+let sombraR=0;
+function actualizarSombra(){
+  if(!sun||!sun.shadow) return;
+  const f=(drone && drone.active) ? drone.pos : (player && player.pos);
+  if(!f) return;
+  let suelo=0; try{ suelo=terrainHeight(f.x,f.z); }catch(e){}
+  const alt=Math.max(0, f.y-suelo);
+  let r=clamp(56+alt*2.4, 56, 250);
+  r=Math.ceil(r/16)*16;                          // el radio, a saltos
+  if(r!==sombraR){ const sc=sun.shadow.camera;
+    sc.left=-r; sc.right=r; sc.top=r; sc.bottom=-r; sc.updateProjectionMatrix(); sombraR=r; }
+  const punto=(2*r)/SOMBRA_LADO;                 // tamaño de un punto de sombra, en unidades
+  /* El sesgo TIENE que ir con el tamaño del punto. Estaba en 0,6 unidades —
+     tres metros — porque la caja cubría el mundo entero y el punto medía 1,25 m.
+     Al afinar la caja, tres metros de separación son 20 puntos: la sombra se
+     despega del objeto y las máquinas vuelven a parecer que flotan, que es
+     justo lo que se quería arreglar. Se deja en 2,5 puntos, que es lo que era
+     antes en proporción. */
+  sun.shadow.normalBias=2.5*punto;
+  sun.target.position.set(Math.round(f.x/punto)*punto, suelo, Math.round(f.z/punto)*punto);
+  sun.target.updateMatrixWorld();
+  sun.position.copy(SOL_BASE).add(sun.target.position);
+}
 function renderScene(){ if(!RENDER_ON) return;
+  actualizarSombra();
   if(useComposer && composer) composer.render(); else if(renderer&&scene) renderer.render(scene, camera); }
 
 /* ---- Cielo con degradado + disco solar (shader) ---- */
@@ -1417,7 +1464,9 @@ function initSky(){
 function setSky(topHex, botHex, sunHex){
   if(!skyMesh) return; const u=skyMesh.material.uniforms;
   u.top.value.setHex(topHex); u.bot.value.setHex(botHex); u.sunCol.value.setHex(sunHex||0xfff2d0);
-  u.sunDir.value.copy(sun.position).normalize();
+  // desde SOL_BASE, no desde sun.position: sun.position se mueve con la máquina
+  // (sigue a la sombra) y el disco solar acabaría paseándose por el cielo
+  u.sunDir.value.copy(SOL_BASE).normalize();
 }
 /* ---- Agua (para mapas costeros / con mar) ---- */
 function initWater(){
@@ -1451,6 +1500,9 @@ const WEATHER={
 function applyEnvironment(){
   if(!sun||!renderer) return;
   const t=TODS[TOD]||TODS.dia, w=WEATHER[WX]||WEATHER.despejado;
+  // el blanco del sol lo mueve actualizarSombra (sigue a la máquina); aquí solo
+  // se guarda hacia dónde está el sol RESPECTO a ese blanco
+  SOL_BASE.copy(t.sunPos);
   sun.position.copy(t.sunPos); sun.target.position.set(0,0,0);
   sun.color.setHex(t.sunCol); sun.intensity=t.sunInt*w.sunMul;
   hemi.color.setHex(t.hemiTop); hemi.groundColor.setHex(worldBase.amb); hemi.intensity=t.hemiInt*w.hemiMul;
@@ -2249,6 +2301,15 @@ function geomTecho(pts, baseY, hU, escala){
    borde, que es la pista que usa el ojo para leer altura.
    Va con las DOS caras: desde arriba se ve la interior, y si solo se dibujara
    la de fuera, mirando en diagonal se vería a través del murito.
+
+   ⚠ Las dos caras las pone el MATERIAL (side:DoubleSide), no el índice. Antes
+   se duplicaba cada triángulo con la vuelta al revés dentro de la misma malla,
+   y eso rompía la luz sin que se notara de dónde venía: computeVertexNormals
+   SUMA la normal de cada cara que toca un vértice, las dos vueltas dan normales
+   opuestas, se anulan exactas y el vértice acaba con normal (0,0,0). Con normal
+   cero el sol no lo toca — el pretil quedaba plano y sin sombra propia, que era
+   justo lo único que se le pedía. Comprobado con three: doble vuelta → (0,0,0);
+   una sola → (0,1,0).
    --------------------------------------------------------------------- */
 function geomPretil(pts, cx, cz, yTecho, alto, escala){
   const pos=[], uv=[], idx=[]; let v=0, u0=0;
@@ -2261,8 +2322,8 @@ function geomPretil(pts, cx, cz, yTecho, alto, escala){
     pos.push(p0.x,yb,p0.z,  p1.x,yb,p1.z,  p1.x,yt,p1.z,  p0.x,yt,p0.z);
     uv.push(u0,0,  u1,0,  u1,vT,  u0,vT);
     const mx=(p0.x+p1.x)/2-cx, mz=(p0.z+p1.z)/2-cz;
-    if(mx*(-dz)+mz*dx > 0){ idx.push(v,v+1,v+2, v,v+2,v+3, v,v+2,v+1, v,v+3,v+2); }
-    else                  { idx.push(v,v+2,v+1, v,v+3,v+2, v,v+1,v+2, v,v+2,v+3); }
+    if(mx*(-dz)+mz*dx > 0){ idx.push(v,v+1,v+2, v,v+2,v+3); }
+    else                  { idx.push(v,v+2,v+1, v,v+3,v+2); }
     v+=4; u0=u1;
   }
   if(!v) return null;
@@ -2298,7 +2359,13 @@ function cajaOrientada(pts){
   }
   return mejor;
 }
-function geomDosAguas(pts, yAlero, altoCaballete, escala){
+/* Devuelve las DOS piezas por separado, porque no son la misma cosa:
+     · faldones  → las dos aguas; eso es lo que lleva teja de barro.
+     · hastiales → los triángulos de los extremos; eso es PARED, el remate del
+       muro por encima del alero. Antes salía todo en una malla y pintado del
+       color de la teja, así que cada casa remataba en dos triángulos rojos.
+       En La Candelaria ese remate es del color de la fachada, no del tejado. */
+function geomDosAguas(pts, yAlero, altoCaballete, escalaTeja, escalaMuro){
   const c=cajaOrientada(pts);
   if(!c) return null;
   const largo=c.a1-c.a0, ancho=c.b1-c.b0;
@@ -2312,29 +2379,107 @@ function geomDosAguas(pts, yAlero, altoCaballete, escala){
   const bm=(c.b0+c.b1)/2;
   const R0=pun(c.a0,bm), R1=pun(c.a1,bm);        // los dos extremos del caballete
   const yC=yAlero+altoCaballete;
-  const pos=[], uv=[], idx=[];
-  const media=largo/escala, medioAncho=(ancho/2)/escala;
-  // faldón 1 (A-B hacia el caballete) y faldón 2 (D-C hacia el caballete)
-  const faldon=(P,Q)=>{
-    const n=pos.length/3;
-    pos.push(P.x,yAlero,P.z,  Q.x,yAlero,Q.z,  R1.x,yC,R1.z,  R0.x,yC,R0.z);
-    uv.push(0,0, media,0, media,medioAncho, 0,medioAncho);
-    idx.push(n,n+1,n+2, n,n+2,n+3, n,n+2,n+1, n,n+3,n+2);   // dos caras: se ve por dentro al volar bajo
+
+  /* UNA sola vuelta por triángulo (el porqué está en el aviso del pretil), y el
+     sentido se COMPRUEBA contra una dirección de referencia en vez de deducirlo:
+     `cajaOrientada` devuelve el eje de la arista que menos área encierra, y ese
+     eje puede venir en cualquiera de los dos sentidos — dedujéramos lo que
+     dedujéramos, media Candelaria saldría con el tejado mirando al suelo. */
+  const nueva=()=>({pos:[], uv:[], idx:[]});
+  const cara=(m, vs, uvs, ref)=>{
+    const n=m.pos.length/3;
+    for(const p of vs) m.pos.push(p.x,p.y,p.z);
+    for(const t of uvs) m.uv.push(t[0],t[1]);
+    const [P,Q,R]=vs;
+    const ux=Q.x-P.x, uy=Q.y-P.y, uz=Q.z-P.z, vx=R.x-P.x, vy=R.y-P.y, vz=R.z-P.z;
+    const nx=uy*vz-uz*vy, ny=uz*vx-ux*vz, nz=ux*vy-uy*vx;
+    const bien = nx*ref.x+ny*ref.y+nz*ref.z >= 0;
+    if(vs.length===4){ if(bien) m.idx.push(n,n+1,n+2, n,n+2,n+3); else m.idx.push(n,n+2,n+1, n,n+3,n+2); }
+    else             { if(bien) m.idx.push(n,n+1,n+2);            else m.idx.push(n,n+2,n+1); }
   };
+  const cerrar=(m)=>{ if(!m.idx.length) return null;
+    const g=new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(m.pos,3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(m.uv,2));
+    g.setIndex(m.idx); g.computeVertexNormals(); return g; };
+
+  const F=nueva(), H=nueva();
+  const ARRIBA={x:0,y:1,z:0};
+  /* La v de la teja va por la LONGITUD REAL del faldón (la hipotenusa), no por
+     su sombra en el suelo: con la proyección horizontal las hiladas salían
+     apretadas y el tejado parecía más plano de lo que es. */
+  const pendiente=Math.hypot(ancho/2, altoCaballete);
+  const uT=largo/escalaTeja, vT=pendiente/escalaTeja;
+  const faldon=(P,Q)=>cara(F,
+    [ {x:P.x,y:yAlero,z:P.z}, {x:Q.x,y:yAlero,z:Q.z}, {x:R1.x,y:yC,z:R1.z}, {x:R0.x,y:yC,z:R0.z} ],
+    [ [0,0], [uT,0], [uT,vT], [0,vT] ], ARRIBA);
   faldon(A,B); faldon(D,C);
-  // los dos hastiales (los triángulos de los extremos)
-  const hastial=(P,Q,R)=>{
-    const n=pos.length/3;
-    pos.push(P.x,yAlero,P.z,  Q.x,yAlero,Q.z,  R.x,yC,R.z);
-    uv.push(0,0, medioAncho*2,0, medioAncho,medioAncho);
-    idx.push(n,n+1,n+2, n,n+2,n+1);
-  };
-  hastial(A,D,R0); hastial(B,C,R1);
-  const g=new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(pos,3));
-  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv,2));
-  g.setIndex(idx); g.computeVertexNormals();
-  return g;
+  // los dos hastiales: pared, con la u por el ancho y la v por la altura
+  const uH=ancho/escalaMuro, vH=altoCaballete/escalaMuro;
+  const hastial=(P,Q,R,sx,sz)=>cara(H,
+    [ {x:P.x,y:yAlero,z:P.z}, {x:Q.x,y:yAlero,z:Q.z}, {x:R.x,y:yC,z:R.z} ],
+    [ [0,0], [uH,0], [uH/2,vH] ], {x:sx,y:0,z:sz});
+  hastial(A,D,R0, -ex,-ez); hastial(B,C,R1, ex, ez);
+  const faldones=cerrar(F);
+  if(!faldones) return null;
+  return { faldones, hastiales:cerrar(H) };
+}
+/* ---------------------------------------------------------------------
+   TEJA DE BARRO — su propia textura, con relieve.
+   Hasta ahora el tejado a dos aguas usaba la MISMA textura que la losa de
+   hormigón, teñida de rojo. Pero lo que hace que un tejado se lea como teja
+   desde el aire no es el color: son las CANALES, la fila de sombras paralelas
+   que baja del caballete al alero. Sin ellas es una plancha pintada.
+   Va con mapa de relieve aparte (bumpMap) y no con el sombreado metido en el
+   color: así las canales CAMBIAN cuando cambia el sol. Al atardecer, con la luz
+   rasante, es justo cuando un tejado de barro se distingue de una chapa.
+   Medidas reales de teja árabe: canal cada 16 cm, hilada cada 32 cm. Con la
+   repetición a 2,56 m salen 16 canales y 8 hiladas exactas — que sean enteras
+   es lo que evita la costura al repetir.
+   bumpMap y no normalMap a propósito: el normalMap pide tangentes, y estas
+   mallas van fusionadas y sin ellas. --------------------------------------- */
+const TEJA_REPITE_M=2.56, TEJA_CANALES=16, TEJA_HILADAS=8;
+let TEX_TEJA=null, TEX_TEJA_REL=null;
+function hacerTexturasTeja(){
+  if(TEX_TEJA) return;
+  const S=256;
+  const col=document.createElement('canvas'); col.width=col.height=S;
+  const rel=document.createElement('canvas'); rel.width=rel.height=S;
+  const gc=col.getContext('2d'), gr=rel.getContext('2d');
+  const ic=gc.createImageData(S,S), ir=gr.createImageData(S,S);
+  const pxCanal=S/TEJA_CANALES, pxHilada=S/TEJA_HILADAS;
+  for(let y=0;y<S;y++) for(let x=0;x<S;x++){
+    const i=(y*S+x)*4;
+    const fx=(x%pxCanal)/pxCanal;              // 0..1 dentro de una canal
+    const fy=(y%pxHilada)/pxHilada;            // 0..1 dentro de una hilada
+    const alto=Math.sin(Math.PI*fx);           // media caña: valle en 0 y 1, lomo en 0.5
+    /* Qué va en el color y qué no. En el valle entre dos tejas SIEMPRE hay
+       sombra: es oclusión, la teja de al lado le tapa el cielo, y eso no
+       depende de dónde esté el sol — va aquí. Lo que NO va aquí es de qué lado
+       da la luz; eso lo pone el bumpMap para que cambie a lo largo del día.
+       El primer intento dejó esto casi liso (±6%) por miedo a "pintar" el
+       relieve, y desde el dron el tejado seguía siendo una plancha: a 80 m una
+       canal de 16 cm son tres píxeles, y con un 6% de diferencia no se ve
+       ninguna. */
+    let l = 0.70 + 0.30*alto;
+    if(fy<0.12) l *= 0.62 + 3.2*fy;            // sombra bajo el solape de la hilada
+    l *= 0.96 + Math.random()*0.08;            // grano del barro
+    const v=Math.max(0,Math.min(255, Math.round(l*255)));
+    ic.data[i]=v; ic.data[i+1]=v; ic.data[i+2]=v; ic.data[i+3]=255;
+    // relieve: el lomo alto, el valle bajo, y un escalón en cada solape
+    let b = 0.18 + 0.72*alto;
+    if(fy<0.10) b = Math.min(1, b+0.28*(1-fy/0.10));
+    const w=Math.max(0,Math.min(255, Math.round(b*255)));
+    ir.data[i]=w; ir.data[i+1]=w; ir.data[i+2]=w; ir.data[i+3]=255;
+  }
+  gc.putImageData(ic,0,0); gr.putImageData(ir,0,0);
+  TEX_TEJA=new THREE.CanvasTexture(col); TEX_TEJA.colorSpace=THREE.SRGBColorSpace;
+  TEX_TEJA_REL=new THREE.CanvasTexture(rel);   // el relieve son DATOS: sin sRGB
+  for(const t of [TEX_TEJA,TEX_TEJA_REL]){
+    t.wrapS=t.wrapT=THREE.RepeatWrapping;
+    // sin esto las canales, vistas casi de canto desde el dron, hacen muaré
+    try{ t.anisotropy=Math.min(8, renderer.capabilities.getMaxAnisotropy()); }catch(e){}
+  }
 }
 /* Teja de barro bogotana: naranja quemado, más rojo cuanto más vieja. Coherente
    por cuadra, como las fachadas: una calle de La Candelaria es toda del mismo tono. */
@@ -2563,7 +2708,7 @@ async function buildOSM(tok){
      perder la silueta se nota; perder casitas sueltas, no. Antes se quedaban
      los primeros que llegaran, que es un orden sin sentido, y la ciudad salía
      con parches vacíos en mitad del centro. */
-  const geosMuro=[], geosTecho=[], trastos=[];
+  const geosMuro=[], geosTecho=[], geosTeja=[], trastos=[];
   let recortados=0;
   if(edifs.length>MAX_EDIFICIOS){
     edifs.sort((a,b)=>b.areaU-a.areaU);
@@ -2571,6 +2716,7 @@ async function buildOSM(tok){
     edifs.length=MAX_EDIFICIOS;
   }
   const escalaTecho=11*REAL.hScale;     // la losa se repite cada 11 m (a 6 m hacía muaré)
+  const escalaTeja=TEJA_REPITE_M*REAL.hScale;   // la teja, cada 2,56 m: son 16 canales
   const mH=REAL.hScale;
   let masAlto=null;                     // para poder cazar alturas absurdas de OSM
   let nTejado=0, nPretil=0;
@@ -2601,8 +2747,17 @@ async function buildOSM(tok){
     let dosAguas=null;
     if(alturaM<=12 && areaM2<=520 && e.pts.length<=9){
       const ancho=Math.sqrt(e.areaU);
-      dosAguas=geomDosAguas(e.pts, baseY+hU, Math.min(ancho*0.34, 3.2*M2U), escalaTecho);
-      if(dosAguas){ pintarMalla(dosAguas, COLOR_TEJA(e.cx,e.cz), 0.14); geosTecho.push(dosAguas); nTejado++; }
+      dosAguas=geomDosAguas(e.pts, baseY+hU, Math.min(ancho*0.34, 3.2*M2U), escalaTeja, escalaTecho);
+      if(dosAguas){
+        // el agua va con teja; el hastial es pared y va con el color de la fachada
+        pintarMalla(dosAguas.faldones, COLOR_TEJA(e.cx,e.cz), 0.14);
+        geosTeja.push(dosAguas.faldones);
+        if(dosAguas.hastiales){
+          pintarMalla(dosAguas.hastiales, colorFachada(alturaM, e.tipo, e.cx, e.cz), 0.12);
+          geosTecho.push(dosAguas.hastiales);
+        }
+        nTejado++;
+      }
     }
     /* Si NO lleva tejado, lleva PRETIL: el murito del borde de la azotea.
        Sin él un techo plano se lee como una tapa apoyada encima. */
@@ -2616,11 +2771,19 @@ async function buildOSM(tok){
   }
   if(geosMuro.length){
     const U=await getBGU();
-    hacerTexturasFachada(); hacerTexturaTecho();
+    hacerTexturasFachada(); hacerTexturaTecho(); hacerTexturasTeja();
     const matMuro=new THREE.MeshStandardMaterial({ vertexColors:true, roughness:0.82, metalness:0.06,
       map:TEX_FACHADA, emissive:0xffffff, emissiveMap:TEX_LUCES, emissiveIntensity:0 });
+    /* DoubleSide en las cubiertas: es lo que sustituye a duplicar el triángulo
+       con la vuelta al revés, que anulaba las normales (ver el pretil). No
+       cuesta una llamada de dibujo más: solo pinta la cara de atrás cuando de
+       verdad se ve, que volando bajo entre las casas pasa. */
     const matTecho=new THREE.MeshStandardMaterial({ vertexColors:true, roughness:0.94, metalness:0.02,
-      map:TEX_TECHO });
+      map:TEX_TECHO, side:THREE.DoubleSide });
+    /* La teja es su propio material porque es lo único que necesita relieve: el
+       bumpMap solo tiene sentido a la escala de la canal, 16 cm. */
+    const matTeja=new THREE.MeshStandardMaterial({ vertexColors:true, roughness:0.88, metalness:0,
+      map:TEX_TEJA, bumpMap:TEX_TEJA_REL, bumpScale:0.9, side:THREE.DoubleSide });
     MAT_EDIFICIOS=matMuro; aplicarLucesCiudad();   // las ventanas se encienden solas de noche
     const soltar=(geos,mat)=>{
       if(U && U.mergeGeometries){
@@ -2631,6 +2794,7 @@ async function buildOSM(tok){
         const me=new THREE.Mesh(g,mat); me.castShadow=true; me.receiveShadow=true; ciudad.add(me); }
     };
     soltar(geosMuro, matMuro); soltar(geosTecho, matTecho);
+    if(geosTeja.length) soltar(geosTeja, matTeja);
   }
   // ---- trastos de azotea (instanciados: una llamada de dibujo cada uno) ----
   if(trastos.length){
@@ -5902,6 +6066,17 @@ if(location.search.indexOf('dbg')>=0) window.DRONES={
   audio:(ms)=>SONIDO.medir(ms),
   bucles:()=>SONIDO.ganancias(),
   /* comprueba la FOTO sin descargarla: si sale negra, se ve aquí */
+  /* La imagen en base64, para poder MIRARLA fuera del navegador. Es la única
+     manera de revisar un cambio visual cuando la ventana no está a la vista:
+     sin componer no hay captura de pantalla, pero readPixels sí funciona.
+     Lleva ancho porque una captura a 2× pasa del megabyte y no cabe por la
+     consola. */
+  foto64:(ancho, calidad)=>{ const c=capturarLienzo();
+    const W=Math.min(ancho||960, c.width), H=Math.round(c.height*W/c.width);
+    const d=document.createElement('canvas'); d.width=W; d.height=H;
+    const g=d.getContext('2d'); g.imageSmoothingQuality='high';
+    g.drawImage(c,0,0,W,H);
+    return d.toDataURL('image/jpeg', calidad||0.8); },
   fotoPrueba:()=>{ const c=capturarLienzo();
     const g=c.getContext('2d'), d=g.getImageData(0,0,c.width,c.height).data;
     let sum=0, n=0; const u=new Set();
@@ -5964,6 +6139,67 @@ if(location.search.indexOf('dbg')>=0) window.DRONES={
                   // te quedas jugando en una ventanita de 320×180 sin saber por qué
     return {avg:+(sum/(w*h)).toFixed(1), min, max, distinct:uniq.size}; }
     catch(e){ try{ onResize(); }catch(_){} return 'snap-err '+e.message; } },
+  /* ¿Cuánto se está QUEMANDO la imagen? "Los techos salen quemados" es una
+     impresión; esto es el número. Mide al tamaño que se le diga (nunca con el
+     lienzo en 0×0, que es lo que pasa con la ventana oculta) y cuenta el
+     porcentaje de píxeles pegados al blanco, donde ya no queda dibujo. */
+  quemado:(w,h)=>{ const W=w||1280, H=h||720; const W0=innerWidth||W, H0=innerHeight||H;
+    try{
+      renderer.setSize(W,H,false); camera.aspect=W/H; camera.updateProjectionMatrix();
+      if(composer)composer.setSize(W,H); if(skyMesh)skyMesh.position.copy(camera.position); renderScene();
+      const gl=renderer.getContext(); const px=new Uint8Array(W*H*4);
+      gl.readPixels(0,0,W,H,gl.RGBA,gl.UNSIGNED_BYTE,px);
+      let quema=0, negro=0, sum=0; const n=W*H; const hist=new Uint32Array(256);
+      for(let i=0;i<px.length;i+=4){
+        const l=Math.max(px[i],px[i+1],px[i+2]); hist[l]++; sum+=l;
+        if(l>=252) quema++; if(l<=3) negro++;
+      }
+      let acc=0, p99=255; for(let v=0;v<256;v++){ acc+=hist[v]; if(acc>=n*0.99){ p99=v; break; } }
+      renderer.setSize(W0,H0,false); camera.aspect=W0/H0; camera.updateProjectionMatrix();
+      if(composer)composer.setSize(W0,H0);
+      return { pctQuemado:+(quema*100/n).toFixed(2), pctNegro:+(negro*100/n).toFixed(2),
+               medio:+(sum/n).toFixed(1), p99, tam:W+'x'+H };
+    }catch(e){ return 'quemado-err '+(e&&e.message); } },
+  /* Cuenta los vértices con la normal en cero. Una normal cero no se ve como un
+     error: se ve como una superficie "lisa" y sin sol, y así estuvieron los
+     tejados y los pretiles. Aquí tiene que salir 0. */
+  normales:()=>{ if(!REAL||!REAL.osmGroup) return 'no hay ciudad';
+    const out=[];
+    REAL.osmGroup.traverse(o=>{
+      if(!o.isMesh || o.isInstancedMesh) return;
+      const nn=o.geometry.attributes.normal; if(!nn) return;
+      const cero=new Uint8Array(nn.count); let nCero=0;
+      for(let i=0;i<nn.count;i++){
+        if(Math.hypot(nn.getX(i),nn.getY(i),nn.getZ(i))<1e-6){ cero[i]=1; nCero++; } }
+      /* Distingue las DOS causas, que se ven igual en el recuento y no son
+         lo mismo: un triángulo DEGENERADO (área cero, tres puntos en línea)
+         también deja la normal en cero, pero no se ve porque no tiene
+         superficie. Lo que sí importa es un vértice con normal cero que
+         pertenece a triángulos con área: ese es un trozo de mundo al que el
+         sol no llega. */
+      const p=o.geometry.attributes.position, idx=o.geometry.index;
+      let conArea=0; const visto=new Uint8Array(nn.count);
+      const N=idx?idx.count:p.count;
+      for(let t=0;t<N;t+=3){
+        const a=idx?idx.getX(t):t, b=idx?idx.getX(t+1):t+1, c=idx?idx.getX(t+2):t+2;
+        if(!cero[a] && !cero[b] && !cero[c]) continue;
+        const ux=p.getX(b)-p.getX(a), uy=p.getY(b)-p.getY(a), uz=p.getZ(b)-p.getZ(a);
+        const vx=p.getX(c)-p.getX(a), vy=p.getY(c)-p.getY(a), vz=p.getZ(c)-p.getZ(a);
+        const nx=uy*vz-uz*vy, ny=uz*vx-ux*vz, nz=ux*vy-uy*vx;
+        if(Math.hypot(nx,ny,nz)>1e-9) for(const k of [a,b,c])
+          if(cero[k] && !visto[k]){ visto[k]=1; conArea++; }
+      }
+      out.push({ vertices:nn.count, normalesEnCero:nCero, deEsasConArea:conArea,
+        relieve:!!o.material.bumpMap, dosCaras:o.material.side===THREE.DoubleSide });
+    });
+    return out; },
+  /* Lo fino que es la sombra AHORA MISMO. metrosPorPunto es el número que
+     importa: es el detalle más pequeño que un borde de sombra puede tener. */
+  sombra:()=>{ const sc=sun.shadow.camera, lado=sc.right-sc.left;
+    return { radio:sc.right, mapa:sun.shadow.mapSize.width,
+      unidadesPorPunto:+(lado/sun.shadow.mapSize.width).toFixed(4),
+      metrosPorPunto:+(lado/sun.shadow.mapSize.width*(REAL?REAL.mPerU:5.22)).toFixed(2),
+      centro:[+sun.target.position.x.toFixed(1), +sun.target.position.z.toFixed(1)] }; },
   killOne:()=>{ const e=enemies.find(x=>x.alive); if(e){ damageEnemy(e,9999); return e.tag; } return 'none'; },
   hitPlayer:(d)=>{ damagePlayer(d||50); return +player.hp.toFixed(1); },
   tp:(x,z)=>{ player.pos.x=x; player.pos.z=z; return player.pos.toArray().map(n=>+n.toFixed(1)); },

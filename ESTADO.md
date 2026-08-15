@@ -31,6 +31,27 @@ mostraba media ciudad. Ahora:
 | **Modo foto** | `P`: congela, esconde el HUD, cámara libre, guarda a 2× |
 | App de Windows | instalable, 2 MB, **abre sin internet** |
 | **Copia del progreso** | ⬇ guardar / ⬆ restaurar en un archivo `.json` (14-ago) |
+| **Teja de barro** | textura propia con canales de 16 cm y relieve (14-ago) |
+| **Sombras** | siguen a la máquina y se afinan: 1,25 m → 0,33 m por punto (14-ago) |
+
+## El error que hacía que los techos se vieran "lisos"
+
+`computeVertexNormals` **suma** la normal de cada cara que toca un vértice. Los
+tejados a dos aguas y los pretiles se dibujaban duplicando cada triángulo con la
+vuelta al revés dentro de la misma malla, para poder verlos por dentro al volar
+bajo. Las dos vueltas dan normales opuestas: **se anulan exactas y el vértice
+queda con normal (0,0,0)**. Con normal cero `dot(N,luz)` es cero — el sol
+sencillamente no llegaba a esas superficies. Quedaban iluminadas solo por la luz
+ambiente: planas, sin cara clara y cara oscura, sin sombra propia. Justo lo
+contrario de para lo que se pusieron.
+
+No se veía como un fallo, se veía como una decisión de estilo. Comprobado con
+three fuera del navegador: doble vuelta → `(0,0,0)`; una sola → `(0,1,0)`.
+
+Ahora las dos caras las pone el **material** (`side: DoubleSide`), que es donde
+va eso. Y `DRONES.normales()` lo vigila: en las mallas de la ciudad tiene que
+salir `normalesEnCero: 0`. Si sale otra cosa, mira `deEsasConArea` — si es 0,
+son triángulos degenerados (sin superficie) y no importan.
 
 ## El progreso: qué se resolvió y qué no
 
@@ -52,12 +73,23 @@ internet** — no vale la pena romper eso por guardar diez misiones. Si algún d
 se quiere, el formato ya está preparado: la copia lleva `juego` y `formato`, y
 el importador rechaza lo que no reconoce en vez de dejar la partida a medias.
 
+## "Techos quemados": medido, y NO era eso
+
+Se midió con `DRONES.quemado()` sobre La Candelaria a mediodía, incluso mirando
+en vertical con el cuadro lleno de techos: **0,00 % de píxeles quemados**, y el
+percentil 99 en 206 de 255. **No hay nada pegado al blanco.** Tocar la exposición
+habría oscurecido la ciudad entera para arreglar algo que no estaba roto.
+
+Lo que sí pasa es que los techos de losa son muy **claros y de poco contraste**:
+`colorTecho` los devuelve en torno a 0,47–0,56 de albedo, y un hormigón viejo de
+Bogotá está más cerca de 0,30. Eso ya es gusto, no defecto — decisión de Joan.
+
 ## Lo que falta, por orden de lo que yo haría
 
-1. **La teja se ve lisa** — usa la textura de losa tintada de rojo; una teja real
-   tiene acanaladura. Media sesión.
-2. **Techos claros algo quemados** bajo el sol de mediodía. Es la exposición, un
-   número.
+1. **Techos planos con color de teja.** `colorTecho` pinta de teja el 46 % de los
+   techos bajos, pero un techo PLANO con color de teja es un plano naranja liso:
+   desde el aire canta. O se les da tejado, o se les da color de losa.
+2. **Los techos de losa, más oscuros** (ver arriba). Es un número, y es gusto.
 3. **Microsoft Store** (19 USD una vez, la firma Microsoft, sin advertencia de
    SmartScreen). PWABuilder toma lo que ya hay. Solo cuando el juego esté más
    terminado.
@@ -84,6 +116,12 @@ negocio.**
   nada — se mide humo. Los FPS medidos así son basura.
 - **`requestAnimationFrame` no corre con la ventana oculta.** Por eso existen
   `DRONES.sim()` y `DRONES.fotoPaso()`: para avanzar el juego a mano.
+- **Con la ventana oculta los TIEMPOS tampoco valen.** El navegador estrangula la
+  GPU en segundo plano: seis medidas seguidas de la MISMA escena dieron entre 2,5
+  y 72,9 ms. Para medir rendimiento hay que tener el juego a la vista.
+- **Overpass no siempre devuelve lo mismo.** Tres cargas seguidas de la misma
+  caja de La Candelaria dieron 2.301, 1.595 y 2.331 tejados. Si comparas dos
+  capturas, la ciudad puede no ser la misma: no lo achaques al cambio.
 - **Overpass es gratuito y se satura.** Devuelve 0 edificios y no es un fallo del
   código. Reintentar. Además `overpass.osm.ch` contesta 200 con cero elementos
   mientras `overpass-api.de` trae los 2.936 de la misma caja.
@@ -109,7 +147,17 @@ DRONES.aislar({sombras:false})  // apagar partes para ver qué cuesta
 DRONES.progreso()         // misiones, marcas, garaje, hora/clima, volumen
 DRONES.copia()            // el MISMO texto que descarga "⬇ Guardar copia"
 DRONES.restaurar(texto)   // {ok,msg} — prueba restaurar sin abrir el diálogo
+DRONES.quemado(1280,720)  // % de píxeles pegados al blanco; el p99 dice más
+DRONES.normales()         // normales en cero por malla — tiene que ser 0
+DRONES.sombra()           // metrosPorPunto: lo fino que es el borde de sombra
+DRONES.foto64(700)        // la imagen en base64, para MIRARLA fuera del navegador
 ```
+
+**Para revisar un cambio VISUAL sin poder ver la ventana** (que es lo normal
+aquí): la captura de pantalla del navegador falla porque con el panel oculto la
+página no compone cuadros — pero `readPixels` sí funciona. `DRONES.foto64(700)`
+devuelve la imagen; se descarga con un `<a download>` y se abre desde el disco.
+Es lo único que sirve: los números dicen si está roto, no si está feo.
 
 Para probar la copia sin tocar el disco: `DRONES.restaurar(DRONES.copia())`.
 Y para comprobar que rechaza basura: `DRONES.restaurar('{"juego":"otra-cosa"}')`

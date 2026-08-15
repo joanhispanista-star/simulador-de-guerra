@@ -87,6 +87,10 @@ DRONES.fotoPrueba()      // comprueba la captura sin descargarla
 DRONES.rumbo(90)         // apuntar el dron al este (los cerros de Bogotá)
 DRONES.copia()           // el texto que baja "⬇ Guardar copia"
 DRONES.restaurar(texto)  // {ok,msg}; con basura debe dar ok:false y no tocar nada
+DRONES.normales()        // normales en cero por malla: tiene que salir 0
+DRONES.sombra()          // metrosPorPunto del mapa de sombras
+DRONES.quemado()         // % de píxeles pegados al blanco
+DRONES.foto64(700)       // la imagen en base64, para verla fuera del navegador
 ```
 
 > Con la ventana oculta `innerWidth` vale 0, el lienzo queda en 0×0 y dibujar no
