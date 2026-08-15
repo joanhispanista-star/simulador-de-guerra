@@ -164,6 +164,35 @@
     display:none;flex-flow:row wrap;gap:8px;width:102px;pointer-events:none}
   #utiles.on{display:flex}
 
+  /* ===== MODO FOTO =====
+     Esconde TODO lo que no es la escena. El HUD es HTML y nunca sale en la
+     captura (la captura sale del lienzo 3D), pero hay que quitarlo de la
+     pantalla igual: no se puede componer una foto con la interfaz encima. */
+  body.modo-foto #hud, body.modo-foto #touch, body.modo-foto #utiles,
+  body.modo-foto #reticle, body.modo-foto #gazeBox, body.modo-foto #feed{ display:none !important }
+  #fotoUI{position:fixed;left:0;right:0;bottom:0;z-index:32;display:none;
+    padding:14px calc(var(--sa-l) + 16px) calc(var(--sa-b) + 14px);
+    background:linear-gradient(transparent,rgba(6,8,12,.86) 55%);
+    align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap}
+  #fotoUI.on{display:flex}
+  #fotoUI .ayuda{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;
+    font-size:12px;color:var(--gris);align-items:baseline}
+  #fotoUI .ayuda b{color:#dfe6ee;font-weight:700}
+  #fotoUI .acciones{display:flex;gap:10px;align-items:center}
+  #fotoUI button{border-radius:12px;border:2px solid rgba(63,240,192,.7);
+    background:rgba(63,240,192,.14);color:#fff;font-weight:900;font-size:13px;
+    letter-spacing:.04em;padding:12px 18px;cursor:pointer}
+  #fotoUI button:active{transform:scale(.97)}
+  #fotoUI button.salir{border-color:var(--linea);background:rgba(20,24,32,.8);color:var(--gris)}
+  /* marco de encuadre: los tercios, que es como se compone una foto */
+  body.modo-foto #tercios{display:block}
+  #tercios{position:fixed;inset:0;z-index:31;display:none;pointer-events:none;
+    background:
+      linear-gradient(rgba(255,255,255,.10),rgba(255,255,255,.10)) 33.33% 0/1px 100% no-repeat,
+      linear-gradient(rgba(255,255,255,.10),rgba(255,255,255,.10)) 66.66% 0/1px 100% no-repeat,
+      linear-gradient(rgba(255,255,255,.10),rgba(255,255,255,.10)) 0 33.33%/100% 1px no-repeat,
+      linear-gradient(rgba(255,255,255,.10),rgba(255,255,255,.10)) 0 66.66%/100% 1px no-repeat}
+
   /* ===== OVERLAYS / MENÚS ===== */
   .overlay{position:fixed;inset:0;z-index:20;display:none;place-items:center;padding:16px;overflow:auto;
     background:radial-gradient(120% 90% at 50% -10%,#1a2130 0,#0c0e13 60%)}
@@ -440,6 +469,20 @@
     <button class="tbtn util sec" id="btnDown" style="display:none"><span class="ic">▼</span>BAJAR</button>
   </div>
 
+
+  <div id="tercios"></div>
+  <div id="fotoUI">
+    <div class="ayuda">
+      <b>W A S D</b><span>mover la cámara · <b>Espacio</b> subir · <b>C</b> bajar · <b>Mayús</b> más rápido</span>
+      <b>Ratón</b><span>mirar (haz clic una vez para tomar el control) · o las <b>flechas</b></span>
+      <b>Enter</b><span>guardar la foto, al doble de resolución</span>
+      <b>P</b><span>o Esc, para volver al juego</span>
+    </div>
+    <div class="acciones">
+      <button id="fotoGuardar">📷 GUARDAR FOTO</button>
+      <button class="salir" id="fotoSalir">Volver</button>
+    </div>
+  </div>
   <a class="backlink" id="backPlaza" href="plaza.html">← Plaza</a>
 
   <!-- vista previa de la webcam para apuntar con la mirada -->
@@ -568,6 +611,7 @@
           <span><kbd>V</kbd> sensor (óptico / térmico / nocturno)</span>
           <span><kbd>F1</kbd> depuración IA: conos de visión y estado</span>
           <span><kbd>N</kbd> sonido: silencio / bajo / normal / alto</span>
+          <span><kbd>P</kbd> <b>modo foto</b>: congela la escena, esconde el HUD y suelta la cámara</span>
           <span><kbd>Esc</kbd> pausa · soltar ratón</span>
         </div>
         <div class="h-sec">Dron aéreo · munición merodeadora</div>
@@ -4126,11 +4170,14 @@ function avisoRaton(){
 }
 const keys={};
 addEventListener('keydown',e=>{ keys[e.code]=true;
-  if(e.code==='Escape'){ if(playing && !paused) doPause(); }
+  if(e.code==='Escape'){ if(foto.on){ /* lo maneja el modo foto */ } else if(playing && !paused) doPause(); }
   if(e.code==='KeyC' && playing){ cycleCam(); }
   if(e.code==='KeyF' && playing){ toggleDrone(); }
   if(e.code==='KeyV' && playing){ cycleSensor(); }
   if(e.code==='KeyN'){ cicloVolumen(); }
+  if(e.code==='KeyP' && playing){ toggleFoto(); }
+  if(foto.on && (e.code==='Enter'||e.code==='NumpadEnter')){ e.preventDefault(); guardarFoto(); }
+  if(foto.on && e.code==='Escape'){ toggleFoto(); }
   if(e.code==='KeyK' && playing){ armKamikaze(); }
   if(e.code==='F1' || e.code==='Backquote'){ e.preventDefault();
     CONFIG_IA.debug=!CONFIG_IA.debug; if(!CONFIG_IA.debug) IA.dbgOff();
@@ -4154,11 +4201,14 @@ addEventListener('wheel', e=>{
 let pointerLocked=false, mouseFire=false, mouseSec=false;
 const cvs=$('c');
 document.addEventListener('pointerlockchange',()=>{ pointerLocked=(document.pointerLockElement===cvs); avisoRaton(); });
-addEventListener('mousemove',e=>{ if(pointerLocked){ const s=0.0024;
-  player.view.yaw -= e.movementX*s; player.view.pitch=clamp(player.view.pitch - e.movementY*s, -0.5, 0.35); }});
+addEventListener('mousemove',e=>{ if(!pointerLocked) return; const s=0.0024;
+  if(foto.on){   // en modo foto la cámara es libre: sin topes de torreta
+    foto.yaw -= e.movementX*s; foto.pitch=clamp(foto.pitch - e.movementY*s, -1.5, 1.5); return; }
+  player.view.yaw -= e.movementX*s; player.view.pitch=clamp(player.view.pitch - e.movementY*s, -0.5, 0.35); });
 /* En computador: el 1er clic toma el control del ratón (y NO gasta un disparo);
    a partir de ahí, clic izquierdo = disparar, clic derecho = 2ª arma. */
 addEventListener('mousedown',e=>{
+  if(foto.on){ if(e.button===0 && !pointerLocked){ try{cvs.requestPointerLock();}catch(x){} } return; }
   if(!playing || paused) return;
   if(!pointerLocked && !IS_TOUCH){
     if(e.button===0 && cvs.requestPointerLock){ cvs.requestPointerLock(); return; }
@@ -5361,12 +5411,108 @@ function simulate(dt){
   F('fin');
 }
 let errCount=0;
+/* =====================================================================
+   MODO FOTO
+   El juego ya se ve bien; lo que le faltaba era poder ENSEÑARLO. Congela la
+   escena, esconde el HUD y suelta la cámara para que puedas colocarte donde
+   quieras y guardar la imagen.
+   Dos decisiones técnicas que importan:
+     · La imagen se saca con readPixels justo después de dibujar, no con
+       toDataURL. El lienzo se crea sin preserveDrawingBuffer, así que al
+       componer se vacía y toDataURL devolvería negro la mitad de las veces.
+     · Se dibuja al DOBLE de resolución y luego se restaura. Una captura a
+       tamaño de ventana se ve pobre; al doble aguanta verse en pantalla
+       completa o impresa.
+   El HUD no hay que borrarlo de la foto: es HTML y nunca estuvo en el lienzo.
+   ===================================================================== */
+const foto={ on:false, yaw:0, pitch:0, vel:new THREE.Vector3(), guardando:false };
+function toggleFoto(){
+  if(!playing) return;
+  foto.on=!foto.on;
+  document.body.classList.toggle('modo-foto', foto.on);
+  $('fotoUI').classList.toggle('on', foto.on);
+  if(foto.on){
+    // arranca exactamente donde está la cámara ahora: no salta
+    foto.yaw=Math.atan2(camera.position.x-camera.position.x-Math.sin(player.view.yaw), 1)||player.view.yaw;
+    const d=new THREE.Vector3(); camera.getWorldDirection(d);
+    foto.yaw=Math.atan2(d.x, d.z); foto.pitch=Math.asin(clamp(d.y,-1,1));
+    foto.vel.set(0,0,0);
+    SONIDO.parar();
+    feed('📷 Modo foto · WASD mueve · ratón o flechas miran · ENTER guarda');
+  }
+}
+function updateCamaraFoto(dt){
+  /* 25 m/s normal y 100 con Mayus. A 9 m/s (lo primero que puse) cruzar los
+     2,4 km del mapa tomaba cuatro minutos y componer una foto era un castigo. */
+  const k=keys, rapido=(k.ShiftLeft||k.ShiftRight)?4:1;
+  // mirar con las flechas (el ratón ya mueve por pointerlock, más abajo)
+  const gv=1.5*dt;
+  if(k.ArrowLeft) foto.yaw+=gv; if(k.ArrowRight) foto.yaw-=gv;
+  if(k.ArrowUp) foto.pitch=clamp(foto.pitch+gv,-1.5,1.5);
+  if(k.ArrowDown) foto.pitch=clamp(foto.pitch-gv,-1.5,1.5);
+  const cy=Math.cos(foto.yaw), sy=Math.sin(foto.yaw), cp=Math.cos(foto.pitch), sp=Math.sin(foto.pitch);
+  const dir=_fv1.set(sy*cp, sp, cy*cp).normalize();
+  const der=_fv2.set(cy, 0, -sy);
+  // el objetivo de velocidad; se suaviza para que el movimiento salga limpio
+  _fv3.set(0,0,0);
+  if(k.KeyW) _fv3.add(dir); if(k.KeyS) _fv3.sub(dir);
+  if(k.KeyD) _fv3.add(der); if(k.KeyA) _fv3.sub(der);
+  if(k.Space) _fv3.y+=1; if(k.KeyC) _fv3.y-=1;
+  if(_fv3.lengthSq()>0) _fv3.normalize().multiplyScalar(25*M*rapido);
+  foto.vel.lerp(_fv3, clamp(7*dt,0,1));
+  camera.position.addScaledVector(foto.vel, dt);
+  camera.lookAt(camera.position.x+dir.x, camera.position.y+dir.y, camera.position.z+dir.z);
+}
+const _fv1=new THREE.Vector3(), _fv2=new THREE.Vector3(), _fv3=new THREE.Vector3();
+/* Saca la imagen y devuelve el lienzo. Separado de guardarla para poder
+   COMPROBARLA sin descargar nada: una captura en negro y una buena se
+   distinguen mirando el brillo, no mirando si dio error. */
+function capturarLienzo(){
+  const cv=renderer.domElement, W0=cv.width, H0=cv.height;
+  const esc=Math.min(2, Math.max(1, Math.floor(4096/Math.max(W0,H0))));
+  const W=W0*esc, H=H0*esc;
+  try{
+    renderer.setSize(W,H,false); camera.aspect=W/H; camera.updateProjectionMatrix();
+    if(composer) composer.setSize(W,H);
+    if(skyMesh) skyMesh.position.copy(camera.position);
+    renderer.render(scene, camera);            // directo: el bloom no deja leer el búfer
+    const gl=renderer.getContext(), px=new Uint8Array(W*H*4);
+    gl.readPixels(0,0,W,H,gl.RGBA,gl.UNSIGNED_BYTE,px);
+    const c=document.createElement('canvas'); c.width=W; c.height=H;
+    const g=c.getContext('2d'), id=g.createImageData(W,H);
+    // readPixels devuelve la primera fila ABAJO: hay que darle la vuelta
+    for(let y=0;y<H;y++){ const s=(H-1-y)*W*4, d=y*W*4;
+      for(let i=0;i<W*4;i++) id.data[d+i]=px[s+i]; }
+    g.putImageData(id,0,0);
+    return c;
+  } finally {
+    renderer.setSize(W0,H0,false); camera.aspect=W0/H0; camera.updateProjectionMatrix();
+    if(composer) composer.setSize(W0,H0);
+  }
+}
+async function guardarFoto(){
+  if(foto.guardando) return; foto.guardando=true;
+  try{
+    const c=capturarLienzo();
+    const nombre='drones-'+(currentReal?currentReal.name.replace(/[^a-zA-Z0-9]/g,'-').toLowerCase():'mision')
+      +'-'+String(Math.round(missionTime))+'s.png';
+    c.toBlob(b=>{
+      if(!b){ feed('No se pudo guardar la foto','bad'); return; }
+      const u=URL.createObjectURL(b), a=document.createElement('a');
+      a.href=u; a.download=nombre; document.body.appendChild(a); a.click();
+      setTimeout(()=>{ URL.revokeObjectURL(u); a.remove(); }, 4000);
+      feed('📷 Foto guardada · '+c.width+'×'+c.height,'good'); SONIDO.ui('ok');
+    }, 'image/png');
+  }catch(e){ feed('No se pudo guardar la foto: '+(e&&e.message),'bad'); }
+  finally{ foto.guardando=false; }
+}
 function frame(){
   requestAnimationFrame(frame);
   const dt=Math.min(clock.getDelta(), 0.05);
   try{
     if(gaze.on) detectGaze();
-    if(playing && !paused) simulate(dt);
+    if(foto.on){ updateCamaraFoto(dt); }
+    else if(playing && !paused) simulate(dt);
     if(remote.active && remote.role==='pad') padTick(dt);
     if(skyMesh) skyMesh.position.copy(camera.position);   // el cielo envuelve siempre a la cámara
     if(water && water.visible) water.position.set(camera.position.x, water.position.y, camera.position.z);
@@ -5590,6 +5736,8 @@ function wireUI(){
   $('btnSensor').onclick=()=>{ if(playing)cycleSensor(); };
   $('btnGaze').onclick=()=>toggleGaze();
   $('btnVol').onclick=()=>cicloVolumen();
+  $('fotoGuardar').onclick=()=>guardarFoto();
+  $('fotoSalir').onclick=()=>toggleFoto();
   { const b=$('btnVol'); if(b) b.querySelector('.ic').textContent = store.vol===0?'🔇':'🔊'; }
   $('btnVoice').onclick=()=>toggleVoice();
   $('gazeCal').onclick=(e)=>{ e.stopPropagation(); calibrateGaze(); };
@@ -5686,6 +5834,21 @@ if(location.search.indexOf('dbg')>=0) window.DRONES={
   secTest:(on)=>{ mouseSec=(on!==false); return mouseSec; },
   audio:(ms)=>SONIDO.medir(ms),
   bucles:()=>SONIDO.ganancias(),
+  /* comprueba la FOTO sin descargarla: si sale negra, se ve aquí */
+  fotoPrueba:()=>{ const c=capturarLienzo();
+    const g=c.getContext('2d'), d=g.getImageData(0,0,c.width,c.height).data;
+    let sum=0, n=0; const u=new Set();
+    for(let i=0;i<d.length;i+=4*97){ sum+=(d[i]+d[i+1]+d[i+2])/3; n++;
+      u.add((d[i]>>4)+','+(d[i+1]>>4)+','+(d[i+2]>>4)); }
+    return { tamano:c.width+'×'+c.height, brillo:+(sum/n).toFixed(1), tonos:u.size,
+             negra: sum/n < 6 }; },
+  foto:(on)=>{ if(foto.on!==(on!==false)) toggleFoto(); return foto.on; },
+  /* mueve la cámara de foto n pasos: hace falta porque con la ventana oculta
+     requestAnimationFrame no corre y el bucle normal no avanza */
+  fotoPaso:(n,dt)=>{ for(let i=0;i<(n||30);i++) updateCamaraFoto(dt||0.033);
+    return { x:+camera.position.x.toFixed(1), y:+camera.position.y.toFixed(1),
+             z:+camera.position.z.toFixed(1),
+             mira:{ yaw:Math.round(foto.yaw*180/Math.PI), pitch:Math.round(foto.pitch*180/Math.PI) } }; },
   sonar:(que,a,b)=>{ SONIDO.despertar();
     const p=(a!==undefined)? new THREE.Vector3(a,b||0,0) : (camera?camera.position.clone():new THREE.Vector3());
     if(SONIDO[que]) SONIDO[que](p, 1); return 'sonó '+que; },
