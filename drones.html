@@ -644,9 +644,16 @@
         <div class="subtitle" style="margin:0">Palanca IZQ = conducir/volar y girar · palanca DER = apuntar (o subir/bajar el dron). Botones a los lados: disparar, sensor, cámara, mirada, voz y 💥 kamikaze. Juega en horizontal.</div>
       </div>
 
-      <div class="foot">Cada archivo funciona solo. Guarda tu progreso en este navegador.
-        <a id="resetProg">Borrar progreso</a> · <a id="btnActualizar">🔄 Forzar actualización</a>
-        <span style="opacity:.6">(si la app se queda con una versión vieja o en blanco)</span></div>
+      <div class="foot">Tu progreso se guarda <b>solo en este navegador y en este equipo</b>. Si limpias los
+        datos del navegador, entras desde otro, o cambias de computador, <b>se pierde</b>. Guarda una copia
+        y la restauras donde quieras.
+        <div style="margin-top:8px">
+          <a id="copiaGuardar">⬇ Guardar copia</a> · <a id="copiaRestaurar">⬆ Restaurar copia</a> ·
+          <a id="resetProg">Borrar progreso</a> · <a id="btnActualizar">🔄 Forzar actualización</a>
+          <span style="opacity:.6">(si la app se queda con una versión vieja o en blanco)</span>
+        </div>
+        <div id="copiaMsg" style="margin-top:8px;min-height:15px"></div>
+        <input type="file" id="copiaArchivo" accept=".json,application/json" style="display:none"></div>
     </div>
   </div>
 
@@ -784,6 +791,44 @@ function load(){ try{ const s=JSON.parse(localStorage.getItem(SKEY)||'{}');
   store.env=Object.assign({tod:'dia',wx:'despejado'}, s.env||{}); }catch(e){} }
 function save(){ try{ localStorage.setItem(SKEY, JSON.stringify(store)); }catch(e){} }
 load();
+
+/* ---------- Copia de seguridad del progreso ----------
+   El progreso vive en localStorage, y localStorage NO viaja: se pierde al
+   limpiar los datos del navegador, al entrar desde otro navegador o al cambiar
+   de equipo. El juego no tiene servidor y no debe tenerlo (abre sin internet y
+   no depende de nadie), así que la única salida honesta es que el jugador se
+   lleve su partida en un archivo.
+   Va con cabecera propia — juego + formato — porque un día habrá campos nuevos
+   y una copia vieja tiene que seguir entrando; y porque hay que poder RECHAZAR
+   un .json cualquiera en vez de dejar el store medio escrito. */
+const COPIA_FORMATO=1;
+function copiaActual(){
+  return { juego:'drones-de-combate', formato:COPIA_FORMATO,
+    fecha:new Date().toISOString(),
+    datos:{ prog:store.prog, best:store.best, loadout:store.loadout, env:store.env, vol:store.vol } };
+}
+function copiaResumen(d){
+  const misiones=Object.keys(d.prog||{}).length, marcas=Object.keys(d.best||{}).length;
+  return misiones+' '+(misiones===1?'misión completada':'misiones completadas')+' · '+marcas+' '+(marcas===1?'marca':'marcas');
+}
+/* Devuelve {ok,msg} en vez de lanzar: quien llama es la interfaz, y necesita un
+   texto para el jugador tanto si salió bien como si no. */
+function importarCopia(texto){
+  let d; try{ d=JSON.parse(texto); }catch(e){ return {ok:false, msg:'Ese archivo no es una copia de Drones (no se pudo leer).'}; }
+  if(!d || typeof d!=='object' || d.juego!=='drones-de-combate')
+    return {ok:false, msg:'Ese archivo no es una copia de Drones.'};
+  if(!(d.formato<=COPIA_FORMATO))
+    return {ok:false, msg:'Esa copia es de una versión más nueva del juego. Actualiza el juego y vuelve a intentarlo.'};
+  const s=d.datos||{};
+  if(typeof s.prog!=='object' || !s.prog || typeof s.best!=='object' || !s.best)
+    return {ok:false, msg:'La copia está incompleta o dañada.'};
+  store.prog=s.prog; store.best=s.best;
+  store.loadout=(s.loadout && typeof s.loadout==='object')?s.loadout:null;
+  store.env=Object.assign({tod:'dia',wx:'despejado'}, (s.env&&typeof s.env==='object')?s.env:{});
+  store.vol=(typeof s.vol==='number')?clamp(s.vol,0,1):store.vol;
+  save();
+  return {ok:true, msg:'Progreso restaurado · '+copiaResumen(s)};
+}
 
 /* =====================================================================
    ⚙️  CONFIG_IA · TODO el balanceo de la inteligencia artificial
@@ -5685,6 +5730,38 @@ function switchTab(name){
 }
 
 /* =====================================================================
+   COPIA DE SEGURIDAD · la parte visible
+   ===================================================================== */
+function avisoCopia(texto, tono){
+  const el=$('copiaMsg'); if(!el) return;
+  el.textContent=texto;
+  el.style.color = tono==='mal' ? 'var(--rojo-2)' : (tono==='bien' ? 'var(--hud)' : 'var(--gris)');
+}
+function exportarCopia(){
+  try{
+    const c=copiaActual();
+    const b=new Blob([JSON.stringify(c,null,2)], {type:'application/json'});
+    const u=URL.createObjectURL(b), a=document.createElement('a');
+    // fecha LOCAL en el nombre, no la de c.fecha (que es UTC): a las 8 de la
+    // noche en Colombia el archivo saldría fechado mañana y parece de otro día
+    const d=new Date(), p=n=>String(n).padStart(2,'0');
+    a.href=u; a.download='drones-progreso-'+d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+'.json';
+    document.body.appendChild(a); a.click();
+    setTimeout(()=>{ URL.revokeObjectURL(u); a.remove(); }, 4000);
+    avisoCopia('Copia guardada en tus Descargas · '+copiaResumen(c.datos),'bien');
+  }catch(e){ avisoCopia('No se pudo guardar la copia: '+(e&&e.message),'mal'); }
+}
+/* Tras restaurar hay que volver a pintar lo que ya estaba en pantalla y aplicar
+   lo que no es solo dato: la hora/clima del menú y el volumen del sonido. */
+function aplicarCopiaRestaurada(){
+  TOD=store.env.tod||'dia'; WX=store.env.wx||'despejado';
+  try{ applyEnvironment(); }catch(e){}
+  try{ SONIDO.volumen(store.vol); }catch(e){}
+  { const b=$('btnVol'); if(b) b.querySelector('.ic').textContent = store.vol===0?'🔇':'🔊'; }
+  renderMissions(); renderGarage(); renderReal(); renderCond();
+}
+
+/* =====================================================================
    ENGANCHE DE EVENTOS UI
    ===================================================================== */
 function wireUI(){
@@ -5697,7 +5774,20 @@ function wireUI(){
     }catch(e){}
     location.replace(location.pathname+'?v='+Date.now());
   };
-  $('resetProg').onclick=()=>{ if(confirm('¿Borrar todo tu progreso y personalización?')){ store.prog={}; store.best={}; store.loadout=null; save(); renderMissions(); renderGarage(); } };
+  $('resetProg').onclick=()=>{ if(confirm('¿Borrar todo tu progreso y personalización?')){ store.prog={}; store.best={}; store.loadout=null; save(); renderMissions(); renderGarage(); avisoCopia('Progreso borrado.','mal'); } };
+  /* Copia de seguridad. El aviso NO puede ir por feed(): feed escribe en el HUD,
+     y desde el menú el HUD está oculto — el jugador no vería nada. */
+  $('copiaGuardar').onclick=()=>exportarCopia();
+  $('copiaRestaurar').onclick=()=>$('copiaArchivo').click();
+  $('copiaArchivo').onchange=async (e)=>{
+    const f=e.target.files&&e.target.files[0]; if(!f) return;
+    e.target.value='';   // si no, elegir el MISMO archivo dos veces no dispara change
+    if(!confirm('Restaurar reemplaza tu progreso actual por el de la copia. ¿Seguir?')) return;
+    let r; try{ r=importarCopia(await f.text()); }
+    catch(err){ r={ok:false, msg:'No se pudo leer el archivo: '+(err&&err.message)}; }
+    avisoCopia(r.msg, r.ok?'bien':'mal');
+    if(r.ok) aplicarCopiaRestaurada();
+  };
   // briefing
   $('brStart').onclick=()=>startMission(missionIdx);
   $('brGarage').onclick=()=>{ $('briefing').classList.remove('on'); $('menu').classList.add('on'); switchTab('garage'); };
@@ -5893,6 +5983,13 @@ if(location.search.indexOf('dbg')>=0) window.DRONES={
   gimbalAuto:()=>{ drone.gimbalManual=false; return 'vuelve al automático'; },
   cycleCam:()=>cycleCam(),
   setLoadout:(slot,id)=>{ const l=currentLoadout(); l[slot]=id; store.loadout=l; return l; },
+  /* Copia de seguridad, probable SIN tocar el disco ni abrir un diálogo de
+     archivos: copia() devuelve exactamente el texto que se descargaría, y
+     restaurar() acepta ese mismo texto. */
+  copia:()=>JSON.stringify(copiaActual()),
+  restaurar:(txt)=>{ const r=importarCopia(txt); if(r.ok) aplicarCopiaRestaurada(); return r; },
+  progreso:()=>({ misiones:Object.keys(store.prog), marcas:Object.assign({},store.best),
+    loadout:store.loadout, env:Object.assign({},store.env), vol:store.vol }),
   terrH:(x,z)=>+terrainHeight(x,z).toFixed(2),
   waterY:()=>(water&&water.visible)?water.position.y:null,
   simGaze:(headYaw,headPitch)=>{ gaze.active=true; gaze.detected=true; gaze.ready=true; gaze.hasEye=false;

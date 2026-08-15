@@ -51,6 +51,18 @@ node servidor.js 8199
 **No vale abrir `drones.html` con doble clic.** En `file://` el navegador bloquea
 las descargas del terreno, del satélite y de OpenStreetMap, y también la webcam.
 
+## Tu progreso
+
+Se guarda **solo en ese navegador y en ese equipo** (`localStorage`): limpiar los
+datos del navegador, entrar desde otro o cambiar de computador lo borra. El juego
+no tiene servidor ni cuentas — y no debe tenerlo, porque abre sin internet.
+
+Por eso, abajo en el menú: **⬇ Guardar copia** baja un
+`drones-progreso-AAAA-MM-DD.json` con las misiones completadas, las marcas, el
+garaje y las condiciones; **⬆ Restaurar copia** lo vuelve a meter, aquí o en otro
+equipo. La copia lleva `juego` y `formato` en la cabecera: un archivo que no sea
+una copia de Drones se **rechaza** en vez de dejar la partida a medio escribir.
+
 ## Qué es
 
 Escala real de vehículo no tripulado: **1 unidad = 5,22 m**, el UGV mide 2,4 m
@@ -73,6 +85,8 @@ DRONES.dibujo()          // triángulos y llamadas de dibujo
 DRONES.audio()           // nivel de sonido REAL
 DRONES.fotoPrueba()      // comprueba la captura sin descargarla
 DRONES.rumbo(90)         // apuntar el dron al este (los cerros de Bogotá)
+DRONES.copia()           // el texto que baja "⬇ Guardar copia"
+DRONES.restaurar(texto)  // {ok,msg}; con basura debe dar ok:false y no tocar nada
 ```
 
 > Con la ventana oculta `innerWidth` vale 0, el lienzo queda en 0×0 y dibujar no

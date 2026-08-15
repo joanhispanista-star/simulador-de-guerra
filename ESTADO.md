@@ -30,16 +30,35 @@ mostraba media ciudad. Ahora:
 | Sonido | todo sintetizado; motor, rotores y viento continuos |
 | **Modo foto** | `P`: congela, esconde el HUD, cámara libre, guarda a 2× |
 | App de Windows | instalable, 2 MB, **abre sin internet** |
+| **Copia del progreso** | ⬇ guardar / ⬆ restaurar en un archivo `.json` (14-ago) |
+
+## El progreso: qué se resolvió y qué no
+
+El progreso **sigue viviendo en `localStorage`**, y `localStorage` no viaja: se
+borra al limpiar los datos del navegador, no lo ve otro navegador y no cruza de
+un computador a otro. Lo que cambió el 14 de agosto es que **ya no es
+irrecuperable**: en el menú, abajo, hay **⬇ Guardar copia** y **⬆ Restaurar
+copia**. El archivo se llama `drones-progreso-AAAA-MM-DD.json` y lleva dentro
+las misiones completadas, las mejores marcas, el garaje, la hora/clima y el
+volumen.
+
+El texto del menú ahora **lo dice**: "Tu progreso se guarda solo en este
+navegador y en este equipo… se pierde". Antes decía "Guarda tu progreso en este
+navegador", que sonaba a promesa.
+
+**Lo que NO se hizo, a propósito:** sincronizar solo, sin que el jugador haga
+nada. Eso pide cuenta y servidor, y Drones es independiente y **abre sin
+internet** — no vale la pena romper eso por guardar diez misiones. Si algún día
+se quiere, el formato ya está preparado: la copia lleva `juego` y `formato`, y
+el importador rechaza lo que no reconoce en vez de dejar la partida a medias.
 
 ## Lo que falta, por orden de lo que yo haría
 
-1. **Que el progreso no se pierda.** Hoy vive en `localStorage`: cambias de
-   navegador o reinstalas y se va. Es lo último que queda de la lista original.
-2. **La teja se ve lisa** — usa la textura de losa tintada de rojo; una teja real
+1. **La teja se ve lisa** — usa la textura de losa tintada de rojo; una teja real
    tiene acanaladura. Media sesión.
-3. **Techos claros algo quemados** bajo el sol de mediodía. Es la exposición, un
+2. **Techos claros algo quemados** bajo el sol de mediodía. Es la exposición, un
    número.
-4. **Microsoft Store** (19 USD una vez, la firma Microsoft, sin advertencia de
+3. **Microsoft Store** (19 USD una vez, la firma Microsoft, sin advertencia de
    SmartScreen). PWABuilder toma lo que ya hay. Solo cuando el juego esté más
    terminado.
 
@@ -87,7 +106,14 @@ DRONES.bucles()           // ganancia de motor, rotores y viento por separado
 DRONES.fotoPrueba()       // comprueba la captura sin descargarla
 DRONES.rumbo(90)          // apuntar el dron al este (los cerros)
 DRONES.aislar({sombras:false})  // apagar partes para ver qué cuesta
+DRONES.progreso()         // misiones, marcas, garaje, hora/clima, volumen
+DRONES.copia()            // el MISMO texto que descarga "⬇ Guardar copia"
+DRONES.restaurar(texto)   // {ok,msg} — prueba restaurar sin abrir el diálogo
 ```
+
+Para probar la copia sin tocar el disco: `DRONES.restaurar(DRONES.copia())`.
+Y para comprobar que rechaza basura: `DRONES.restaurar('{"juego":"otra-cosa"}')`
+debe devolver `ok:false` **y dejar el progreso intacto**.
 
 ## Números de referencia (1280×720, misión 5)
 
