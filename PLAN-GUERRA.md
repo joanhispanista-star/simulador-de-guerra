@@ -1,5 +1,12 @@
 # Plan: de simulador a juego de GUERRA DE DRONES · 15-ago-2026
 
+> **ACTUALIZACIÓN (mismo día):** Joan dijo "completa todo hasta D3" y las
+> cuatro fases quedaron construidas y verificadas en esta sesión. Lo único
+> pendiente: aplicar `guerra.sql` en Supabase (paso de Joan, 2 minutos).
+> Lo que sigue abajo es el plan original, que sirve de mapa de lo hecho —
+> con una diferencia: D3 v1 salió sin cuentas (partes anónimos acotados a
+> 3 puntos), y las cuentas/ranking quedan como la siguiente frontera.
+
 Lo que pidió Joan, en sus palabras: multijugador, guerra de máquinas de un país
 con otro para simular invasiones, campo de juego más grande para drones de
 largo alcance, y que el juego "sea de eso, de drones".

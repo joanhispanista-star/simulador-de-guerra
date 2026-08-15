@@ -1,4 +1,34 @@
-# Estado de Drones de Combate · 6 de agosto de 2026
+# Estado de Drones de Combate · 15 de agosto de 2026
+
+## El juego cambió de naturaleza (15-ago): ahora ES de drones, y de guerra
+
+Joan pidió "completa todo hasta D3" y las cuatro fases del PLAN-GUERRA.md
+quedaron construidas EN UN DÍA:
+
+| Fase | Qué | Estado |
+|---|---|---|
+| D0 | Las misiones arrancan EN el dron; el garaje abre por el dron | ✅ verificado |
+| D1 | Campo grande: 2,4 / 4,8 / 7,2 km, selector en 🌍 · la escala de las máquinas NO cambia | ✅ verificado a 4,8 km |
+| D2 | **Duelo 1v1 por internet**: sala con código (como el mando), primero a 3 derribos | ✅ un duelo REAL de 3–0 entre dos pestañas, por el Supabase de verdad |
+| D3 | **Guerra por territorios**: AZUL vs ROJO, 23 ciudades, pestaña ⚔️ Guerra | ✅ cliente listo; **falta que Joan aplique `guerra.sql`** (2 min, abajo) |
+
+**El único paso pendiente de D3 es de Joan:** Supabase → SQL Editor → pegar
+`guerra.sql` → Run. Hasta entonces la pestaña Guerra espera con un aviso
+honesto; el juego no se rompe. El SQL es idempotente y sigue la regla de la
+casa: RLS en todo, el cliente NO puede escribir el marcador (lo lleva un
+trigger), y conquistar exige ventaja de 5 (la histéresis evita que una ciudad
+cambie de manos con cada partida). Facciones FICTICIAS a propósito.
+
+Cómo se probó el duelo sin dos computadores: dos pestañas del mismo navegador,
+`DRONES.dueloCrear()` en una, `DRONES.dueloUnir(código)` en la otra, y
+`DRONES.dueloEstado()` en ambas. La trampa de esa prueba: la pestaña oculta no
+corre su bucle, así que su respawn no avanza hasta dispararle `simN()` — en
+juego real no pasa. Y `rumbo()` es BRÚJULA: yaw=(180−g)°; para apuntar a un
+punto: `g = 180 − atan2(dx,dz)·180/π` (costó 13 tiros errados descubrirlo).
+
+---
+
+# Estado anterior · 6 de agosto de 2026
 
 Documento para retomar sin releer el historial. Lo que está hecho, lo que falta,
 y las trampas que ya costaron tiempo una vez.

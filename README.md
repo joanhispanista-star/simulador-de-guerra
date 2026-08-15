@@ -1,7 +1,14 @@
 # Drones de Combate
 
-Simulador de vehículos **no tripulados** sobre el mundo real, en un solo archivo
-HTML. Proyecto independiente: no depende de nada ni enlaza a nada.
+Juego de **guerra de drones** sobre el mundo real, en un solo archivo HTML.
+Las misiones arrancan en el aire; el campo llega a 7,2 km para los drones de
+largo alcance; hay **duelo 1v1 por internet** (sala con código de 4 dígitos,
+primero a 3 derribos) y una **guerra por territorios** entre dos facciones
+ficticias — Coalición AZUL y Pacto ROJO — que se disputan 23 ciudades reales.
+Proyecto independiente: no depende de nada ni enlaza a nada.
+
+> La guerra necesita un paso único de despliegue: aplicar `guerra.sql` en el
+> SQL Editor de Supabase. El duelo y todo lo demás funcionan sin eso.
 
 **En línea:** https://joanhispanista-star.github.io/simulador-de-guerra/
 

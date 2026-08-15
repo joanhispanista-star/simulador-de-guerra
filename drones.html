@@ -507,6 +507,7 @@
         <button data-tab="real">🌍 Mundo real</button>
         <button data-tab="garage">🔧 Garaje</button>
         <button data-tab="pair">📱 Mando</button>
+        <button data-tab="guerra">⚔️ Guerra</button>
         <button data-tab="help">? Controles</button>
       </div>
 
@@ -532,6 +533,14 @@
           <select id="citySel" class="cz-in" style="flex:2"></select>
           <button class="play" id="cityGo" style="flex:0 0 auto;width:auto;margin:0;padding:0 20px">Desplegar →</button>
         </div>
+        <div class="row" style="gap:8px;align-items:center;margin-bottom:6px">
+          <span class="subtitle" style="margin:0">Campo:</span>
+          <select id="campoSel" class="cz-in" style="flex:1">
+            <option value="2400">2,4 km · normal</option>
+            <option value="4800">4,8 km · largo alcance (menos detalle de suelo)</option>
+            <option value="7200">7,2 km · extremo (equipo potente)</option>
+          </select>
+        </div>
 
         <div class="h-sec" style="margin-top:16px">📍 Tu zona · cualquier lugar del planeta</div>
         <div class="subtitle" style="margin-bottom:8px">Pega latitud y longitud (en Google Maps: clic derecho → copia las coordenadas). Ej: Bogotá <b>4.60, -74.08</b>.</div>
@@ -540,6 +549,19 @@
           <input id="czLon" class="cz-in" placeholder="Longitud" inputmode="decimal" autocomplete="off">
           <button class="play" id="czGo" style="flex:0 0 auto;width:auto;margin:0;padding:0 20px">Jugar aquí →</button>
         </div>
+      </div>
+
+      <!-- GUERRA POR TERRITORIOS -->
+      <div id="tab-guerra" style="display:none">
+        <div class="h-sec">⚔️ La guerra · Coalición AZUL contra Pacto ROJO</div>
+        <div class="subtitle" style="margin-bottom:10px">Dos facciones se disputan las ciudades del mundo real. Cada misión ganada en una ciudad y cada duelo ganado suman puntos para tu bando; el que domina, la pinta de su color. <b>Las facciones son ficticias a propósito</b> — la guerra es el juego, no los países.</div>
+        <div id="guerraFaccion" class="row" style="gap:10px;margin-bottom:12px">
+          <button class="play ghost" id="btnAzul" style="flex:1;border-color:#37b6ff;color:#37b6ff">🔵 Coalición AZUL</button>
+          <button class="play ghost" id="btnRojo" style="flex:1;border-color:#ff3b46;color:#ff3b46">🔴 Pacto ROJO</button>
+        </div>
+        <div id="guerraEstado" class="subtitle" style="margin-bottom:8px"></div>
+        <div id="guerraMapa" class="missions"></div>
+        <div class="foot" id="guerraPie"></div>
       </div>
 
       <!-- GARAJE -->
@@ -556,7 +578,24 @@
 
       <!-- MANDO / PAIRING -->
       <div id="tab-pair" style="display:none">
-        <div class="h-sec">Mando a distancia (beta)</div>
+        <div class="h-sec">⚔️ Duelo 1v1 (experimental)</div>
+        <div class="subtitle" style="margin-bottom:10px"><b>Dron contra dron</b> sobre una ciudad real, contra otra persona por internet. Uno crea la sala y comparte el código; el otro se une. <b>Primero en 3 derribos gana.</b> Los dos necesitan conexión.</div>
+        <div class="row" style="gap:10px">
+          <button class="play ghost" id="btnDueloCrear" style="flex:1;min-width:150px">⚔️ Crear sala<br><small style="font-weight:600;color:var(--gris)">usa la ciudad y el campo elegidos en 🌍</small></button>
+          <button class="play ghost" id="btnDueloUnir" style="flex:1;min-width:150px">🎯 Unirse<br><small style="font-weight:600;color:var(--gris)">con el código del rival</small></button>
+        </div>
+        <div id="dueloHostBox" style="display:none;margin-top:14px;text-align:center">
+          <div class="h-sec">Código del duelo</div>
+          <div class="roomcode" id="dueloCode">----</div>
+          <div id="dueloHostPill" class="pill wait"><span class="d"></span> Esperando al rival…</div>
+        </div>
+        <div id="dueloJoinBox" style="display:none;margin-top:14px">
+          <div class="code-in"><input id="dueloInput" maxlength="4" placeholder="0000" inputmode="numeric" autocomplete="off"></div>
+          <button class="play red" id="btnDueloConectar" style="margin-top:10px">Entrar al duelo →</button>
+          <div id="dueloJoinPill" class="pill" style="margin-top:8px;display:none"></div>
+        </div>
+
+        <div class="h-sec" style="margin-top:18px">Mando a distancia (beta)</div>
         <div class="subtitle" style="margin-bottom:10px">Usa <b>tu celular como control</b> del dron aéreo mientras el juego corre en otra pantalla (PC/TV). Ábrelo en los dos aparatos y conéctalos con un código.</div>
         <div class="row" style="gap:10px">
           <button class="play ghost" id="btnHost" style="flex:1;min-width:150px">🖥️ Esta es la pantalla<br><small style="font-weight:600;color:var(--gris)">crear código</small></button>
@@ -788,6 +827,7 @@ const store={ prog:{}, loadout:null, best:{}, env:{tod:'dia',wx:'despejado'}, vo
 function load(){ try{ const s=JSON.parse(localStorage.getItem(SKEY)||'{}');
   store.prog=s.prog||{}; store.loadout=s.loadout||null; store.best=s.best||{};
   store.vol=(typeof s.vol==='number')?s.vol:0.7;
+  store.faccion=(s.faccion==='azul'||s.faccion==='rojo')?s.faccion:null;   // guerra
   store.env=Object.assign({tod:'dia',wx:'despejado'}, s.env||{}); }catch(e){} }
 function save(){ try{ localStorage.setItem(SKEY, JSON.stringify(store)); }catch(e){} }
 load();
@@ -805,7 +845,8 @@ const COPIA_FORMATO=1;
 function copiaActual(){
   return { juego:'drones-de-combate', formato:COPIA_FORMATO,
     fecha:new Date().toISOString(),
-    datos:{ prog:store.prog, best:store.best, loadout:store.loadout, env:store.env, vol:store.vol } };
+    datos:{ prog:store.prog, best:store.best, loadout:store.loadout, env:store.env, vol:store.vol,
+            faccion:store.faccion||null } };   // el bando viaja con la copia (opcional: las copias viejas no lo tienen)
 }
 function copiaResumen(d){
   const misiones=Object.keys(d.prog||{}).length, marcas=Object.keys(d.best||{}).length;
@@ -826,6 +867,7 @@ function importarCopia(texto){
   store.loadout=(s.loadout && typeof s.loadout==='object')?s.loadout:null;
   store.env=Object.assign({tod:'dia',wx:'despejado'}, (s.env&&typeof s.env==='object')?s.env:{});
   store.vol=(typeof s.vol==='number')?clamp(s.vol,0,1):store.vol;
+  store.faccion=(s.faccion==='azul'||s.faccion==='rojo')?s.faccion:store.faccion;
   save();
   return {ok:true, msg:'Progreso restaurado · '+copiaResumen(s)};
 }
@@ -908,7 +950,12 @@ function fbm(x,y,oct){ let s=0,amp=.5,f=1,tot=0; for(let i=0;i<oct;i++){ s+=amp*
 /* =====================================================================
    BIOMAS / MUNDOS
    ===================================================================== */
-const WORLD=460, HALF=WORLD/2;   // extensión del terreno
+/* Extensión del terreno, en unidades. Es `let` desde el campo grande (D1):
+   un mapa de largo alcance NO cambia la escala (1 u sigue siendo 5,22 m — si
+   no, los tanques salen del tamaño de una casa), cambia CUÁNTAS unidades mide
+   el mundo. Los mapas normales y las misiones de menú vuelven a 460. */
+let WORLD=460, HALF=WORLD/2;
+function fijarCampo(spanM){ WORLD=Math.round((spanM||2400)/5.22); HALF=WORLD/2; }
 const BIOMES={
   desierto:{ name:'Desierto', seed:11, sky:0xf0d8a8, skyTop:0x6fa8d8, fog:0xe8cf9e, fogN:0.0016,
     sun:0xfff0d8, amb:0x6b5a3a, ground:[0xd9b571,0xcaa25c,0xe6c98a],
@@ -1600,6 +1647,7 @@ function makeGroundDetailTex(){
 }
 function buildWorld(bkey){
   REAL=null;
+  fijarCampo(2400);        // los mundos procedurales son siempre del tamaño de siempre
   biome=BIOMES[bkey]; SEED=biome.seed*97+7;
   clearTerrain();
   calcularMundoAlto();     // igual que en el mundo real: el techo del dron cuelga de esto
@@ -1854,8 +1902,14 @@ async function fetchTiles(z, urlFn, bb, outSize, smooth){
 async function buildRealWorld(map){
   REAL=null; clearTerrain();
   const spanM = map.spanM || REAL_SPAN_DEF;
+  fijarCampo(spanM);                              // el mundo crece en UNIDADES; la escala no se toca
+  if(water){ water.scale.setScalar(WORLD/460); }  // el plano de agua se construyó para 460
   const ZE=15;                                    // elevación: máximo zoom que existe en Terrarium
-  const ZT=map.texZoom || zoomSuelo();            // satélite: según lo que aguante el aparato
+  /* satélite: un punto de zoom MENOS por cada duplicación del campo. El lienzo
+     es fijo (4096): a 4,8 km con el zoom de 2,4 km serían ~960 teselas por
+     descargar y no caben; bajando un punto, las teselas se mantienen y lo que
+     baja es el detalle por metro — que es el trato justo del largo alcance. */
+  const ZT=Math.max(13, (map.texZoom || zoomSuelo()) - Math.round(Math.log2(spanM/REAL_SPAN_DEF)));
   const bbAt=(z)=>{ const h=(spanM/mppAt(map.lat,z))/256/2;
     const fx=lon2tileX(map.lon,z), fy=lat2tileY(map.lat,z);
     return {x0:fx-h, x1:fx+h, y0:fy-h, y1:fy+h}; };
@@ -1895,7 +1949,8 @@ async function buildRealWorld(map){
     mat=new THREE.MeshStandardMaterial({ map:tex, bumpMap:bump, bumpScale:0.4, roughness:0.95, metalness:0 }); }
   else mat=new THREE.MeshStandardMaterial({ vertexColors:true, roughness:1, flatShading:true });
   // malla desplazada + UV alineadas al norte
-  const SEG=320;
+  // la malla del terreno crece con el campo (con tope: 448² ya son 400 mil triángulos)
+  const SEG=Math.min(448, Math.round(320*WORLD/460));
   const geo=new THREE.PlaneGeometry(WORLD, WORLD, SEG, SEG); geo.rotateX(-Math.PI/2);
   const pos=geo.attributes.position, uv=geo.attributes.uv;
   const cols= imgOK?null:new Float32Array(pos.count*3), cc=new THREE.Color();
@@ -5366,6 +5421,10 @@ function deployMission(m){
   updateChips(); updateObjText();
   if(gaze.active){ gaze.calibViewPitch=player.view.pitch; } // reancla el pitch de la mirada
   playing=true; paused=false; checkRotate();
+  /* D0 — este juego ES de drones (Joan, 15-ago): la misión arranca EN EL AIRE.
+     El tanque queda como base móvil; F sigue alternando, como siempre. */
+  if(!drone.active) toggleDrone();
+  if(duelo.active) dueloColocar();   // en duelo, cada uno a su esquina
 }
 function startMission(idx){
   currentReal=null; missionIdx=idx;
@@ -5432,6 +5491,9 @@ function endMission(win, reason){
     const score=Math.round(killCount.enemy*100 + player.hp*3 + Math.max(0,200-missionTime));
     if(!store.best[mission.id]||score>store.best[mission.id]) store.best[mission.id]=score;
     save();
+    // guerra: ganar una misión en una ciudad real suma 1 punto a tu bando ahí
+    if(currentReal && currentReal.lat!==undefined && !duelo.active)
+      guerraParte(1, currentReal.lat, currentReal.lon);
   }
   setTimeout(()=>{
     $('hud').classList.remove('on'); $('touch').classList.remove('on'); $('utiles').classList.remove('on'); $('rotate').classList.remove('on');
@@ -5800,6 +5862,7 @@ function simulate(dt){
   F('ia.tick');  IA.tick(dt);            // capa de IA: refresca los blancos percibibles de cada bando
   F('enemigos'); updateEnemies(dt);
   F('aliados');  updateAllies(dt);
+  F('duelo');    if(duelo.active) dueloTick(dt, inp);
   F('proyectiles'); updateProjectiles(dt);
   F('efectos');  updateEffects(dt);
   F('sonido');   sonidoAmbiente(dt);
@@ -5965,6 +6028,242 @@ const remote={ active:false, role:null, ch:null, sb:null, code:null,
   in:{throttle:0,yaw:0,pitch:0,roll:0,fire:false}, connected:false };
 function loadSupa(){ return new Promise((res,rej)=>{ if(window.supabase&&window.supabase.createClient)return res(window.supabase);
   const s=document.createElement('script'); s.src='https://unpkg.com/@supabase/supabase-js@2'; s.onload=()=>res(window.supabase); s.onerror=()=>rej(new Error('no se pudo cargar el conector')); document.head.appendChild(s); }); }
+/* =====================================================================
+   ⚔️ DUELO 1v1 · dron contra dron por Supabase Realtime
+   ---------------------------------------------------------------------
+   Usa la MISMA tubería que el mando-celular (canal broadcast + código de 4
+   dígitos), que ya demostró funcionar. Reglas de la primera versión, dichas
+   sin adornos:
+   · El que DISPARA decide si dio (mira contra la posición que conoce del
+     rival). Entre amigos alcanza; para ranking no, y eso es la fase D3.
+   · Posiciones 12 veces por segundo; el rival se INTERPOLA entre dos avisos
+     — sin eso se ve a saltos, y eso mata el duelo más que cualquier bug.
+   · Primero en 3 derribos. El derribado reaparece en su esquina a los 3 s.
+   ===================================================================== */
+const duelo={ active:false, role:null, sb:null, ch:null, code:null, fin:false,
+  score:[0,0],              // [yo, rival]
+  hp:100, respawnT:0, txT:0,
+  rival:{ mesh:null, alHay:false, p:new THREE.Vector3(), pAnt:new THREE.Vector3(),
+          t:0, yaw:0, hpVisto:100 } };
+const DUELO_HP=100, DUELO_DMG=12, DUELO_TX=0.08, DUELO_DERRIBOS=3;
+
+function dueloUI(pill, cls, msg){ const el=$(pill); if(!el)return;
+  el.style.display=''; el.className='pill '+cls; el.innerHTML='<span class="d"></span> '+msg; }
+
+async function dueloCanal(code){
+  const supa=await loadSupa();
+  duelo.sb=supa.createClient(SUPA.URL, SUPA.KEY, {realtime:{params:{eventsPerSecond:20}}});
+  duelo.ch=duelo.sb.channel('duelo-'+code, {config:{broadcast:{self:false}}});
+  duelo.ch.on('broadcast',{event:'hola'},()=>{ if(duelo.role!=='host')return;
+    // el rival llegó: le mando el mapa y arranco yo también
+    const sel=$('citySel'); const [la,lo]=(sel&&sel.value?sel.value:'4.5975,-74.0755').split(',').map(Number);
+    const nombre=sel&&sel.options[sel.selectedIndex]?sel.options[sel.selectedIndex].textContent:'La Candelaria';
+    const cfg={ lat:la, lon:lo, nombre, spanM:+(($('campoSel')||{}).value||2400) };
+    duelo.ch.send({type:'broadcast',event:'inicio',payload:cfg});
+    dueloUI('dueloHostPill','ok','Rival conectado · desplegando');
+    dueloArrancar(cfg);
+  });
+  duelo.ch.on('broadcast',{event:'inicio'},({payload})=>{ if(duelo.role!=='guest')return;
+    dueloUI('dueloJoinPill','ok','Conectado · desplegando');
+    dueloArrancar(payload);
+  });
+  duelo.ch.on('broadcast',{event:'pos'},({payload})=>{
+    const r=duelo.rival;
+    r.pAnt.copy(r.alHay ? r.p : new THREE.Vector3(payload.p[0],payload.p[1],payload.p[2]));
+    r.p.set(payload.p[0],payload.p[1],payload.p[2]);
+    r.yaw=payload.y; r.t=0; r.alHay=true;
+  });
+  duelo.ch.on('broadcast',{event:'tiro'},({payload})=>{
+    // el tiro del rival se ve y se oye; el daño llega aparte en 'pum'
+    const o=new THREE.Vector3(...payload.o), d=new THREE.Vector3(...payload.d);
+    fireProjectile(o, d, {speed:MG_VELOCIDAD, dmg:0, from:'enemy', kind:'bala', traza:true, life:1.6});
+    SONIDO.rifle(o);
+  });
+  duelo.ch.on('broadcast',{event:'pum'},({payload})=>{
+    if(duelo.respawnT>0) return;                     // ya derribado: no acumula
+    duelo.hp-=payload.dmg||DUELO_DMG;
+    if(mode==='drone') $('linkFx').style.opacity=0.5;
+    if(duelo.hp<=0){ dueloDerribado(); }
+  });
+  duelo.ch.on('broadcast',{event:'boom'},()=>{
+    // el rival anuncia SU derribo: punto mío, y su dron explota donde lo veo
+    duelo.score[0]++;
+    spawnExplosion(duelo.rival.p, 8, 0xffa040);
+    feed('💥 Derribo · '+duelo.score[0]+'–'+duelo.score[1],'good');
+    dueloMarcador();
+    if(duelo.score[0]>=DUELO_DERRIBOS){ dueloFin(true); }
+  });
+  duelo.ch.subscribe(st=>{ if(st==='SUBSCRIBED' && duelo.role==='guest')
+    duelo.ch.send({type:'broadcast',event:'hola',payload:{}}); });
+}
+
+async function dueloCrear(){
+  try{
+    $('dueloHostBox').style.display='block'; $('dueloJoinBox').style.display='none';
+    duelo.role='host'; duelo.code=String(Math.floor(1000+Math.random()*9000));
+    $('dueloCode').textContent=duelo.code;
+    dueloUI('dueloHostPill','wait','Esperando al rival…');
+    await dueloCanal(duelo.code);
+  }catch(e){ dueloUI('dueloHostPill','bad', e.message||'Error de conexión'); }
+}
+async function dueloUnir(code){
+  try{
+    duelo.role='guest'; duelo.code=code;
+    dueloUI('dueloJoinPill','wait','Conectando…');
+    await dueloCanal(code);
+  }catch(e){ dueloUI('dueloJoinPill','bad', e.message||'Error de conexión'); }
+}
+
+function dueloArrancar(cfg){
+  duelo.active=true; duelo.fin=false; duelo.score=[0,0]; duelo.hp=DUELO_HP; duelo.respawnT=0;
+  duelo.cfg=cfg;   // la guerra necesita saber DÓNDE se peleó
+  duelo.rival.alHay=false;
+  startRealMission({ id:'duelo_'+cfg.lat.toFixed(2), name:'Duelo · '+cfg.nombre, pais:'⚔️ '+cfg.nombre,
+    lat:cfg.lat, lon:cfg.lon, vexag:1.0, spanM:cfg.spanM||2400,
+    enemies:[],                                     // sin IA: la guerra es entre personas
+    objs:[{type:'destroy',tag:'enemy',n:999,text:'Duelo a '+DUELO_DERRIBOS+' derribos'}] });
+}
+/* la base de cada uno en su esquina, la MISMA en ambas máquinas por el rol */
+function dueloEsquina(){ const s=duelo.role==='host'?-1:1; return {x:s*HALF*0.35, z:s*HALF*0.35}; }
+function dueloColocar(){
+  const e=dueloEsquina();
+  player.pos.x=e.x; player.pos.z=e.z; player.pos.y=terrainHeight(e.x,e.z)+0.5;
+  if(!drone.active) toggleDrone();
+  drone.pos.set(e.x, terrainHeight(e.x,e.z)+6, e.z); drone.vel.set(0,0,0);
+  drone.yaw=Math.atan2(-e.x, -e.z);                 // mirando al centro (al rival)
+}
+function dueloMarcador(){ try{ $('objText').innerHTML='⚔️ '+duelo.score[0]+' – '+duelo.score[1]+
+  ' · tu dron: '+Math.max(0,Math.round(duelo.hp))+'%'; }catch(e){} }
+function dueloDerribado(){
+  duelo.score[1]++; duelo.respawnT=3; duelo.hp=DUELO_HP;
+  duelo.ch.send({type:'broadcast',event:'boom',payload:{}});
+  spawnExplosion(drone.pos, 8, 0x8be0ff);
+  feed('☠️ Te derribaron · '+duelo.score[0]+'–'+duelo.score[1],'bad');
+  dueloMarcador();
+  if(duelo.score[1]>=DUELO_DERRIBOS){ dueloFin(false); }
+}
+function dueloFin(gane){
+  duelo.fin=true;
+  feed(gane?'🏆 GANASTE EL DUELO':'Duelo perdido · la revancha es un código nuevo', gane?'good':'bad');
+  // guerra: el duelo ganado vale 2 puntos en esa ciudad
+  if(gane && duelo.cfg) guerraParte(2, duelo.cfg.lat, duelo.cfg.lon);
+}
+/* corre dentro de simulate(): mueve al rival interpolado, transmite mi posición,
+   y resuelve mi fuego. El rival es un DRON DIBUJADO, no una unidad con IA. */
+function dueloTick(dt, inp){
+  if(!duelo.active) return;
+  const r=duelo.rival;
+  if(!r.mesh){ r.mesh=buildDrone(0xff5555); scene.add(r.mesh); addHeat(r.mesh,0.4,4); r.mesh.visible=false; }
+  if(r.alHay){
+    r.t=Math.min(1, r.t+dt/DUELO_TX);               // 0→1 entre dos avisos de posición
+    r.mesh.visible=true;
+    r.mesh.position.lerpVectors(r.pAnt, r.p, r.t);
+    r.mesh.rotation.y=r.yaw;
+    if(r.mesh.userData.rotors) for(const ro of r.mesh.userData.rotors) ro.rotation.y+=dt*70;
+  }
+  // reaparición tras derribo
+  if(duelo.respawnT>0){ duelo.respawnT-=dt; if(duelo.respawnT<=0){ dueloColocar(); drone.batt=1; } }
+  // mi posición, 12 veces por segundo
+  duelo.txT-=dt;
+  if(duelo.txT<=0 && drone.active){ duelo.txT=DUELO_TX;
+    try{ duelo.ch.send({type:'broadcast',event:'pos',payload:{
+      p:[+drone.pos.x.toFixed(2),+drone.pos.y.toFixed(2),+drone.pos.z.toFixed(2)], y:+drone.yaw.toFixed(3) }}); }catch(e){}
+  }
+  // mi ametralladora: dispara hacia donde mira la cámara del dron
+  duelo.mgT=(duelo.mgT||0)-dt;
+  /* cadencia 5,5/s: sumada a las 12,5 posiciones/s queda bajo el tope de 20
+     mensajes/s del canal — pasarse es que Supabase descarte avisos al azar */
+  if(inp && inp.fire && mode==='drone' && !duelo.fin && duelo.respawnT<=0 && duelo.mgT<=0){
+    duelo.mgT=0.18; duelo.nTiros=(duelo.nTiros||0)+1;
+    const cy=Math.cos(drone.yaw), sy=Math.sin(drone.yaw);
+    const g=drone.gimbal||0, cg=Math.cos(g), sg=Math.sin(g);
+    const d=new THREE.Vector3(sy*cg, sg, cy*cg);
+    const o=drone.pos.clone().addScaledVector(d, 0.35);
+    fireProjectile(o.clone(), d.clone(), {speed:MG_VELOCIDAD, dmg:0, from:'player', kind:'bala', traza:true, life:1.6});
+    SONIDO.rifle(o);
+    try{ duelo.ch.send({type:'broadcast',event:'tiro',payload:{o:[+o.x.toFixed(2),+o.y.toFixed(2),+o.z.toFixed(2)],
+      d:[+d.x.toFixed(3),+d.y.toFixed(3),+d.z.toFixed(3)]}}); }catch(e){}
+    /* impacto: distancia del RAYO al rival que veo (el que dispara decide).
+       1,2 m de radio: un dron de 0,9 m con un margen que perdona el lag. */
+    if(r.alHay){
+      const a=r.mesh.position.clone().sub(o);
+      const t=Math.max(0, a.dot(d));
+      /* radio de acierto 0,6 u (~3 m): un dron mide 0,17 u — a pelo sería
+         imposible darle con 80 ms de retraso. Tres metros es "cerca cuenta",
+         que para un duelo entre amigos es lo divertido. */
+      if(t<70 && a.addScaledVector(d,-t).length()<0.6){
+        duelo.nAciertos=(duelo.nAciertos||0)+1;
+        try{ duelo.ch.send({type:'broadcast',event:'pum',payload:{dmg:DUELO_DMG}}); }catch(e){}
+        spawnExplosion(r.mesh.position, 1.2, 0xffd080);
+      }
+    }
+  }
+  dueloMarcador();
+}
+/* =====================================================================
+   ⚔️ GUERRA POR TERRITORIOS · Coalición AZUL vs Pacto ROJO
+   ---------------------------------------------------------------------
+   El mapa vive en Supabase (dos tablas + un trigger, en guerra.sql — hasta
+   que Joan lo aplique, esta pestaña espera con un aviso honesto). El cliente
+   solo hace dos cosas: LEER territorios y PRESENTAR PARTES de guerra (1–3
+   puntos por victoria). Quién suma y cuándo cambia de dueño lo decide el
+   trigger en el servidor: el cliente no puede escribir el marcador.
+   Las facciones son FICTICIAS a propósito: países reales con bandera es
+   carnada de toxicidad, y la guerra es el juego, no los países.
+   ===================================================================== */
+let guerraSb=null, guerraTerr=null;
+function guerraId(lat,lon){ return lat.toFixed(2)+','+lon.toFixed(2); }
+async function guerraCliente(){ if(guerraSb) return guerraSb;
+  const supa=await loadSupa(); guerraSb=supa.createClient(SUPA.URL, SUPA.KEY); return guerraSb; }
+function pintarFaccion(){
+  const f=store.faccion;
+  const az=$('btnAzul'), ro=$('btnRojo'); if(!az) return;
+  az.className='play'+(f==='azul'?'':' ghost'); ro.className='play'+(f==='rojo'?'':' ghost');
+  az.innerHTML='🔵 Coalición AZUL'+(f==='azul'?' · TU BANDO':'');
+  ro.innerHTML='🔴 Pacto ROJO'+(f==='rojo'?' · TU BANDO':'');
+}
+function elegirFaccion(f){ store.faccion=f; save(); pintarFaccion();
+  feed((f==='azul'?'🔵':'🔴')+' Te uniste al bando '+f.toUpperCase()); }
+async function cargarGuerra(){
+  pintarFaccion();
+  const est=$('guerraEstado'), mapa=$('guerraMapa'), pie=$('guerraPie');
+  est.textContent='Consultando el frente…'; pie.textContent='';
+  try{
+    const sb=await guerraCliente();
+    const {data,error}=await sb.from('guerra_territorios').select('*').order('nombre');
+    if(error) throw error;
+    guerraTerr=data;
+    const az=data.filter(t=>t.dueno==='azul').length, ro=data.filter(t=>t.dueno==='rojo').length;
+    est.innerHTML='🔵 AZUL domina <b>'+az+'</b> · 🔴 ROJO domina <b>'+ro+'</b> · en disputa <b>'+(data.length-az-ro)+'</b>';
+    mapa.innerHTML='';
+    for(const t of data){
+      const col=t.dueno==='azul'?'#37b6ff':(t.dueno==='rojo'?'#ff3b46':'#5b6273');
+      const el=document.createElement('button'); el.className='mcard'; el.style.borderLeftColor=col;
+      el.innerHTML='<div class="mtop"><span class="biome" style="color:'+col+'">'+
+        (t.dueno==='nadie'?'EN DISPUTA':t.dueno.toUpperCase())+'</span><span class="diff">🔵'+t.puntos_azul+' · 🔴'+t.puntos_rojo+'</span></div>'+
+        '<h4>'+t.nombre+'</h4><p>Lucha aquí: cada misión ganada suma 1 · cada duelo, 2.</p>';
+      el.onclick=()=>{ const seg=[...document.querySelectorAll('#navSeg button')];
+        (seg.find(b=>b.dataset.tab==='real')||{}).click&&seg.find(b=>b.dataset.tab==='real').click();
+        $('czLat').value=t.lat; $('czLon').value=t.lon; };
+      mapa.appendChild(el);
+    }
+    pie.textContent=store.faccion?'':'Elige bando arriba: sin bando, tus victorias no suman.';
+  }catch(e){
+    est.textContent='El frente aún no está desplegado.';
+    if(mapa) mapa.innerHTML='';
+    if(pie) pie.innerHTML='Para encenderlo: aplicar <b>guerra.sql</b> en Supabase (SQL Editor → pegar → Run). El juego no se rompe mientras tanto — esta pestaña espera.';
+  }
+}
+/* presenta un parte de guerra; falla EN SILENCIO: la guerra nunca puede
+   romper la partida (sin conexión, sin tablas, sin bando: no pasa nada) */
+async function guerraParte(puntos, lat, lon){
+  try{
+    const f=store.faccion; if(!f || lat===undefined) return;
+    const sb=await guerraCliente();
+    const {error}=await sb.from('guerra_partes').insert({ territorio:guerraId(lat,lon), faccion:f, puntos:clamp(puntos,1,3) });
+    if(!error) feed((f==='azul'?'🔵':'🔴')+' Parte enviado: +'+puntos+' para tu bando','good');
+  }catch(e){}
+}
 async function remoteHost(){
   try{
     $('hostPill').className='pill wait'; $('hostPill').innerHTML='<span class="d"></span> Conectando…';
@@ -6039,8 +6338,12 @@ function openBriefing(i){
 }
 function renderGarage(){
   const l=currentLoadout(); const wrap=$('partList'); wrap.innerHTML='';
-  for(const slot in CATALOG){
-    const cat=CATALOG[slot];
+  /* D0 — el garaje abre POR el dron: es la máquina principal del juego. El
+     orden del objeto CATALOG no se toca (lo usan otros); solo cambia el orden
+     de pintado. */
+  const orden=['dron','aliados','chasis','canon','secundaria','blindaje','motor'];
+  for(const slot of orden.concat(Object.keys(CATALOG).filter(k=>!orden.includes(k)))){
+    const cat=CATALOG[slot]; if(!cat) continue;
     const box=document.createElement('div'); box.className='part';
     box.innerHTML='<div class="plabel"><span>'+cat.label+'</span></div>';
     const opts=document.createElement('div'); opts.className='opts';
@@ -6085,7 +6388,8 @@ function renderCond(){
   seg($('segWx'), WEATHER, WX, k=>{WX=k; store.env.wx=k;});
 }
 function switchTab(name){
-  ['missions','real','garage','pair','help'].forEach(t=>$('tab-'+t).style.display= t===name?'block':'none');
+  ['missions','real','garage','pair','guerra','help'].forEach(t=>$('tab-'+t).style.display= t===name?'block':'none');
+  if(name==='guerra') cargarGuerra();
   document.querySelectorAll('#navSeg button').forEach(b=>b.classList.toggle('on', b.dataset.tab===name));
   $('condBar').style.display = (name==='missions'||name==='real')?'flex':'none';
   if(name==='garage') renderGarage();
@@ -6179,6 +6483,14 @@ function wireUI(){
   $('gazeMenos').onclick=(e)=>{ e.stopPropagation(); gaze.rate=Math.max(1.5,gaze.rate/1.35); feed('Mirada más lenta ('+gaze.rate.toFixed(1)+')'); };
   // botón KAMIKAZE (un toque = picado y detonación)
   $('btnKmk').addEventListener('pointerdown',e=>{ e.preventDefault(); if(playing) armKamikaze(); });
+  // guerra: elegir bando
+  $('btnAzul').onclick=()=>elegirFaccion('azul');
+  $('btnRojo').onclick=()=>elegirFaccion('rojo');
+  // duelo 1v1
+  $('btnDueloCrear').onclick=()=>dueloCrear();
+  $('btnDueloUnir').onclick=()=>{ $('dueloJoinBox').style.display='block'; $('dueloHostBox').style.display='none'; };
+  $('btnDueloConectar').onclick=()=>{ const c=($('dueloInput').value||'').trim();
+    if(c.length===4) dueloUnir(c); else dueloUI('dueloJoinPill','bad','Escribe los 4 dígitos'); };
   // mando
   $('btnHost').onclick=()=>{ $('hostBox').style.display='block'; $('joinBox').style.display='none'; remoteHost(); };
   $('btnJoin').onclick=()=>{ $('joinBox').style.display='block'; $('hostBox').style.display='none'; };
@@ -6199,6 +6511,7 @@ function wireUI(){
       /* Con la batería de 20 min (antes 55 s) la ciudad da para una OPERACIÓN,
          no una escaramuza: el triple de fuerzas enemigas (decisión de Joan). */
       startRealMission({ id:'city_'+sel.value, name:nombre, pais:'🏙️ '+nombre, lat:la, lon:lo, vexag:1.0,
+        spanM:+(($('campoSel')||{}).value||2400),
         enemies:[{t:'tank',n:7},{t:'turret',n:3},{t:'airdrone',n:5},{t:'perro',n:7},{t:'jammer',n:2}],
         objs:[{type:'destroy',tag:'enemy',n:18,text:'Limpia el sector (18)'}] });
     };
@@ -6207,7 +6520,7 @@ function wireUI(){
   $('czGo').onclick=()=>{ const lat=parseFloat($('czLat').value), lon=parseFloat($('czLon').value);
     if(isNaN(lat)||isNaN(lon)||lat<-85||lat>85||lon<-180||lon>180){ alert('Coordenadas inválidas.\nEjemplo (Bogotá): 4.60, -74.08'); return; }
     startRealMission({ id:'custom_'+lat.toFixed(2)+'_'+lon.toFixed(2), name:'Tu zona', pais:'📍 '+lat.toFixed(3)+', '+lon.toFixed(3),
-      lat, lon, vexag:1.0,
+      lat, lon, vexag:1.0, spanM:+(($('campoSel')||{}).value||2400),
       enemies:[{t:'tank',n:7},{t:'turret',n:3},{t:'airdrone',n:5},{t:'perro',n:7},{t:'jammer',n:2}],
       objs:[{type:'destroy',tag:'enemy',n:18,text:'Limpia tu zona (18)'}] }); };
   // pad
@@ -6420,6 +6733,18 @@ if(location.search.indexOf('dbg')>=0) window.DRONES={
     return { x:Math.round((v.x*0.5+0.5)*renderer.domElement.width),
              y:Math.round((1-(v.y*0.5+0.5))*renderer.domElement.height),
              delante:v.z<1 && v.z>-1 }; },
+  /* duelo, guiable desde pruebas: dos pestañas del mismo navegador pueden
+     batirse entre sí. estado() da lo mínimo para saber si la sala vive. */
+  dueloCrear:()=>{ dueloCrear(); return 'creando…'; },
+  dueloCodigo:()=>duelo.code,
+  dueloUnir:(c)=>{ dueloUnir(String(c)); return 'uniendo…'; },
+  dueloEstado:()=>({ activo:duelo.active, rol:duelo.role, codigo:duelo.code,
+    marcador:duelo.score.slice(), hp:Math.round(duelo.hp),
+    tiros:duelo.nTiros||0, aciertos:duelo.nAciertos||0, modo:mode,
+    rivalVisto:duelo.rival.alHay,
+    rivalPos:duelo.rival.alHay?[+duelo.rival.p.x.toFixed(1),+duelo.rival.p.y.toFixed(1),+duelo.rival.p.z.toFixed(1)]:null,
+    fin:duelo.fin }),
+  dueloDisparar:(seg)=>{ mouseFire=true; setTimeout(()=>{ mouseFire=false; }, (seg||1)*1000); return 'fuego'; },
   aTejado:(n, dist, alto)=>{
     if(!REAL||!REAL.osmGroup) return 'no hay ciudad';
     let im=null; REAL.osmGroup.traverse(o=>{ if(o.name==='chimeneas') im=o; });
