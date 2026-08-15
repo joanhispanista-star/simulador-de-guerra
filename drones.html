@@ -4721,6 +4721,7 @@ function toggleVoice(){
 }
 
 /* lee la intención del jugador (unificado) */
+let PALANCA_DBG=null;   // la pone DRONES.palanca(); null = mandan los controles reales
 function readInput(dt){
   const inp={ moveF:0, moveT:0, dyaw:0, dpitch:0, dr_yaw:0, dr_pitch:0, dr_roll:0, gimbal:0, fire:false, sec:false, up:false, down:false, boost:false };
   // teclado (casco)
@@ -4759,6 +4760,11 @@ function readInput(dt){
     const th=remote.in.throttle||0; if(th>0.3)inp.up=true; if(th<-0.3)inp.down=true;
     if(remote.in.fire) inp.fire=true;
   }
+  // palanca de PRUEBAS (?dbg → DRONES.palanca): pilota el dron sin teclado ni
+  // panel visible. Es lo que permite VER el vuelo — banqueo, inercia, FOV —
+  // en capturas, en vez de fiarlo todo a números.
+  if(PALANCA_DBG){ inp.dr_pitch=PALANCA_DBG.pitch||0; inp.dr_yaw=PALANCA_DBG.yaw||0;
+    inp.dr_roll=PALANCA_DBG.roll||0; inp.up=!!PALANCA_DBG.up; inp.down=!!PALANCA_DBG.down; }
   // ENLACE débil/perdido: degrada el control (autoridad, estática, deriva)
   inp.moveF*=linkAuth; inp.moveT*=linkAuth;
   inp.dr_pitch*=linkAuth; inp.dr_yaw*=linkAuth; inp.dr_roll*=linkAuth;
@@ -4947,7 +4953,7 @@ function deployDrone(){
   drone.active=true; drone.hp=60; drone.kamikaze=false; drone.diving=false; drone.acro=false;
   droneCam = stats.drone.view360?1:0;   // los de larga distancia arrancan en 360°
   drone.pos.copy(player.pos).add(new THREE.Vector3(0,8*M,0));
-  drone.vel.set(0,0,0); drone.yaw=player.yaw; drone.pitch=0; drone.roll=0;
+  drone.vel.set(0,0,0); drone.yaw=player.yaw; drone.pitch=0; drone.roll=0; drone.yawVel=0;
   drone.gimbal=0; drone.gimbalManual=false;   // cámara al frente, en automático
 }
 /* ---------------------------------------------------------------------
@@ -5017,8 +5023,13 @@ function updateDrone(dt, inp){
   // batería: se agota volando; sin carga, casi no sostiene vuelo
   drone.batt=clamp(drone.batt - dt*0.018*(1+(inp.up?0.6:0)), 0, 1);
   const power = drone.batt>0.04 ? 1 : 0.3;
-  // yaw — derecha = gira a la derecha (signo negativo, ver nota en updatePlayer)
-  drone.yaw -= (inp.dr_yaw||0)*2.6*dt;
+  /* yaw — derecha = gira a la derecha (signo negativo, ver nota en updatePlayer).
+     Con INERCIA: antes el giro arrancaba y paraba EN SECO en el mismo cuadro, y
+     eso es lo que hacía que el vuelo se sintiera de videojuego viejo — ningún
+     aparato con masa hace eso. La velocidad de giro persigue a la palanca en
+     vez de copiarla: medio segundo de rampa al entrar y al salir del giro. */
+  drone.yawVel=damp(drone.yawVel||0, (inp.dr_yaw||0)*2.6, 7, dt);
+  drone.yaw -= drone.yawVel*dt;
   const inPitch=clamp(inp.dr_pitch||0,-1,1), inRoll=clamp(inp.dr_roll||0,-1,1);
   const lift=(inp.up?1:0)-(inp.down?1:0);
   const cy=Math.cos(drone.yaw), sy=Math.sin(drone.yaw);
@@ -5057,7 +5068,13 @@ function updateDrone(dt, inp){
     drone.vel.z=damp(drone.vel.z, _dv3.z, 5.5, dt);
     drone.vel.y=damp(drone.vel.y, _dv3.y, 6.5, dt);
     drone.pitch=damp(drone.pitch, inPitch*0.40, 6, dt);
-    drone.roll =damp(drone.roll,  inRoll *0.40, 6, dt);
+    /* Banqueo en el giro: un cuadricóptero que gira se INCLINA hacia el giro,
+       aunque el modo fácil no lo necesite para nada — es pura actitud. Sin
+       esto, girar con A/D rotaba el dron como una peonza, tieso, y era la
+       señal más clara de "esto es un juego". El signo sale de yawVel: palanca
+       a la derecha = yawVel positivo = banquear a la derecha, el mismo lado
+       que inRoll positivo. */
+    drone.roll =damp(drone.roll,  inRoll*0.40 + drone.yawVel*0.16, 6, dt);
   }
   // picado kamikaze: se lanza adelante-abajo, acelerando (igual en los dos modos)
   if(drone.diving){ drone.vel.set(sy*8.4, drone.vel.y-8.8*dt, cy*8.4); }
@@ -5088,14 +5105,30 @@ function updateDrone(dt, inp){
      arrastre hacia abajo. */
   const techo=Math.max(minY+1, MUNDO_ALTO + (stats.drone.maxAlt||130));
   drone.pos.y=clamp(drone.pos.y, minY, techo);
-  drone.mesh.position.copy(drone.pos);
-  drone.mesh.rotation.set(drone.pitch, drone.yaw, -drone.roll);
-  // rotores (más lento si sin batería)
-  for(const r of drone.mesh.userData.rotors) r.rotation.y+=dt*60*power;
   /* El zumbido sigue al ESFUERZO, no a la velocidad: un dron parado en el aire
      también trabaja, y uno cayendo casi no. Por eso el gas mezcla la inclinación
-     con el mando de subir, que es lo que de verdad pide potencia. */
+     con el mando de subir, que es lo que de verdad pide potencia.
+     (Se calcula antes del aspecto porque los rotores y el balanceo lo usan.) */
   const gasR=clamp(Math.abs(drone.pitch)+Math.abs(drone.roll)+(inp.up?0.55:0)+0.28, 0, 1)*power;
+  /* RESPIRACIÓN DE VUELO. Un dron quieto en el aire no está quieto: la
+     controladora corrige sin parar y el aparato respira — se mece unos
+     centímetros y cabecea décimas de grado, más cuanto más viento. Es SOLO
+     aspecto: se aplica al mesh, nunca a drone.pos, así que la física, el
+     kamikaze y la cámara (que siguen a drone.pos) no se enteran. Quitarlo
+     era lo que hacía que el dron pareciera COLGADO de un hilo. */
+  const tv=missionTime, wv=Math.min(1, windVec.length()*0.35);
+  const meceo=(drone.diving?0:1)*(0.05+0.25*wv)*M;
+  drone.mesh.position.set(
+    drone.pos.x + Math.sin(tv*1.7)*meceo*0.6,
+    drone.pos.y + Math.sin(tv*2.3)*meceo,
+    drone.pos.z + Math.cos(tv*1.3)*meceo*0.6);
+  const tiemblo=(drone.diving?0:1)*(0.006+0.030*wv);
+  drone.mesh.rotation.set(
+    drone.pitch + Math.sin(tv*2.9)*tiemblo,
+    drone.yaw,
+    -drone.roll + Math.cos(tv*2.1)*tiemblo);
+  // rotores: el régimen sigue al gas (y caen a media marcha sin batería)
+  for(const r of drone.mesh.userData.rotors) r.rotation.y+=dt*(32+52*gasR);
   SONIDO.rotores(true, gasR, oirDesdeCamara(drone.pos, 60));
   // reconocimiento: marca puntos cercanos
   drone.dropReload-=dt;
@@ -5132,6 +5165,7 @@ let flashT=0; function hudFlash(){ flashT=0.18; }
 /* =====================================================================
    CÁMARA
    ===================================================================== */
+let camRollFPV=0;   // roll actual de la cámara FPV, con su propio suavizado
 function updateCamera(dt){
   if(mode==='drone' && drone.active){
     if(droneCam===2){ // CENITAL (recon/bombardeo, mira hacia abajo)
@@ -5153,9 +5187,23 @@ function updateCamera(dt){
       camera.position.lerp(V, clamp(10*dt,0,1));
       V2.set(drone.pos.x+dx*30*M, drone.pos.y+dy*30*M, drone.pos.z+dz*30*M);
       camera.lookAt(V2);
+      /* El HORIZONTE SE INCLINA con el banqueo. La cámara de un dron va
+         atornillada al aparato: si el dron banquea y el horizonte sigue
+         perfectamente recto, el ojo lo lee como "cámara en un raíl". Solo una
+         parte (60%) — el gimbal real también estabiliza algo de roll. */
+      camRollFPV=damp(camRollFPV, -(drone.roll||0)*0.6, 8, dt);
+      camera.rotateZ(camRollFPV);
     }
+    /* La VELOCIDAD se ve: el campo visual se abre con la marcha (60°→68°).
+       Es el truco de toda cámara de acción y la mitad de la sensación de
+       volar — sin él, ir a fondo y estar quieto se veían igual. */
+    const marcha=Math.min(1, Math.hypot(drone.vel.x,drone.vel.z)/VEL_DRON);
+    const fovT=60+marcha*8;
+    if(Math.abs(camera.fov-fovT)>0.05){ camera.fov=damp(camera.fov, fovT, 3.5, dt); camera.updateProjectionMatrix(); }
     return;
   }
+  // fuera del dron, el FOV vuelve a su sitio
+  if(Math.abs(camera.fov-60)>0.05){ camera.fov=damp(camera.fov, 60, 3.5, dt); camera.updateProjectionMatrix(); }
   const tp=player.pos;
   if(camMode===1){ // FPV torreta
     const dir=aimDir(); const ud=player.mesh.userData; ud.turret.getWorldPosition(V);
@@ -6295,6 +6343,12 @@ if(location.search.indexOf('dbg')>=0) window.DRONES={
      ojo moviendo el dron a ciegas cuesta cinco intentos; las chimeneas van
      instanciadas y cada una está sobre un caballete, así que sirven de índice
      de "aquí hay un tejado". n elige cuál, para poder ver varias. */
+  /* Palanca virtual: DRONES.palanca({pitch:1, yaw:0.6, up:true}) y luego
+     sim(n). Con null vuelven a mandar los controles de verdad. */
+  palanca:(p)=>{ PALANCA_DBG=p||null; return PALANCA_DBG?'palanca de pruebas puesta':'controles reales'; },
+  vuelo:()=>({ vel:+Math.hypot(drone.vel.x,drone.vel.z).toFixed(2), yawVel:+(drone.yawVel||0).toFixed(3),
+    pitch:+drone.pitch.toFixed(3), roll:+drone.roll.toFixed(3), fov:+camera.fov.toFixed(1),
+    camRoll:+(typeof camRollFPV!=='undefined'?camRollFPV:0).toFixed(3), batt:+drone.batt.toFixed(2) }),
   aTejado:(n, dist, alto)=>{
     if(!REAL||!REAL.osmGroup) return 'no hay ciudad';
     let im=null; REAL.osmGroup.traverse(o=>{ if(o.name==='chimeneas') im=o; });

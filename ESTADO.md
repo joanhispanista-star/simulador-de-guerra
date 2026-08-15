@@ -36,6 +36,35 @@ mostraba media ciudad. Ahora:
 | **Alero y cumbrera** | el tejado vuela 42 cm y remata en su hilera (14-ago) |
 | **Chimeneas** | ~1.400, a caballo del caballete, instanciadas (14-ago) |
 | **Losa de concreto** | de 0,46–0,56 de albedo a 0,30–0,40: ya no sale blanca |
+| **Vuelo del dron** | inercia de giro, banqueo, horizonte que se inclina, FOV con la marcha, respiración en vuelo (14-ago) |
+
+## El vuelo del dron: qué se pulió y cómo se prueba
+
+Cinco cosas, todas de sensación — la física de FÁCIL/ACRO no cambió:
+
+1. **Inercia de giro.** El yaw arrancaba y paraba EN SECO en el mismo cuadro;
+   ahora la velocidad de giro persigue a la palanca (~⅓ s de rampa).
+2. **Banqueo.** Girar inclina el aparato hacia el giro. Antes rotaba tieso,
+   como una peonza.
+3. **El horizonte se inclina** (FPV): la cámara toma el 60 % del roll del
+   aparato. Un horizonte perfectamente recto en un giro se lee como "cámara
+   en un raíl".
+4. **La velocidad se ve:** el FOV se abre de 60° a 68° con la marcha.
+5. **Respiración de vuelo:** meceo de centímetros y cabeceo de décimas de
+   grado, más con viento. SOLO en el mesh — `drone.pos`, la física y el
+   kamikaze no se enteran.
+
+Probarlo sin teclado: `DRONES.palanca({yaw:1, pitch:0.6})` + `DRONES.simN(50)`
+y mirar `DRONES.vuelo()` (yawVel, roll, fov, camRoll). `palanca(null)` devuelve
+los controles. Verificado: rampa 1,1→2,6 rad/s en ⅓ s; girando a la derecha
+roll +0,40 y camRoll −0,23; a fondo vel 5,75 u/s y FOV 68,0.
+
+**Decisión pendiente de Joan — la batería.** El dron vuela **55 segundos** en
+total por misión (`0.018/s`, y subir gasta 60 % más; al agotarse queda al 30 %
+de potencia y el despliegue siguiente NO la recarga). Un DJI real vuela 20–30
+min. Es la primera queja que tendría un jugador que esté disfrutando el vuelo —
+pero alargarla cambia el equilibrio de las misiones (recon y kamikaze), así que
+es decisión de diseño, no un bug. Es UN número en `updateDrone`.
 
 ## El error que hacía que los techos se vieran "lisos"
 
@@ -169,7 +198,13 @@ DRONES.normales()         // normales en cero por malla — tiene que ser 0
 DRONES.sombra()           // metrosPorPunto: lo fino que es el borde de sombra
 DRONES.foto64(700)        // la imagen en base64, para MIRARLA fuera del navegador
 DRONES.aTejado(210,14,7)  // te pone al lado de una casa de teja y te la apunta
+DRONES.palanca({yaw:1})   // palanca virtual del dron; palanca(null) = controles reales
+DRONES.vuelo()            // yawVel, roll, fov, camRoll, batería
 ```
+
+⚠ `sim(4)` es UN paso de 4 segundos, no 4 pasos — para pasos de cuadro usa
+`simN(n)`. Medir una rampa con `sim(4)` da la rampa ya convergida y parece
+que no existe (pasó).
 
 **Para revisar un cambio VISUAL sin poder ver la ventana** (que es lo normal
 aquí): la captura de pantalla del navegador falla porque con el panel oculto la
