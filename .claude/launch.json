@@ -2,10 +2,10 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "maquinas",
+      "name": "drones",
       "runtimeExecutable": "node",
       "runtimeArgs": [
-        "C:/Users/joanh/OneDrive/Desktop/maquinas/servidor.js",
+        "C:/Users/joanh/OneDrive/Desktop/drones/servidor.js",
         "8199"
       ],
       "port": 8199

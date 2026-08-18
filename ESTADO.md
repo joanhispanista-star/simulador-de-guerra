@@ -34,7 +34,7 @@ Documento para retomar sin releer el historial. Lo que está hecho, lo que falta
 y las trampas que ya costaron tiempo una vez.
 
 **En línea:** https://joanhispanista-star.github.io/simulador-de-guerra/
-**Publicar:** `git push` desde `Desktop\maquinas`. Nada más.
+**Publicar:** `git push` desde `Desktop\drones`. Nada más.
 
 ---
 

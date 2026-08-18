@@ -1,4 +1,4 @@
-/* Servidor de desarrollo de Máquinas.
+/* Servidor de desarrollo de Drones de Combate.
    Hace dos cosas:
      1. Sirve la carpeta por http://localhost:8199  — hace falta, porque con
         doble clic (file://) el navegador bloquea las descargas del terreno,
@@ -91,7 +91,7 @@ const servidor = http.createServer((req, res) => {
 });
 
 servidor.listen(PUERTO, () => {
-  console.log('Máquinas en  http://localhost:' + PUERTO + '/drones.html');
+  console.log('Drones de Combate en  http://localhost:' + PUERTO + '/drones.html');
   console.log('Con ?dbg al final sale window.DRONES para medir el juego.');
   console.log('Las capturas se guardan en  ' + CAPTURAS);
 });
