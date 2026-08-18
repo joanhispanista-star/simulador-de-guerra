@@ -190,6 +190,10 @@ negocio.**
 
 ## Trampas que ya costaron tiempo
 
+- **La rama de este repo es `main`, no `master`.** Otros proyectos de Joan usan
+  `master`, así que `git push origin master` falla aquí con "src refspec master
+  does not match any" — que suena a repositorio roto y solo es el nombre. Usar
+  `git push origin HEAD`.
 - **Renombrar la carpeta:** Windows la da por ocupada al primer intento
   (`Device or resource busy`) porque OneDrive la tiene. `Rename-Item` de
   PowerShell sí puede, y si no, reintentar unas veces. El renombrado salió
