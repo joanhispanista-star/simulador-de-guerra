@@ -821,6 +821,21 @@ const lerp=(a,b,t)=>a+(b-a)*t;
 const TAU=Math.PI*2;
 const damp=(a,b,l,dt)=>lerp(a,b,1-Math.exp(-l*dt)); // suavizado estable con dt
 
+/* ---------------------------------------------------------------------
+   LA ESCALA DEL MUNDO. Una unidad del juego son 5,22 metros. Va aquí
+   arriba, antes que nada, porque hay tablas de datos —el alcance de los
+   sensores, el tamaño de las máquinas— que se evalúan al cargar el módulo
+   y necesitan M: cuando esto vivía en mitad del archivo, usarlo en una de
+   esas tablas reventaba el arranque con "Cannot access 'M' before
+   initialization" y la pantalla se quedaba negra.
+   REGLA DE LA CASA: todo lo que tenga un tamaño físico —metros, m/s, m/s²—
+   se escribe en METROS y se multiplica por M. Lo único que va en unidades
+   crudas son las coordenadas del mundo. Saltarse esto es lo que dejó
+   escombros de 8 metros, gravedad de 11,7 g y lluvia a Mach 0,9.
+   --------------------------------------------------------------------- */
+const MPU=5.22;                    // metros que mide una unidad del juego
+const M=1/MPU;                     // un metro, en unidades
+
 /* ---------- Persistencia ---------- */
 const SKEY='drones_v1';
 const store={ prog:{}, loadout:null, best:{}, env:{tod:'dia',wx:'despejado'}, vol:0.7 };
@@ -896,14 +911,20 @@ const CONFIG_IA = {
   /* Cono de visión por tipo de unidad. fov = ángulo TOTAL en grados,
      alcance en unidades de juego (~5 m c/u), ojo = altura del sensor.
      El dron ve LEJOS y ANCHO; el tanque ve CORTO y ESTRECHO. */
+  /* ⚠ 'ojo' es la altura del sensor y va en UNIDADES, o sea × 5,22 m. Estuvo en
+     2,0 para el tanque: un UGV de 1,1 m de alto miraba desde un mástil de
+     10,4 m, y como el punto al que apuntaba estaba a 6,3 m, las casas de un
+     piso (5 m en Bogotá) no lo tapaban nunca. La IA veía por encima del barrio
+     entero y disparaba a través de las casas. Ahora cada uno mira desde donde
+     tiene los ojos. */
   SENSOR: {
-    tank:     { fov:105, alcance:125, ojo:2.0 },
-    turret:   { fov:150, alcance:165, ojo:2.6 },
-    jammer:   { fov:360, alcance: 70, ojo:5.0 },
-    airdrone: { fov:220, alcance:235, ojo:0.4 },
-    aliado:   { fov:230, alcance:250, ojo:0.4 },
+    tank:     { fov:105, alcance:125, ojo:1.15*M },   // 1,15 m: el techo del UGV
+    turret:   { fov:150, alcance:165, ojo:2.30*M },   // 2,3 m: el emplazamiento
+    jammer:   { fov:360, alcance: 70, ojo:6.00*M },   // 6 m: el mástil sí es alto
+    airdrone: { fov:220, alcance:235, ojo:0.30*M },
+    aliado:   { fov:230, alcance:250, ojo:0.30*M },
     // el perro va a ras de suelo: ve poco lejos pero muy ancho, y es rápido
-    perro:    { fov:170, alcance: 95, ojo:1.0 },
+    perro:    { fov:170, alcance: 95, ojo:0.60*M },   // 60 cm: la cabeza del perro
   },
 
   /* Etapa 2 · máquina de estados. Todo lo que decide CUÁNDO cambia de
@@ -1485,7 +1506,12 @@ function actualizarSombra(){
      despega del objeto y las máquinas vuelven a parecer que flotan, que es
      justo lo que se quería arreglar. Se deja en 2,5 puntos, que es lo que era
      antes en proporción. */
-  sun.shadow.normalBias=2.5*punto;
+  /* ⚠ EL SESGO SE TOPA EN METROS, NO EN TEXELS. 2,5 texels suena pequeño, pero
+     el texel crece con el área que cubre la sombra: desde el dron llegaba a
+     3,26 m, y como el desplazamiento horizontal es sesgo/tan(elevación del sol),
+     al atardecer la sombra se despegaba 17 metros de una máquina de 2,4 m. Se
+     tapa a 20 cm; si vuelve el acné de sombra, se compensa con shadow.bias. */
+  sun.shadow.normalBias=Math.min(2.5*punto, 0.2*M);
   sun.target.position.set(Math.round(f.x/punto)*punto, suelo, Math.round(f.z/punto)*punto);
   sun.target.updateMatrixWorld();
   sun.position.copy(SOL_BASE).add(sun.target.position);
@@ -1577,14 +1603,21 @@ function setWeatherParticles(type){
   if(weatherParticles && weatherParticles.userData.type===type) return;
   if(weatherParticles){ scene.remove(weatherParticles); weatherParticles.geometry.dispose(); weatherParticles.material.dispose(); weatherParticles=null; }
   if(!type) return;
-  const N=type==='rain'?1500:type==='snow'?1000:800, R=95, Hh=70;
+  /* ⚠ TODO ESTO ESTABA EN UNIDADES: la caja medía 992 × 731 × 992 m, así que
+     con 1.500 gotas tocaba a UNA GOTA CADA 479.000 m³ y no se veía llover. La
+     caja se aprieta alrededor de la cámara —31 × 21 m— y la misma cantidad de
+     partículas pasa a una gota cada 107 m³, que sí se lee como lluvia. */
+  const N=type==='rain'?1500:type==='snow'?1000:800, R=6, Hh=4;
   const geo=new THREE.BufferGeometry(), pos=new Float32Array(N*3);
   for(let i=0;i<N;i++){ pos[i*3]=(Math.random()-0.5)*R*2; pos[i*3+1]=(Math.random()-0.5)*Hh*2; pos[i*3+2]=(Math.random()-0.5)*R*2; }
   geo.setAttribute('position', new THREE.BufferAttribute(pos,3));
   const mat=new THREE.PointsMaterial({ color:type==='rain'?0xaebccd:type==='snow'?0xffffff:0xcaa878,
-    size:type==='rain'?0.6:type==='snow'?1.0:0.8, transparent:true, opacity:type==='dust'?0.45:0.8, depthWrite:false, fog:true });
+    // 16 cm de gota y 10 cm de copo. Estuvieron en 3,13 m y 5,22 m: manchas.
+    size:type==='rain'?0.03:type==='snow'?0.02:0.02, transparent:true, opacity:type==='dust'?0.45:0.8, depthWrite:false, fog:true });
   weatherParticles=new THREE.Points(geo,mat); weatherParticles.frustumCulled=false;
-  weatherParticles.userData={type, R, Hh, fall:type==='rain'?60:type==='snow'?7:2}; scene.add(weatherParticles);
+  // caída real: lluvia 9 m/s, nieve 1 m/s, polvo 0,6. Estuvieron en 313 m/s
+  // (Mach 0,92), 36,5 m/s y 10,4 m/s.
+  weatherParticles.userData={type, R, Hh, fall:(type==='rain'?9:type==='snow'?1:0.6)*M}; scene.add(weatherParticles);
 }
 function updateWeather(dt){
   if(!weatherParticles) return;
@@ -3175,8 +3208,7 @@ function geo(clave, hacer){ return GEO[clave] || (GEO[clave]=hacer()); }
    depende del tamaño (cámaras, velocidades, colisiones, bocas de arma)
    está más abajo en metros, no en números sueltos.
    --------------------------------------------------------------------- */
-const MPU=5.22;                    // metros que mide una unidad del juego (lo usa tambien el telemetro)
-const M=1/MPU;                     // un metro, en unidades
+// (MPU y M se declaran arriba del todo: los usan tablas que se evalúan antes)
 const ESC_UGV  = 2.4*M/4.2;        // el casco medía 4,2 u de largo → 2,4 m
 const ESC_DRON = 0.9*M/1.9;        // 1,9 u de envergadura → 0,9 m (dron pesado de ataque)
 const ESC_PERRO= 0.9*M/1.9;        // 1,9 u → 0,9 m de largo
@@ -3493,42 +3525,67 @@ let CANNON=null, physWorld=null, physReady=false;
 const physBodies=[], barrelQueue=[]; let tankBody=null;
 /* el telémetro usa la MISMA escala que todo lo demás (arriba, MPU=5.22).
    Antes tenía su propio 5 y por eso las distancias salían un 4% cortas. */
-const CANNON_GRAV=13;        // caída balística del cañón
+/* Caída balística del cañón, en unidades/s². Es la MISMA gravedad que la del
+   mundo físico y la de los escombros: tres sitios la tenían distinta (13, 22 y
+   26 = 6,9 g, 11,7 g y 13,8 g) porque cada uno se escribió antes del cambio de
+   escala. Una sola gravedad, la de la Tierra. */
+const CANNON_GRAV=9.81*M;
 const SIG_RANGE=280;         // alcance del enlace (unidades)
 let gunAim={range:0, impact:new THREE.Vector3(), hit:false, valid:false};
+let TIRO_DBG=null;   // lo enciende DRONES.tiro(); null = apagado, coste cero
 let windVec=new THREE.Vector3();
 
 /* pools de efectos simples */
+/* ⚠ AQUÍ 'size' ES EL DIÁMETRO DE LA EXPLOSIÓN EN METROS. Lo era en la cabeza
+   de quien lo escribió, pero el código lo usaba como UNIDADES, y una unidad son
+   5,22 m: un obús de 90 mm pintaba una bola de fuego de 161 m de diámetro y un
+   anillo de choque de 331 m, sobre un tanque de 2,4 m. Todo lo que se dibuja
+   aquí pasa por U, que es 'size' convertido a unidades del mundo. */
 function spawnExplosion(p, size, color){
-  size=size||4;
-  /* Un solo sitio para todo lo que revienta. Por debajo de 1,2 no es una
+  size=size||8;
+  const U=size*M;                     // el mismo tamaño, en unidades del mundo
+  /* Un solo sitio para todo lo que revienta. Por debajo de 2,6 m no es una
      explosion: es una bala pegando, y suena distinto. */
-  if(size<1.2) SONIDO.impacto(p); else SONIDO.explosion(p, size);
-  // bola de fuego
+  if(size<2.6) SONIDO.impacto(p); else SONIDO.explosion(p, size);
+  // bola de fuego: crece hasta 'size' metros de diámetro (radio 1 × 1,4 × U/2,8)
   const fb=new THREE.Mesh(new THREE.SphereGeometry(1,12,10), new THREE.MeshBasicMaterial({color:color||0xffa53a, transparent:true, opacity:1}));
-  fb.position.copy(p); scene.add(fb); effects.push({mesh:fb, t:0, life:0.5, size, kind:'boom'});
+  fb.position.copy(p); scene.add(fb); effects.push({mesh:fb, t:0, life:0.5, size:U/2.8, kind:'boom'});
   // luz breve
-  const light=new THREE.PointLight(color||0xffa040, 5, size*8); light.position.copy(p); scene.add(light);
+  const light=new THREE.PointLight(color||0xffa040, 5, U*4); light.position.copy(p); scene.add(light);
   effects.push({mesh:light, t:0, life:0.3, kind:'light'});
-  // onda de choque (anillo en el suelo)
+  // onda de choque (anillo en el suelo): llega a 1,2 veces la bola
   const rg=new THREE.Mesh(new THREE.RingGeometry(0.5,1,28), new THREE.MeshBasicMaterial({color:0xfff2c8, transparent:true, opacity:0.7, side:THREE.DoubleSide}));
-  rg.rotation.x=-Math.PI/2; rg.position.copy(p); rg.position.y=terrainHeight(p.x,p.z)+0.4; scene.add(rg);
-  effects.push({mesh:rg, t:0, life:0.5, size:size*1.6, kind:'ring'});
-  // columna de humo volumétrica + escombros físicos (solo explosiones grandes)
-  if(size>4){ for(let i=0;i<3;i++) smokePuff(p.clone().add(new THREE.Vector3((Math.random()-0.5)*3, i*1.5, (Math.random()-0.5)*3)), i?0x3a3a42:0x6a5a4a, size*(0.7+i*0.2), 1.6+i*0.4, 5-i); }
-  if(size>5){
-    if(physReady){ const nD=Math.min(6, Math.floor(size/2)); for(let i=0;i<nD;i++) spawnPhysChunk(p, size); }
-    else { const nD=Math.min(9, Math.floor(size/2)); for(let i=0;i<nD;i++) spawnDebris(p, size); }
+  rg.rotation.x=-Math.PI/2; rg.position.copy(p); rg.position.y=terrainHeight(p.x,p.z)+0.4*M; scene.add(rg);
+  effects.push({mesh:rg, t:0, life:0.5, size:U*0.67, kind:'ring'});
+  /* Columna de humo. El color estuvo en 0x3a3a42 (58,58,66) y estos sprites NO
+     reciben luz: con el tono ACES del juego eso sale casi negro, y como crecían
+     hasta 67 m y subían a 26 m/s, lo que se veía eran bolas negras trepando por
+     el cielo. Un humo de explosión es gris cálido y sube a unos 6 m/s. */
+  if(size>6){ for(let i=0;i<3;i++) smokePuff(p.clone().add(new THREE.Vector3((Math.random()-0.5)*U*0.3, i*U*0.35, (Math.random()-0.5)*U*0.3)), i?0x8b8378:0xa89478, U*(0.7+i*0.2), 1.6+i*0.4, (6-i)*M); }
+  /* ⚠ LA ONDA VA ANTES QUE LOS ESCOMBROS, Y NO ES CAPRICHO. Los escombros
+     nacen a 1 unidad del centro de la explosión; si la onda se aplica después,
+     los pilla a d≈1 y les mete el impulso máximo: salían disparados a 240 m/s y
+     subían 250 metros, casi verticales. Eran ellos las "cosas negras volando".
+     El radio también estaba sin convertir: size*1.8 eran 103 m para un obús de
+     90 mm. En metros son 20 m, que es lo que mueve un HE de verdad. */
+  if(physReady && size>6) applyBlast(p, U*1.5, size*0.9*M);
+  /* Y muchos menos, y más tarde: el umbral 5 lo cruzaba hasta el autocañón, que
+     dispara casi dos veces por segundo — 5,5 escombros por segundo, unos 22
+     flotando a la vez. Ahora el autocañón (7) no genera ninguno. */
+  if(size>8){
+    const nD=Math.min(4, Math.floor(size/5));
+    if(physReady){ for(let i=0;i<nD;i++) spawnPhysChunk(p, size); }
+    else { for(let i=0;i<nD;i++) spawnDebris(p, size); }
   }
-  // la onda lanza los objetos físicos (y encadena barriles)
-  if(physReady && size>4) applyBlast(p, size*1.8, size*4.5);
 }
+/* Escombro sin motor de física (solo si cannon-es no cargó). Mismas medidas
+   que spawnPhysChunk: en metros, no en unidades. */
 function spawnDebris(p, size){
-  const s=0.3+Math.random()*0.7;
+  const s=(0.5+Math.random()*0.8)*M;
   const m=new THREE.Mesh(new THREE.BoxGeometry(s,s,s*(0.6+Math.random())),
-    new THREE.MeshStandardMaterial({color:0x24282f, roughness:0.9, flatShading:true, transparent:true, opacity:1}));
-  m.position.copy(p); m.position.y+=1; m.castShadow=true; scene.add(m);
-  const vel=new THREE.Vector3((Math.random()-0.5)*size*3.2, size*1.4+Math.random()*size*2.2, (Math.random()-0.5)*size*3.2);
+    new THREE.MeshStandardMaterial({color:0x5a5048, roughness:0.95, flatShading:true, transparent:true, opacity:1}));
+  m.position.copy(p); m.position.y+=0.6*M; m.castShadow=true; scene.add(m);
+  const vel=new THREE.Vector3((Math.random()-0.5)*size*M, (size*0.5+Math.random()*size*0.8)*M, (Math.random()-0.5)*size*M);
   const av=new THREE.Vector3((Math.random()-0.5)*12,(Math.random()-0.5)*12,(Math.random()-0.5)*12);
   effects.push({mesh:m, t:0, life:2.6+Math.random(), kind:'debris', vel, av});
 }
@@ -3549,10 +3606,11 @@ function smokePuff(p, color, size, life, rise){
   s.position.copy(p); s.scale.setScalar(size*0.4); scene.add(s);
   effects.push({mesh:s, t:0, life:life, size:size, kind:'puff', rise:rise==null?3:rise});
 }
-function spawnSmoke(p){ for(let i=0;i<2;i++) smokePuff(p.clone().add(new THREE.Vector3((Math.random()-0.5)*2,Math.random()*1.5,(Math.random()-0.5)*2)), 0x9aa0aa, 6, 1.6, 3.5); }
+function spawnSmoke(p){ for(let i=0;i<2;i++) smokePuff(p.clone().add(new THREE.Vector3((Math.random()-0.5)*2*M,Math.random()*1.5*M,(Math.random()-0.5)*2*M)), 0x9aa0aa, 7*M, 1.6, 4*M); }
 function spawnDust(x,y,z){
   const col=biome&&biome.ground?new THREE.Color(biome.ground[0]).lerp(new THREE.Color(0xffffff),0.3):new THREE.Color(0xcaa878);
-  smokePuff(new THREE.Vector3(x,y,z), col.getHex(), 3.4, 0.9, 1.6);
+  // 2 m de polvo bajo las orugas de un vehículo de 2,4 m. Estuvo en 3,4 u = 18 m.
+  smokePuff(new THREE.Vector3(x,y,z), col.getHex(), 2*M, 0.9, 1.2*M);
 }
 function updateEffects(dt){
   for(let i=effects.length-1;i>=0;i--){
@@ -3566,8 +3624,8 @@ function updateEffects(dt){
     // el fogonazo se apaga de golpe y encoge: dura 45 ms, no medio segundo
     else if(e.kind==='fogonazo'){ e.mesh.material.opacity=1-k*k; e.mesh.scale.multiplyScalar(1+dt*6); }
     else if(e.kind==='light'){ if(e.i0===undefined)e.i0=e.mesh.intensity; e.mesh.intensity=e.i0*(1-k); }
-    else if(e.kind==='debris'){ e.vel.y-=26*dt; e.mesh.position.addScaledVector(e.vel,dt);
-      const gy=terrainHeight(e.mesh.position.x,e.mesh.position.z)+0.2;
+    else if(e.kind==='debris'){ e.vel.y-=9.81*M*dt; e.mesh.position.addScaledVector(e.vel,dt);
+      const gy=terrainHeight(e.mesh.position.x,e.mesh.position.z)+0.2*M;
       if(e.mesh.position.y<gy){ e.mesh.position.y=gy; if(e.vel.y<0)e.vel.y*=-0.35; e.vel.x*=0.6; e.vel.z*=0.6; e.av.multiplyScalar(0.6); }
       e.mesh.rotation.x+=e.av.x*dt; e.mesh.rotation.y+=e.av.y*dt; e.mesh.rotation.z+=e.av.z*dt;
       if(k>0.7) e.mesh.material.opacity=(1-k)/0.3; }
@@ -3657,6 +3715,9 @@ function updateProjectiles(dt){
       p.vel.copy(cur.multiplyScalar(p.vel.length()));
     }
     if(p.grav) p.vel.y-=p.grav*dt;      // caída balística
+    // de dónde venía: sin esto el impacto solo se puede mirar en un punto,
+    // y a 1.000 m/s el proyectil salta 17 m entre cuadro y cuadro
+    (p.prev||(p.prev=new THREE.Vector3())).copy(p.mesh.position);
     p.mesh.position.addScaledVector(p.vel, dt);
     /* la trazadora se estira EXACTAMENTE lo que la bala avanzó en este cuadro,
        con un 15% de solape para que dos cuadros seguidos se toquen punta con
@@ -3667,36 +3728,74 @@ function updateProjectiles(dt){
       p.mesh.lookAt(_bala);
       p.mesh.scale.set(0.1, 0.1, Math.max(0.6, p.vel.length()*dt*1.15));
     }
+    /* ⚠ EL IMPACTO SE COMPRUEBA A LO LARGO DEL TRAMO, NO EN UN PUNTO. Un obús
+       de 90 mm vuela a 1.044 m/s y avanza 17,4 m por cuadro; el radio de un
+       enemigo es 1,8 m. Comprobar solo dónde CAYÓ el proyectil al final del
+       cuadro registraba el impacto una de cada cinco veces: cuatro de cada
+       cinco disparos bien apuntados atravesaban al blanco sin enterarse. Y a
+       30 fps era una de cada diez. Aquí se guarda de dónde venía para poder
+       medir la distancia al SEGMENTO. */
+    const _pa=p.prev||p.mesh.position;
     let hit=null, hp=p.mesh.position;
-    // terreno
-    if(hp.y<=terrainHeight(hp.x,hp.z)){ hit={p:hp.clone()}; }
+    // distancia mínima del punto c al tramo recorrido este cuadro
+    const dSeg=(c)=>{ const ax=hp.x-_pa.x, ay=hp.y-_pa.y, az=hp.z-_pa.z;
+      const L2=ax*ax+ay*ay+az*az; if(L2<1e-9) return c.distanceTo(hp);
+      let u=((c.x-_pa.x)*ax+(c.y-_pa.y)*ay+(c.z-_pa.z)*az)/L2; u=u<0?0:u>1?1:u;
+      const qx=_pa.x+ax*u-c.x, qy=_pa.y+ay*u-c.y, qz=_pa.z+az*u-c.z;
+      return Math.sqrt(qx*qx+qy*qy+qz*qz); };
+    /* ⚠ LOS BLANCOS SE MIRAN ANTES QUE EL SUELO. Parece un detalle de orden y
+       no lo es: el proyectil salta hasta 17 m por cuadro, y un disparo tenso que
+       pasa rozando el terreno pisa el suelo y el blanco EN EL MISMO CUADRO. Con
+       el suelo primero, un tiro que atravesaba un tanque se resolvía como
+       impacto en tierra a 8 metros de él. Medido: 8 disparos a 100 m con línea
+       de vista libre hacían 5,5 puntos de daño de media cuando un impacto hace
+       36 — un 15% de acierto contra un blanco parado. */
+    if(p.from==='player'){
+      for(const e of enemies){ if(!e.alive) continue; if(dSeg(e.pos)<e.radius){ hit={p:hp.clone(), target:e}; break; } }
+    } else {
+      if(player.alive && dSeg(player.pos)<1.8*M){ hit={p:hp.clone(), player:true}; }
+      else { for(const a of allies){ if(a.alive && dSeg(a.pos)<1.0*M){ hit={p:hp.clone(), ally:a}; break; } } }
+    }
+    /* Y el terreno también se recorre a lo largo del tramo, no solo en el punto
+       final: si no, el proyectil atraviesa las lomas por el mismo motivo. */
+    if(!hit){
+      const pasos=Math.max(1, Math.min(8, Math.ceil(Math.hypot(hp.x-_pa.x,hp.y-_pa.y,hp.z-_pa.z)/(1.5*M))));
+      for(let k=1;k<=pasos;k++){ const t=k/pasos;
+        const qx=_pa.x+(hp.x-_pa.x)*t, qy=_pa.y+(hp.y-_pa.y)*t, qz=_pa.z+(hp.z-_pa.z)*t;
+        if(qy<=terrainHeight(qx,qz)){ hit={p:new THREE.Vector3(qx,qy,qz)}; break; } }
+    }
     // límites/vida
     if(p.t>p.life || Math.abs(hp.x)>HALF || Math.abs(hp.z)>HALF) hit=hit||{p:hp.clone(),fizzle:true};
-    // objetivos
     if(!hit){
-      if(p.from==='player'){
-        for(const e of enemies){ if(!e.alive) continue; if(e.pos.distanceTo(hp)<e.radius){ hit={p:hp.clone(), target:e}; break; } }
-      } else {
-        // los proyectiles enemigos golpean al UGV (aunque estés pilotando el dron)
-        if(player.alive && player.pos.distanceTo(hp)<1.8*M){ hit={p:hp.clone(), player:true}; }
-        else { for(const a of allies){ if(a.alive && a.pos.distanceTo(hp)<1.0*M){ hit={p:hp.clone(), ally:a}; break; } } }
-      }
       // barriles explosivos (cualquier bando los detona)
       if(!hit && physReady){ for(const pb of physBodies){ if(!pb.explosive||pb.exploding)continue; const b=pb.body;
-        if(Math.hypot(hp.x-b.position.x,hp.y-b.position.y,hp.z-b.position.z)<1.2){ pb.exploding=true; barrelQueue.push(pb); hit={p:hp.clone(), barrelHit:true}; break; } } }
+        if(Math.hypot(hp.x-b.position.x,hp.y-b.position.y,hp.z-b.position.z)<1.2*M){ pb.exploding=true; barrelQueue.push(pb); hit={p:hp.clone(), barrelHit:true}; break; } } }
     }
     if(hit){
+      /* Contador de diagnóstico (solo con ?dbg): dónde acaba cada proyectil del
+         jugador. Sin esto no se puede distinguir "el tiro no acierta" de "el
+         tiro acierta y rebota", y son dos arreglos completamente distintos. */
+      if(TIRO_DBG && p.dbg){        // solo el proyectil que disparó la prueba
+        TIRO_DBG.total++;
+        if(hit.target) TIRO_DBG.blanco++; else if(hit.fizzle) TIRO_DBG.perdido++;
+        else if(hit.barrelHit) TIRO_DBG.barril++; else TIRO_DBG.suelo++;
+        if(TIRO_DBG.minDist!==undefined && hit.p && TIRO_DBG.tgt)
+          TIRO_DBG.ultimaDist=+(hit.p.distanceTo(TIRO_DBG.tgt.pos)*MPU).toFixed(1);
+      }
       if(!hit.fizzle && !hit.barrelHit){
         if(hit.target){ const r=penetration(p, hit.target.pos);
-          if(r.rico){ spawnSpark(hit.p, p.vel); } else damageEnemy(hit.target, r.dmg); }
+          if(r.rico){ if(TIRO_DBG&&p.dbg)TIRO_DBG.rebote++; spawnSpark(hit.p, p.vel); } else { if(TIRO_DBG&&p.dbg)TIRO_DBG.penetra++; damageEnemy(hit.target, r.dmg); } }
         else if(hit.player){ const r=penetration(p, player.pos);
           if(r.rico){ spawnSpark(hit.p, p.vel); player.detected=true; player.detTimer=3; feed('◇ Rebote en el blindaje','good'); }
           else damagePlayer(r.dmg); }
         else if(hit.ally){ damageAlly(hit.ally, p.dmg); }
         // splash (HE)
         if(p.splash>0){
-          if(p.from==='player'){ for(const e of enemies){ if(e.alive && e!==hit.target && e.pos.distanceTo(hit.p)<p.splash+e.radius) damageEnemy(e, p.dmg*0.5); } }
-          else if(!hit.player && player.alive && player.pos.distanceTo(hit.p)<p.splash+2) damagePlayer(p.dmg*0.5);
+          // p.splash va en METROS (5 = una granada de 90 mm). Se usaba crudo, y
+          // en unidades eso son 26 m de radio de daño por cada obús.
+          const RS=p.splash*M;
+          if(p.from==='player'){ for(const e of enemies){ if(e.alive && e!==hit.target && e.pos.distanceTo(hit.p)<RS+e.radius) damageEnemy(e, p.dmg*0.5); } }
+          else if(!hit.player && player.alive && player.pos.distanceTo(hit.p)<RS+2*M) damagePlayer(p.dmg*0.5);
           spawnExplosion(hit.p, p.splash*1.6+3, 0xffa53a);
         }
         /* Una BALA no explota. Antes cada impacto de ametralladora soltaba una
@@ -3737,7 +3836,11 @@ function spawnEnemy(kind, x, z){
     mobile:(kind==='tank'||isAir||isPerro), air:isAir, jammer:isJammer, perro:isPerro,
     paso:Math.random(), rafaga:0, bob:Math.random()*TAU };
   pickWaypoint(e);
-  addHeat(mesh, isAir?0.5:(isTurret?1.6:(isPerro?0.9:2.0)), isAir?4:(isTurret?7:(isPerro?3:6)));
+  /* El tamaño va en unidades LOCALES de la malla, que ya está reescalada, así
+     que aquí NO se multiplica por M. La firma debe ser algo más grande que lo
+     caliente (motor, baterías), no que el vehículo entero: estaba en 4-7 y eso
+     pintaba una bola de 4 m sobre un UGV de 2,4 m. */
+  addHeat(mesh, isAir?0.5:(isTurret?1.6:(isPerro?0.9:2.0)), isAir?2.2:(isTurret?3.4:(isPerro?1.7:3.2)));
   IA.iaInit(e, 'rojo', kind);          // sensores + memoria táctica propios
   enemies.push(e); return e;
 }
@@ -3825,9 +3928,21 @@ const PERRO_ESC=ESC_PERRO, PERRO_ALTO=0.86*ESC_PERRO;   // alto del vientre, ya 
 function animarPerro(u, dt){
   const ud=u.mesh.userData; if(!ud.patas) return;
   const v=Math.hypot(u.vel.x, u.vel.z);
-  const f = v<0.4 ? 1.2 : v<3 ? 2.0 : v<6 ? 2.6 : 3.2;          // marcha según velocidad
-  const D = v<0.4 ? 0.75 : v<3 ? 0.55 : v<6 ? 0.50 : 0.42;      // fracción con el pie en suelo
-  const S = f>0 ? Math.max(0.12, v/f) : 0.3;                     // paso DEDUCIDO de la velocidad
+  /* ⚠ LOS UMBRALES Y EL PASO ESTABAN EN DOS ESCALAS DISTINTAS, y por eso el
+     perro patinaba. 'v' viene en unidades de MUNDO por segundo, pero 'S' se usa
+     como coordenada LOCAL de una malla encogida por ESC_PERRO (×0,0908): el pie
+     recorría 0,21 u/s mientras el cuerpo avanzaba a 1,25 — el 83% de la marcha
+     era deslizamiento puro, y es lo que hace que un cuadrúpedo parezca de
+     cartón. El paso ahora se convierte a la escala de la malla, y los umbrales
+     de marcha se expresan en m/s de verdad. */
+  const vms=v*MPU;                                              // la velocidad, en m/s
+  const f = vms<0.5 ? 1.2 : vms<1.5 ? 2.2 : vms<2.8 ? 3.2 : 4.0;  // pasos por segundo
+  const D = vms<0.5 ? 0.75 : vms<1.5 ? 0.60 : vms<2.8 ? 0.50 : 0.42;  // fracción con el pie en suelo
+  /* Sin deslizamiento: el pie tiene que recorrer, en el tiempo que está
+     apoyado, lo mismo que avanza el cuerpo. El tope 0,90 es el alcance real de
+     la pata (dos barras de 0,5 con el vientre a 0,86); si se pide más, la pata
+     no llega y el perro vuelve a patinar. */
+  const S = clamp(v*D/(f*ESC_PERRO), 0.12, 0.90);
   const H = 0.09 + v*0.02;
   u.paso = ((u.paso||0) + f*dt) % 1;
   for(const P of ud.patas){
@@ -3886,7 +4001,7 @@ function damageEnemy(e, dmg){
   if(!e.alive) return; e.hp-=dmg;
   if(e.ia) IA.anotarDanio(e);                       // le están disparando → puede buscar cobertura
   if(e.hp<=0){ e.alive=false; e.mesh.visible=false; if(e.ia) IA.cambiar(e,'DESTRUIDO','destruido');
-    spawnExplosion(e.pos, (e.air?4:6)*M*3, 0xffa040); spawnSmoke(e.pos);
+    spawnExplosion(e.pos, e.air?5:9, 0xffa040); spawnSmoke(e.pos);   // metros
     killCount.enemy++; killCount[e.tag]=(killCount[e.tag]||0)+1;
     const nm = e.kind==='airdrone'?'Dron derribado' : e.kind==='jammer'?'Jammer destruido · enlace libre'
              : e.kind==='perro'?'Perro robot abatido' : e.tag==='turret'?'Torreta destruida' : 'Blindado destruido';
@@ -3921,7 +4036,7 @@ const IA=(function(){
     const pasos=14;
     for(let i=1;i<pasos;i++){ const t=i/pasos;
       const x=lerp(a.x,b.x,t), z=lerp(a.z,b.z,t), y=lerp(a.y,b.y,t);
-      if(terrainHeight(x,z) > y+0.8) return true;                 // lo tapa el terreno
+      if(terrainHeight(x,z) > y+0.3*M) return true;               // lo tapa el terreno (30 cm de margen, no 4,2 m)
     }
     const dx=b.x-a.x, dz=b.z-a.z, L2=dx*dx+dz*dz;
     if(L2>1e-6){
@@ -3995,7 +4110,7 @@ const IA=(function(){
       const dx=t.pos.x-u.pos.x, dz=t.pos.z-u.pos.z, d=Math.hypot(dx,dz);
       let visto=false;
       if(d<=alcanceEfectivo(u,t) && Math.abs(angDiff(Math.atan2(dx,dz),look))<=medioFov){
-        _tp.set(t.pos.x, t.pos.y+1.2, t.pos.z);
+        _tp.set(t.pos.x, t.pos.y+1.0*M, t.pos.z);   // 1 m sobre el casco, no 6,3
         visto=!losBlocked(_eye,_tp);
       }
       const oido = !visto && d < P.ruidoAlerta;      // te OYE (motor) sin verte -> solo sospecha
@@ -4310,7 +4425,10 @@ function moverUnidad(e, orden, dt){
       // el perro gira y corre mucho más que un blindado: es su gracia
       e.yaw=angLerp(e.yaw, Math.atan2(dx,dz), (e.perro?3.4:1.4)*dt);
       // 1,7 u/s = 32 km/h el blindado; 1,25 u/s = 23 km/h el perro corriendo
-      const sp=(e.perro?1.25:1.7)*(orden.prisa||1);
+      // 0,72 u/s = 3,8 m/s = 13,5 km/h. Estuvo en 1,25 u/s = 23,5 km/h, más
+      // rápido que un velocista, para un perro robot de 90 cm — y a esa
+      // velocidad la pata no llega y patina.
+      const sp=(e.perro?0.72:1.7)*(orden.prisa||1);
       e.vel.set(Math.sin(e.yaw)*sp, 0, Math.cos(e.yaw)*sp);
       e.pos.addScaledVector(e.vel, dt);
       e.pos.x=clamp(e.pos.x,-HALF+6,HALF-6); e.pos.z=clamp(e.pos.z,-HALF+6,HALF-6);
@@ -4395,7 +4513,7 @@ function spawnAlly(idx, lvl, tierra){
      único propio es el bando. Un modelo nuevo sería deuda: dos perros que
      caminan distinto se nota más que dos perros del mismo color. */
   const mesh=tierra ? buildPerro(0x2f6ba8) : buildDrone(0x2f9bff);
-  scene.add(mesh); addHeat(mesh,0.4,4);
+  scene.add(mesh); addHeat(mesh,0.4,2.2);
   const a={ mesh, pos:new THREE.Vector3(), vel:new THREE.Vector3(), yaw:0, hp:L.hp+(tierra?25:0), hpMax:L.hp+(tierra?25:0),
     alive:true, state:'follow', target:null, reload:Math.random(), L, lvl, offset:idx, bob:Math.random()*TAU,
     mobile:true, aim:0, wp:new THREE.Vector3(), tierra:!!tierra, paso:Math.random(), rafaga:0 };
@@ -4681,8 +4799,28 @@ function enableGyro(){
 const gaze={ on:false, ready:false, loading:false, active:false, detected:false,
   video:null, stream:null, model:null, yaw:0, pitch:0, baseYaw:0, basePitch:0,
   eyeRawX:0, eyeRawY:0, baseEyeX:0, baseEyeY:0, hasEye:false,
-  calibViewPitch:-0.12, rate:6.0, pitchGain:1.6, eyeGain:0.7, invertYaw:false, lastT:0, kiss:false,
-  alterna:false, dbgYaw:0 };
+  calibViewPitch:-0.12, rate:6.0, pitchGain:1.1, eyeGain:0.25, invertYaw:false, lastT:0, kiss:false,
+  alterna:false, dbgYaw:0,
+  /* Filtro "un euro": suaviza mucho cuando la cabeza está quieta (que es cuando
+     todo lo que llega es ruido) y deja de suavizar en cuanto te mueves de
+     verdad (que es cuando el retardo se notaría). Un promedio fijo no puede
+     hacer las dos cosas: o tiembla o va tarde. */
+  fYaw:null, fPitch:null,
+  moviendo:false,        // histéresis: cuesta más arrancar que seguir
+  velMando:0,            // la orden de giro, suavizada
+  muestras:[], calibrando:false, calibN:0,
+  reposo:0, buf:[] };
+/* Un euro, en 12 líneas. dCutoff/minCutoff/beta son los de la publicación
+   original, ajustados a los 22 Hz a los que corre aquí el modelo facial. */
+function unEuro(est, x, dt){
+  if(!est) est={x:x, dx:0};
+  const a=(c)=>{ const tau=1/(2*Math.PI*c); return 1/(1+tau/Math.max(dt,1e-3)); };
+  const dx=(x-est.x)/Math.max(dt,1e-3);
+  est.dx=est.dx+a(1.0)*(dx-est.dx);
+  const corte=0.6+0.55*Math.abs(est.dx);     // quieto: 0,6 Hz · girando: se abre
+  est.x=est.x+a(corte)*(x-est.x);
+  return est;
+}
 const _gm4=new THREE.Matrix4(), _ge=new THREE.Euler();
 /* control por mano (dedo índice): señala para mover; esconde el dedo para detener */
 const hand={ model:null, active:false, moveF:0, moveT:0 };
@@ -4711,7 +4849,7 @@ async function toggleGaze(){
       runningMode:'VIDEO', numHands:1 }); }catch(e){ hand.model=null; }
     gaze.on=true; gaze.ready=true; gaze.loading=false;
     feed('👁️ Mira al frente… centrando','good'); gazeStatus('Centrando…','wait');
-    setTimeout(calibrateGaze, 1600);
+    calibrateGaze();   // ya espera él a que haya rostro; antes disparaba a ciegas a los 1,6 s
     updateChips();
   }catch(e){ gaze.loading=false; disableGaze();
     alert('No se pudo activar “apuntar con la mirada”:\n'+((e&&e.message)||e)+
@@ -4731,11 +4869,33 @@ function disableGaze(){
   $('gazeBox').classList.remove('on'); $('btnGaze') && $('btnGaze').classList.remove('press');
   updateChips();
 }
-function calibrateGaze(){ if(!gaze.ready) return;
-  gaze.baseYaw=gaze.yaw; gaze.basePitch=gaze.pitch;
-  gaze.baseEyeX=gaze.eyeRawX; gaze.baseEyeY=gaze.eyeRawY;
-  gaze.calibViewPitch=player.view.pitch;
-  gaze.active=true; feed('👁️ Centrado — gira la cabeza y el cañón sigue girando','good'); }
+/* ⚠ EL CENTRADO NO PUEDE SER UNA SOLA MUESTRA A CIEGAS. Antes era eso: un
+   setTimeout a 1,6 s que copiaba el valor de ese instante SIN comprobar
+   siquiera que hubiera un rostro. Si esa muestra llevaba el ruido normal de
+   1,5°, el sesgo quedaba grabado y la torreta derivaba 4,6 °/s para siempre; y
+   si el modelo aún no había soltado cara, la base se quedaba en cero y el dron
+   giraba solo a 107 °/s desde el primer segundo.
+   Ahora recoge 20 muestras con rostro confirmado y se queda con la MEDIANA: el
+   error baja de 1,5° a unos 0,26°, muy por dentro de la zona muerta. */
+function calibrateGaze(){
+  if(!gaze.ready || gaze.calibrando) return;
+  gaze.calibrando=true; gaze.muestras=[]; gaze.calibN=0;
+  gazeStatus('Centrando 0/20','wait');
+  const paso=()=>{
+    if(!gaze.ready){ gaze.calibrando=false; return; }
+    if(!gaze.detected || gaze.muestras.length===gaze.calibN){ setTimeout(paso,60); return; }
+    gaze.calibN=gaze.muestras.length;
+    if(gaze.calibN<20){ gazeStatus('Centrando '+gaze.calibN+'/20','wait'); setTimeout(paso,45); return; }
+    const m=gaze.muestras.slice(-20).sort((a,b)=>a-b);
+    gaze.baseYaw=(m[9]+m[10])/2;                  // la mediana, no la última
+    gaze.basePitch=gaze.pitch;
+    gaze.baseEyeX=gaze.eyeRawX; gaze.baseEyeY=gaze.eyeRawY;
+    gaze.calibViewPitch=player.view.pitch;
+    gaze.calibrando=false; gaze.active=true; gaze.buf=[]; gaze.reposo=0;
+    feed('👁️ Centrado — gira la cabeza y el cañón sigue girando','good');
+  };
+  paso();
+}
 function detectGaze(){
   if(!gaze.ready || !gaze.video || gaze.video.readyState<2) return;
   const t=performance.now(); if(t-gaze.lastT<45) return; gaze.lastT=t;
@@ -4745,26 +4905,46 @@ function detectGaze(){
     // pose de la CABEZA
     if(res && res.facialTransformationMatrixes && res.facialTransformationMatrixes.length){
       _gm4.fromArray(res.facialTransformationMatrixes[0].data); _ge.setFromRotationMatrix(_gm4,'YXZ');
-      gaze.yaw=_ge.y; gaze.pitch=_ge.x; ok=true;
+      /* ⚠ LA POSE DE LA CABEZA ENTRABA CRUDA. MediaPipe a 320×240 mete 1-2° de
+         ruido por muestra, y la zona muerta era de 1,15°: el ruido la superaba
+         y la torreta giraba sola. Ahora pasa por el filtro antes de tocar nada. */
+      const dtG=Math.min(0.2, (t-(gaze.tPrev||t))/1000)||0.045; gaze.tPrev=t;
+      gaze.fYaw  =unEuro(gaze.fYaw,   _ge.y, dtG);
+      gaze.fPitch=unEuro(gaze.fPitch, _ge.x, dtG);
+      gaze.yaw=gaze.fYaw.x; gaze.pitch=gaze.fPitch.x; ok=true;
+      if(gaze.calibrando) gaze.muestras.push(gaze.yaw);
     }
     // seguimiento FINO de los OJOS (iris) — más preciso en el PC
     const lm = res && res.faceLandmarks && res.faceLandmarks[0];
     if(lm && lm.length>=478){
       const lOut=lm[33], lIn=lm[133], lIris=lm[468], lTop=lm[159], lBot=lm[145];
       const rOut=lm[263], rIn=lm[362], rIris=lm[473], rTop=lm[386], rBot=lm[374];
-      const lw=Math.abs(lOut.x-lIn.x)/2||0.01, rw=Math.abs(rOut.x-rIn.x)/2||0.01;
-      const lh=Math.abs(lTop.y-lBot.y)/2||0.01, rh=Math.abs(rTop.y-rBot.y)/2||0.01;
+      /* ⚠ `||0.01` SOLO SALTA CON EL CERO EXACTO. Al parpadear, lh no vale 0:
+         vale ~0,0015, y como es el DIVISOR de la posición vertical del iris,
+         un residuo de 0,005 daba ey≈3,3 y la mira se iba al tope de abajo. Un
+         adulto parpadea cada 3-4 segundos: era un tirón cada tres segundos.
+         Ahora hay un suelo de verdad, y además el parpadeo se detecta y se
+         congela el valor (abajo). */
+      const lw=Math.max(0.010, Math.abs(lOut.x-lIn.x)/2), rw=Math.max(0.010, Math.abs(rOut.x-rIn.x)/2);
+      const lh=Math.max(0.008, Math.abs(lTop.y-lBot.y)/2), rh=Math.max(0.008, Math.abs(rTop.y-rBot.y)/2);
       const ex=((lIris.x-(lOut.x+lIn.x)/2)/lw + (rIris.x-(rOut.x+rIn.x)/2)/rw)/2;
       const ey=((lIris.y-(lTop.y+lBot.y)/2)/lh + (rIris.y-(rTop.y+rBot.y)/2)/rh)/2;
-      if(isFinite(ex)&&isFinite(ey)){ gaze.eyeRawX=gaze.eyeRawX*0.55+ex*0.45; gaze.eyeRawY=gaze.eyeRawY*0.55+ey*0.45; gaze.hasEye=true; ok=true; }
+      // si estás parpadeando, el iris no dice nada útil: se retiene el último valor
+      if(isFinite(ex)&&isFinite(ey)&&!gaze.parpadeo){ gaze.eyeRawX=gaze.eyeRawX*0.7+ex*0.3; gaze.eyeRawY=gaze.eyeRawY*0.7+ey*0.3; gaze.hasEye=true; }
+      ok=ok||gaze.hasEye;
     }
     // BESO (gesto de boca) -> dispara. Blendshape 'mouthPucker'
     const bs = res && res.faceBlendshapes && res.faceBlendshapes[0] && res.faceBlendshapes[0].categories;
-    if(bs){ let pk=0; for(const c of bs){ if(c.categoryName==='mouthPucker'){ pk=c.score; break; } } gaze.kiss = pk>0.55; }
+    if(bs){ let pk=0, bl=0;
+      for(const c of bs){ if(c.categoryName==='mouthPucker') pk=c.score;
+        else if(c.categoryName==='eyeBlinkLeft'||c.categoryName==='eyeBlinkRight') bl=Math.max(bl,c.score); }
+      gaze.kiss = pk>0.55; gaze.parpadeo = bl>0.4;   // sale gratis: ya se leían los blendshapes
+    }
     gaze.detected=ok;
     if(ok){                                  // muestra HACIA DÓNDE y CUÁNTO está girando (para poder ajustarlo)
-      const v=gaze.dbgYaw, fl = v>0.12?'▶▶' : v<-0.12?'◀◀' : '•';
-      gazeStatus((gaze.kiss?'💋 ':'')+fl+' '+Math.abs(v).toFixed(2)+(gaze.hasEye?' 👁':''), '');
+      // en GRADOS POR SEGUNDO: '0.34' no le dice nada a nadie, '19°/s' sí
+      const v=gaze.dbgYaw*180/Math.PI, fl = v>3?'▶▶' : v<-3?'◀◀' : '•';
+      gazeStatus((gaze.kiss?'💋 ':'')+(gaze.parpadeo?'– ':'')+fl+' '+Math.abs(v).toFixed(0)+'°/s'+(gaze.hasEye?' 👁':''), '');
     } else gazeStatus('Sin rostro','no');
   }catch(e){ gaze.detected=false; }
   // MANO: se alterna con la cara para no ralentizar el seguimiento (dos modelos a la vez van lentos)
@@ -4795,12 +4975,26 @@ function detectHand(){
     hand.active=false; hand.moveF=0; hand.moveT=0;
   }catch(e){ hand.active=false; }
 }
-/* desplazamiento total (cabeza + ojos) respecto al centro calibrado */
+/* Desplazamiento respecto al centro calibrado.
+   ⚠ LOS OJOS YA NO ENTRAN EN EL GIRO, y esto era un fallo de unidades con
+   consecuencias raras. `hy` está en RADIANES; `ex` está en "anchos de medio
+   ojo" (±1 en las comisuras). Se sumaban sin convertir, y con eyeGain=0,7 un
+   iris al extremo valía 0,7 "radianes" = 40°: más que girar la cabeza 30°.
+   Peor aún, por el reflejo vestíbulo-ocular: cuando giras la cabeza 10° pero
+   sigues mirando la pantalla, los ojos contrarrotan y el término de ojos RESTA
+   más de lo que suma la cabeza — la torreta arrancaba hacia el lado contrario.
+   Los ojos son un buen puntero de POSICIÓN y un pésimo mando de VELOCIDAD, así
+   que ahora solo aportan un pequeño desvío de puntería (gazeFino), nunca giro. */
 function gazeOffset(){
-  const hy=(gaze.yaw-gaze.baseYaw), hp=(gaze.pitch-gaze.basePitch);
-  const ex=gaze.hasEye?(gaze.eyeRawX-gaze.baseEyeX)*gaze.eyeGain:0;
-  const ey=gaze.hasEye?(gaze.eyeRawY-gaze.baseEyeY)*gaze.eyeGain:0;
-  return { yaw:hy+ex, pitch:hp+ey };
+  return { yaw:(gaze.yaw-gaze.baseYaw), pitch:(gaze.pitch-gaze.basePitch) };
+}
+/* Puntería fina con la mirada: ±6° de desvío como mucho, y convertida a
+   ángulo de verdad (el recorrido útil del iris cubre unos 25°). */
+function gazeFino(){
+  if(!gaze.hasEye || gaze.parpadeo) return 0;
+  const e=gaze.eyeRawX-gaze.baseEyeX;
+  if(Math.abs(e)<0.15) return 0;                       // zona muerta del iris
+  return clamp(Math.sign(e)*(Math.abs(e)-0.15)*25*Math.PI/180*gaze.eyeGain, -0.105, 0.105);
 }
 
 /* =====================================================================
@@ -4897,14 +5091,44 @@ function updatePlayer(dt, inp){
   player.view.yaw+=inp.dyaw||0; player.view.pitch=clamp(player.view.pitch+(inp.dpitch||0),-0.7,0.5);
   // apuntar con la mirada: TASA de giro (gira mientras la cabeza esté girada, sin tope) + pitch proporcional
   if(gaze.active && gaze.detected){
-    const o=gazeOffset(), dz=0.02;                       // zona muerta pequeña: reacciona con poco giro
-    const m=Math.max(0, Math.abs(o.yaw)-dz);
-    const vel=Math.sign(o.yaw)*Math.pow(m,1.2)*gaze.rate*6;   // suave cerca del centro, rápido al girar más
-    gaze.dbgYaw=vel;
-    player.view.yaw += (gaze.invertYaw?-1:1)*vel*dt;
+    const o=gazeOffset();
+    /* ⚠ AQUÍ ESTABA LA HIPERSENSIBILIDAD, Y TIENE NÚMERO. La curva era
+       `(θ−0,02)^1,2 · 36`, sin tope: girar la cabeza 10° daba 219 °/s, 20° daba
+       544 °/s y 45° daba 1497 °/s — cuatro vueltas por segundo. Una torreta de
+       carro real gira a 40 °/s y un gimbal de dron a 60-120. El exponente 1,2
+       tampoco suavizaba nada: para valores pequeños es casi una recta.
+       Ahora la curva está NORMALIZADA y TOPADA: 3° de zona muerta (por encima
+       del ruido del sensor), recorrido útil hasta 35°, cuadrática, y un techo
+       explícito que gaze.rate escala entre 20 y 120 °/s. */
+    const DZ_ENTRA=0.052, DZ_SALE=0.035;      // 3° para arrancar, 2° para parar
+    const TMAX=0.611;                         // 35° de cabeza = mando a fondo
+    const VMAX=clamp(gaze.rate*0.175, 0.35, 2.1);   // rate 6 -> 1,05 rad/s = 60 °/s
+    const a=Math.abs(o.yaw);
+    /* Histéresis: si la zona muerta fuera un solo umbral, en el borde entraría
+       y saldría cada cuadro y la torreta castañetearía. */
+    if(gaze.moviendo ? a<DZ_SALE : a<DZ_ENTRA) gaze.moviendo=false; else gaze.moviendo=true;
+    const u=gaze.moviendo ? clamp((a-DZ_SALE)/(TMAX-DZ_SALE),0,1) : 0;
+    const objetivo=Math.sign(o.yaw)*u*u*VMAX;
+    // la orden también se suaviza: el modelo va a 22 Hz y el juego a 60, y sin
+    // esto cada muestra nueva llegaba como un escalón
+    gaze.velMando=damp(gaze.velMando, objetivo, 12, dt);
+    gaze.dbgYaw=gaze.velMando;
+    player.view.yaw += (gaze.invertYaw?-1:1)*(gaze.velMando + gazeFino()*2.2)*dt;
+    /* RECENTRADO AUTOMÁTICO contra la deriva. Si llevas dos segundos sin pedir
+       giro y la cabeza está estable, la referencia se desliza despacio hacia
+       donde de verdad la tienes. Así un centrado imperfecto —o haberte movido
+       en la silla— deja de acumularse. Un giro deliberado tiene varianza alta y
+       no dispara la condición, así que no estorba. */
+    gaze.buf.push(gaze.yaw); if(gaze.buf.length>90) gaze.buf.shift();
+    if(!gaze.moviendo && gaze.buf.length>40){
+      const md=gaze.buf.reduce((x,y)=>x+y,0)/gaze.buf.length;
+      const va=gaze.buf.reduce((x,y)=>x+(y-md)*(y-md),0)/gaze.buf.length;
+      gaze.reposo = va < 0.00068 ? gaze.reposo+dt : 0;    // (1,5°)² de varianza
+      if(gaze.reposo>2) gaze.baseYaw += clamp(md-gaze.baseYaw, -0.005*dt*60, 0.005*dt*60)*0.02;
+    } else gaze.reposo=0;
     const pTarget=clamp(gaze.calibViewPitch - o.pitch*gaze.pitchGain, -0.55, 0.4);
     player.view.pitch=damp(player.view.pitch, pTarget, 7, dt);
-  } else gaze.dbgYaw=0;
+  } else { gaze.dbgYaw=0; gaze.velMando=0; gaze.moviendo=false; }
   if(mode==='tank'){
     const mob=1-dmg.movilidad*0.6;
     // pendiente en la dirección de marcha (afecta tracción)
@@ -4935,7 +5159,11 @@ function updatePlayer(dt, inp){
     // impulso: consume/recupera
     if(inp.boost&&Math.abs(inp.moveF)>0.05) player.boost=clamp(player.boost-dt*0.4,0,1); else player.boost=clamp(player.boost+dt*0.18,0,1);
     // SUSPENSIÓN: muestrea las 4 esquinas del casco -> cabeceo y balanceo reales
-    const cl=2.1, cs=1.4;
+    /* Semi-distancias del casco: 1,2 × 0,62 m, o sea una huella de 2,40 × 1,24 m,
+       que es el UGV. Estuvieron en 2,1 y 1,4 UNIDADES = 22 × 15 m, la mitad de
+       una manzana: el vehículo promediaba el terreno de media cuadra y por eso
+       se inclinaba a destiempo y flotaba sobre los baches. */
+    const cl=1.2*M, cs=0.62*M;
     const hFL=terrainHeight(player.pos.x+fX*cl-rX*cs, player.pos.z+fZ*cl-rZ*cs);
     const hFR=terrainHeight(player.pos.x+fX*cl+rX*cs, player.pos.z+fZ*cl+rZ*cs);
     const hRL=terrainHeight(player.pos.x-fX*cl-rX*cs, player.pos.z-fZ*cl-rZ*cs);
@@ -5063,7 +5291,7 @@ function lockTarget(){
 /* ---- DRON AÉREO ---- */
 function deployDrone(){
   if(drone.mesh){ drone.mesh.visible=true; }
-  else { drone.mesh=buildDrone(stats.color); scene.add(drone.mesh); addHeat(drone.mesh, 0.4, 4); }
+  else { drone.mesh=buildDrone(stats.color); scene.add(drone.mesh); addHeat(drone.mesh, 0.4, 2.2); }
   drone.active=true; drone.hp=60; drone.kamikaze=false; drone.diving=false; drone.acro=false;
   droneCam = stats.drone.view360?1:0;   // los de larga distancia arrancan en 360°
   drone.pos.copy(player.pos).add(new THREE.Vector3(0,8*M,0));
@@ -5085,6 +5313,10 @@ let _gimbalVisto=999;                              // último grado pintado en e
    para cruzar el mapa sin que se haga eterno. Subir a 15 m/s pone el dron a
    300 m —la altura desde la que mejor se ve la ciudad— en veinte segundos. */
 const VEL_DRON=30*M, VEL_SUBE=15*M;
+/* Inclinación máxima. 35° es el tope que ponen los drones comerciales en su
+   modo normal (de ahí salen 0,70 g); 60° es lo que se permite un aparato de
+   competición en acro (1,73 g). No son adornos: de aquí sale la aceleración. */
+const TILT_MAX=35*Math.PI/180, ACRO_MAX=60*Math.PI/180;
 const _dv1=new THREE.Vector3(), _dv2=new THREE.Vector3(), _dv3=new THREE.Vector3();
 function gimbalAuto(){
   // altura sobre el SUELO, no sobre el nivel del mar
@@ -5117,7 +5349,7 @@ function toggleDrone(){
   updateChips();
 }
 function detonateDrone(){
-  spawnExplosion(drone.pos, 9*M*3, 0xffb030); spawnSmoke(drone.pos);
+  spawnExplosion(drone.pos, 7, 0xffb030); spawnSmoke(drone.pos);     // metros: carga de un FPV
   const fl=new THREE.PointLight(0xffa040,8,60); fl.position.copy(drone.pos); scene.add(fl); effects.push({mesh:fl,t:0,life:0.35,kind:'light'});
   for(const e of enemies){ if(e.alive && e.pos.distanceTo(drone.pos)<9*M) damageEnemy(e, 130); }
   drone.active=false; drone.kamikaze=false; drone.diving=false; if(drone.mesh)drone.mesh.visible=false;
@@ -5149,6 +5381,7 @@ function updateDrone(dt, inp){
   drone.yaw -= drone.yawVel*dt;
   const inPitch=clamp(inp.dr_pitch||0,-1,1), inRoll=clamp(inp.dr_roll||0,-1,1);
   const lift=(inp.up?1:0)-(inp.down?1:0);
+  const vx0=drone.vel.x, vz0=drone.vel.z;   // para medir la aceleración de este cuadro
   const cy=Math.cos(drone.yaw), sy=Math.sin(drone.yaw);
   // "right" es la DERECHA DE LA PANTALLA (comprobado con la matriz de la cámara):
   // con el signo anterior, inclinar a la derecha desplazaba el dron a la izquierda.
@@ -5159,15 +5392,23 @@ function updateDrone(dt, inp){
        la inclinación genera el empuje. Sigue avanzando al soltar, se hunde si
        no das gas y el viento te arrastra. Es lo realista para un FPV de
        competición y es difícil a propósito. */
-    drone.pitch=clamp(drone.pitch+inPitch*1.9*dt, -1, 1);
-    drone.roll =clamp(drone.roll +inRoll *1.9*dt, -1, 1);
-    const accel=38*power;
-    drone.vel.addScaledVector(fwd, drone.pitch*accel*dt);
-    drone.vel.addScaledVector(right, drone.roll*accel*dt);
+    /* En ACRO la palanca manda la INCLINACIÓN y la inclinación genera el
+       empuje — que es literalmente como vuela un cuadricóptero. Aquí drone.pitch
+       y drone.roll SÍ son ángulos en radianes, y el empuje sale de a=g·tan(θ),
+       la misma ley que en el modo fácil. Antes era `accel=38` unidades/s², que
+       son 198 m/s² = 20 g: más que un caza. Con 60° de inclinación salen 1,7 g,
+       que es lo que da un aparato de competición de 5 pulgadas. */
+    drone.pitch=clamp(drone.pitch+inPitch*2.4*dt, -ACRO_MAX, ACRO_MAX);
+    drone.roll =clamp(drone.roll +inRoll *2.4*dt, -ACRO_MAX, ACRO_MAX);
+    const G_A=9.81*M*power;
+    drone.vel.addScaledVector(fwd, Math.tan(drone.pitch)*G_A*dt);
+    drone.vel.addScaledVector(right, Math.tan(drone.roll)*G_A*dt);
     drone.vel.addScaledVector(windVec, dt);
-    drone.vel.y += lift*22*power*dt;
-    drone.vel.y -= 4*dt;
-    drone.vel.x*=Math.pow(0.12,dt); drone.vel.z*=Math.pow(0.12,dt); drone.vel.y*=Math.pow(0.5,dt);
+    drone.vel.y += lift*9.81*M*1.6*power*dt;     // el gas da hasta 1,6 g de subida
+    drone.vel.y -= 9.81*M*dt;                    // y la gravedad es la de la Tierra
+    /* Resistencia del aire: τ≈1,3 s. Con el 0,12 de antes (τ=0,47 s) el aparato
+       se paraba solo en medio segundo y eso mataba la inercia que define el acro. */
+    drone.vel.x*=Math.pow(0.45,dt); drone.vel.z*=Math.pow(0.45,dt); drone.vel.y*=Math.pow(0.75,dt);
   } else {
     /* FÁCIL — como vuela un dron comercial de hoy, que es lo que hace que
        cualquiera pueda pilotarlo:
@@ -5181,17 +5422,42 @@ function updateDrone(dt, inp){
                    .addScaledVector(right, inRoll*VEL_DRON*power);
     _dv3.y = lift*VEL_SUBE*power;
     _dv3.x += windVec.x*0.18; _dv3.z += windVec.z*0.18;   // el viento se nota, no manda
-    drone.vel.x=damp(drone.vel.x, _dv3.x, 5.5, dt);
-    drone.vel.z=damp(drone.vel.z, _dv3.z, 5.5, dt);
-    drone.vel.y=damp(drone.vel.y, _dv3.y, 6.5, dt);
-    drone.pitch=damp(drone.pitch, inPitch*0.40, 6, dt);
-    /* Banqueo en el giro: un cuadricóptero que gira se INCLINA hacia el giro,
-       aunque el modo fácil no lo necesite para nada — es pura actitud. Sin
-       esto, girar con A/D rotaba el dron como una peonza, tieso, y era la
-       señal más clara de "esto es un juego". El signo sale de yawVel: palanca
-       a la derecha = yawVel positivo = banquear a la derecha, el mismo lado
-       que inRoll positivo. */
-    drone.roll =damp(drone.roll,  inRoll*0.40 + drone.yawVel*0.16, 6, dt);
+    /* ⚠ ESTOS DOS NÚMEROS SON LA MASA DEL APARATO. damp(a,b,λ,dt) es un retardo
+       con constante τ=1/λ, y la aceleración de pico es λ·(velocidad máxima).
+       Estuvieron en 5,5 y 6,5, que a 30 m/s son 165 m/s² = 16,8 g horizontales
+       y 9,9 g verticales: frenaba de 108 km/h en 0,8 s y 5 metros. Ningún
+       aparato que vuele hace eso, y era lo que hacía que el dron se sintiera un
+       cursor de ratón en vez de algo con masa.
+       Con 1,1 y 1,6: 3,4 g y 2,4 g, frenada de 27 m. Sigue siendo un dron
+       fácil —la palanca pide VELOCIDAD y se mantiene solo en el aire, que es lo
+       que Joan pidió— pero ahora hay que anticipar, como en el mundo real. */
+    drone.vel.x=damp(drone.vel.x, _dv3.x, 1.1, dt);
+    drone.vel.z=damp(drone.vel.z, _dv3.z, 1.1, dt);
+    drone.vel.y=damp(drone.vel.y, _dv3.y, 1.6, dt);
+    /* Y el tope duro: un cuadricóptero inclina el disco de los rotores y nada
+       más, así que su aceleración horizontal no puede pasar de g·tan(θ). Con el
+       límite de 35° que llevan los drones comerciales en modo normal son 6,9
+       m/s² = 0,70 g. Esto es lo que hace que la postura y el movimiento no
+       puedan volver a contradecirse: la inclinación que se dibuja abajo sale de
+       esta misma aceleración. */
+    const A_MAX=9.81*Math.tan(TILT_MAX)*M*dt;
+    const ddx=drone.vel.x-vx0, ddz=drone.vel.z-vz0, dd=Math.hypot(ddx,ddz);
+    if(dd>A_MAX){ const k=A_MAX/dd; drone.vel.x=vx0+ddx*k; drone.vel.z=vz0+ddz*k; }
+    /* ⚠ LA INCLINACIÓN ES LA CAUSA DE LA ACELERACIÓN, NO SU ADORNO. Un
+       cuadricóptero no tiene frenos ni empuje horizontal: lo único que puede
+       hacer es inclinar el disco de los rotores, y entonces θ = atan(a/g). Aquí
+       estaba al revés —se calculaba de la palanca, `inPitch*0.40`— y por eso el
+       dron frenaba a 3,9 g completamente PLANO, inclinando 0,2°. El ojo lee eso
+       al instante como un objeto sin masa, aunque no sepa decir por qué.
+       Ahora sale de la aceleración real medida entre cuadros, así que la
+       postura y el movimiento no pueden volver a contradecirse.
+       Al banqueo se le suma el del giro coordinado: un aparato que vira se
+       inclina hacia dentro del viraje. */
+    const aF=(drone.vel.x-vx0)/Math.max(dt,1e-4)*fwd.x + (drone.vel.z-vz0)/Math.max(dt,1e-4)*fwd.z;
+    const aR=(drone.vel.x-vx0)/Math.max(dt,1e-4)*right.x + (drone.vel.z-vz0)/Math.max(dt,1e-4)*right.z;
+    const G_U=9.81*M;                       // la gravedad, en unidades/s²
+    drone.pitch=damp(drone.pitch, clamp(Math.atan2(aF, G_U), -TILT_MAX, TILT_MAX), 5, dt);
+    drone.roll =damp(drone.roll,  clamp(Math.atan2(aR, G_U), -TILT_MAX, TILT_MAX) + drone.yawVel*0.16, 5, dt);
   }
   // picado kamikaze: se lanza adelante-abajo, acelerando (igual en los dos modos)
   if(drone.diving){ drone.vel.set(sy*8.4, drone.vel.y-8.8*dt, cy*8.4); }
@@ -5294,28 +5560,49 @@ function updateCamera(dt){
       V.set(drone.pos.x - sy*cp*dist, drone.pos.y - player.view.pitch*dist + 0.8*M, drone.pos.z - cy*cp*dist);
       camera.position.lerp(V, clamp(13*dt,0,1));
       V2.set(drone.pos.x + sy*30*M, drone.pos.y + player.view.pitch*30*M, drone.pos.z + cy*30*M); camera.lookAt(V2);
-    } else { // FPV: mira hacia donde apunta el gimbal (al frente o hacia abajo)
+    } else { // FPV: la cámara VA EN EL DRON, mirando a donde apunta el gimbal
       const cy=Math.cos(drone.yaw), sy=Math.sin(drone.yaw);
-      const g=drone.gimbal||0, cg=Math.cos(g), sg=Math.sin(g);
+      /* ⚠ En ACRO la cámara va ATORNILLADA al fuselaje: el cabeceo del aparato
+         entra en la mirada, y por eso el horizonte se va cuando te picas. Es la
+         diferencia entre un FPV y una cámara colgada de un raíl. En fácil manda
+         el gimbal, que es lo que hace un dron comercial y lo que mantiene el
+         modo fácil fácil. El +25° del acro es la inclinación con la que se
+         monta la lente en un aparato de carreras. */
+      const g=drone.acro ? (drone.pitch||0)+0.44 : (drone.gimbal||0);
+      const cg=Math.cos(g), sg=Math.sin(g);
       const dx=sy*cg, dy=sg, dz=cy*cg;                 // hacia dónde mira la cámara
-      // la cámara va DETRÁS del dron sobre esa misma línea: al mirar a plomo,
-      // sube encima del dron sola, sin saltos ni cambios de modo
-      V.set(drone.pos.x-dx*3.6*M, drone.pos.y-dy*3.6*M+1.2*M, drone.pos.z-dz*3.6*M);
-      camera.position.lerp(V, clamp(10*dt,0,1));
+      /* ⚠ LA CÁMARA VA EN EL MORRO, a 8 cm del centro. Estuvo 3,6 m DETRÁS de un
+         aparato de 0,9 m —cuatro envergaduras— con un brazo elástico de 0,1 s
+         encima: eso es una cámara de persecución, no un FPV, y filtraba toda la
+         vibración. Sin lerp: la cámara está atornillada, no colgada. */
+      camera.position.set(drone.pos.x+dx*0.08, drone.pos.y+dy*0.08+0.03, drone.pos.z+dz*0.08);
       V2.set(drone.pos.x+dx*30*M, drone.pos.y+dy*30*M, drone.pos.z+dz*30*M);
       camera.lookAt(V2);
-      /* El HORIZONTE SE INCLINA con el banqueo. La cámara de un dron va
-         atornillada al aparato: si el dron banquea y el horizonte sigue
-         perfectamente recto, el ojo lo lee como "cámara en un raíl". Solo una
-         parte (60%) — el gimbal real también estabiliza algo de roll. */
-      camRollFPV=damp(camRollFPV, -(drone.roll||0)*0.6, 8, dt);
+      /* El HORIZONTE SE INCLINA con el banqueo. En acro va entero (la cámara es
+         solidaria); en fácil, el gimbal estabiliza el 60%. */
+      camRollFPV=damp(camRollFPV, -(drone.roll||0)*(drone.acro?1:0.6), 8, dt);
       camera.rotateZ(camRollFPV);
+      /* VIBRACIÓN DE MOTORES. El "meceo" y el "tiemblo" que calcula updateDrone
+         se pintan en drone.mesh, y la cámara sigue a drone.pos: no llegaban a la
+         imagen NUNCA — vibración efectiva 0,000 rad. Un FPV real tiembla a
+         40-70 Hz con los motores. Son 0,05-0,15°: imperceptibles cuadro a
+         cuadro, pero a esa frecuencia el ojo lee "cámara de verdad".
+         Va DESPUÉS del lookAt para que no arrastre a la puntería. */
+      const vv=missionTime, gv=0.0009+0.0018*clamp(Math.hypot(drone.vel.x,drone.vel.z)/VEL_DRON+Math.abs(drone.pitch),0,1);
+      camera.rotateX(Math.sin(vv*47.3)*gv);
+      camera.rotateY(Math.sin(vv*61.7)*gv*0.8);
+      camera.rotateZ(Math.sin(vv*53.1)*gv*0.6);
     }
     /* La VELOCIDAD se ve: el campo visual se abre con la marcha (60°→68°).
        Es el truco de toda cámara de acción y la mitad de la sensación de
        volar — sin él, ir a fondo y estar quieto se veían igual. */
+    /* Un objetivo FPV real es de 120-150° en diagonal; en vertical eso son unos
+       95-100°. A 60° la imagen parecía de cámara de cine sobre trípode, y el
+       gran angular es la mitad de la firma visual del vídeo de dron: es lo que
+       hace que el suelo corra por los bordes. En 360° y cenital se deja normal,
+       que ahí la cámara es de observación. */
     const marcha=Math.min(1, Math.hypot(drone.vel.x,drone.vel.z)/VEL_DRON);
-    const fovT=60+marcha*8;
+    const fovT=(droneCam===0?95:62)+marcha*8;
     if(Math.abs(camera.fov-fovT)>0.05){ camera.fov=damp(camera.fov, fovT, 3.5, dt); camera.updateProjectionMatrix(); }
     return;
   }
@@ -5386,7 +5673,7 @@ function deployMission(m){
   if(player.mesh){ scene.remove(player.mesh); disposeGroup(player.mesh); }
   player.mesh=buildVehicle({color:stats.color, accent:0x2a3038, led:0x3ff0c0}); scene.add(player.mesh);
   player.mesh.position.copy(player.pos);
-  addHeat(player.mesh, 2.2, 7);
+  addHeat(player.mesh, 2.2, 3.2);
   // puesto de mando (estación del operador) — referencia del enlace
   cmdPost.set(0, terrainHeight(0,0), 0);
   cmdMesh=new THREE.Group();
@@ -5517,11 +5804,19 @@ async function initPhysics(){
   if(physReady || CANNON===false) return;
   try{
     CANNON=await import('./vendor/cannon-es.js');
-    physWorld=new CANNON.World({ gravity:new CANNON.Vec3(0,-22,0) });
+    /* ⚠ ESTE MUNDO VIVE EN LAS UNIDADES DEL JUEGO, NO EN METROS. Una unidad
+       son 5,22 m (MPU), así que la gravedad terrestre aquí son 9,81*M = 1,88
+       u/s², no 9,81. Estuvo en 22 —11,7 g— desde que el mundo se reescaló, y
+       eso es lo que lanzaba los escombros como si fueran de mentira. */
+    physWorld=new CANNON.World({ gravity:new CANNON.Vec3(0,-9.81*M,0) });
     physWorld.broadphase=new CANNON.SAPBroadphase(physWorld);
     physWorld.allowSleep=true; physWorld.defaultContactMaterial.friction=0.4; physWorld.defaultContactMaterial.restitution=0.15;
-    // cuerpo cinemático del UGV: empuja los objetos
-    tankBody=new CANNON.Body({ mass:0, type:CANNON.Body.KINEMATIC, shape:new CANNON.Box(new CANNON.Vec3(1.6,0.9,2.3)) });
+    /* El umbral de dormirse también es una velocidad: con el 0,1 de fábrica
+       (=52 cm/s) los escombros se congelaban todavía rodando. */
+    physWorld.sleepSpeedLimit=0.1*M;
+    // cuerpo cinemático del UGV: empuja los objetos. Semi-extensiones: el UGV
+    // mide 1,2 × 1,0 × 2,4 m. Estuvo en 3,2×1,8×4,6 u = un camión de 24 metros.
+    tankBody=new CANNON.Body({ mass:0, type:CANNON.Body.KINEMATIC, shape:new CANNON.Box(new CANNON.Vec3(0.6*M,0.5*M,1.2*M)) });
     physWorld.addBody(tankBody);
     physReady=true;
   }catch(e){ CANNON=false; console.warn('Física de terceros no disponible:', e&&e.message); }
@@ -5533,18 +5828,21 @@ function clearPhysics(){
 }
 function spawnBarrel(x,z){
   if(!physReady) return;
-  const y=terrainHeight(x,z)+0.9;
-  const body=new CANNON.Body({ mass:9, shape:new CANNON.Cylinder(0.5,0.5,1.5,10), position:new CANNON.Vec3(x,y,z) });
+  // un bidón de 200 litros: 0,58 m de diámetro y 0,88 m de alto. Estuvo en
+  // 5,22 × 7,83 m — nueve veces de más, más alto que una casa.
+  const RB=0.29*M, HB=0.88*M, y=terrainHeight(x,z)+HB*0.5;
+  const body=new CANNON.Body({ mass:9, shape:new CANNON.Cylinder(RB,RB,HB,10), position:new CANNON.Vec3(x,y,z) });
   body.linearDamping=0.15; body.angularDamping=0.2; physWorld.addBody(body);
   const mesh=new THREE.Group();
-  const drum=new THREE.Mesh(new THREE.CylinderGeometry(0.5,0.5,1.5,12), new THREE.MeshStandardMaterial({color:0xc23b2a, roughness:0.6, metalness:0.3, flatShading:true}));
-  const band=new THREE.Mesh(new THREE.CylinderGeometry(0.52,0.52,0.12,12), new THREE.MeshStandardMaterial({color:0x161a20}));
-  drum.castShadow=true; mesh.add(drum); const b1=band.clone(); b1.position.y=0.4; const b2=band.clone(); b2.position.y=-0.4; mesh.add(b1); mesh.add(b2);
-  scene.add(mesh); physBodies.push({body, mesh, gr:0.9, explosive:true, exploding:false});
+  const drum=new THREE.Mesh(new THREE.CylinderGeometry(RB,RB,HB,12), new THREE.MeshStandardMaterial({color:0xc23b2a, roughness:0.6, metalness:0.3, flatShading:true}));
+  const band=new THREE.Mesh(new THREE.CylinderGeometry(RB*1.04,RB*1.04,HB*0.08,12), new THREE.MeshStandardMaterial({color:0x161a20}));
+  drum.castShadow=true; mesh.add(drum); const b1=band.clone(); b1.position.y=HB*0.27; const b2=band.clone(); b2.position.y=-HB*0.27; mesh.add(b1); mesh.add(b2);
+  scene.add(mesh); physBodies.push({body, mesh, gr:HB*0.5, explosive:true, exploding:false});
 }
 function spawnCrate(x,z){
   if(!physReady) return;
-  const s=0.55+Math.random()*0.25, y=terrainHeight(x,z)+s;
+  // caja de 0,6 a 1,0 m de lado. Estuvo en 5,7 a 8,4 m: cajas de tres pisos.
+  const s=(0.3+Math.random()*0.2)*M, y=terrainHeight(x,z)+s;
   const body=new CANNON.Body({ mass:6, shape:new CANNON.Box(new CANNON.Vec3(s,s,s)), position:new CANNON.Vec3(x,y,z) });
   body.linearDamping=0.2; body.angularDamping=0.25; physWorld.addBody(body);
   const mesh=new THREE.Mesh(new THREE.BoxGeometry(s*2,s*2,s*2), new THREE.MeshStandardMaterial({color:0x8a6b45, roughness:0.9, flatShading:true}));
@@ -5552,13 +5850,19 @@ function spawnCrate(x,z){
 }
 function spawnPhysChunk(pos, size){
   if(!physReady || physBodies.length>140) return;
-  const s=0.25+Math.random()*0.5;
+  /* s es la SEMI-arista: 0,25 a 0,65 m, o sea trozos de 0,5 a 1,3 m. Estuvo
+     en 0,25..0,75 UNIDADES, que son cubos de 2,6 a 7,8 m — tres veces el
+     tanque. Todo lo que vuela va en metros; el mundo, en unidades. */
+  const s=(0.25+Math.random()*0.4)*M;
   const body=new CANNON.Body({ mass:1.5, shape:new CANNON.Box(new CANNON.Vec3(s,s,s)),
     position:new CANNON.Vec3(pos.x,pos.y+1,pos.z) });
-  body.velocity.set((Math.random()-0.5)*size*3, size*1.4+Math.random()*size, (Math.random()-0.5)*size*3);
+  // salen a 5-18 m/s, no a 240: la velocidad también estaba en unidades
+  body.velocity.set((Math.random()-0.5)*size*0.9*M, (size*0.5+Math.random()*size*0.7)*M, (Math.random()-0.5)*size*0.9*M);
   body.angularVelocity.set((Math.random()-0.5)*14,(Math.random()-0.5)*14,(Math.random()-0.5)*14);
   physWorld.addBody(body);
-  const mesh=new THREE.Mesh(new THREE.BoxGeometry(s*2,s*2,s*1.6), new THREE.MeshStandardMaterial({color:0x24282f, roughness:0.9, flatShading:true}));
+  /* Color: 0x24282f es 36,40,47 y con el tono ACES del juego se aplasta a negro
+     puro. Un escombro es chapa quemada y tierra, no un agujero en la pantalla. */
+  const mesh=new THREE.Mesh(new THREE.BoxGeometry(s*2,s*2,s*1.6), new THREE.MeshStandardMaterial({color:0x5a5048, roughness:0.95, flatShading:true}));
   mesh.castShadow=true; scene.add(mesh); physBodies.push({body, mesh, gr:s, explosive:false, exploding:false, life:4, t:0});
 }
 function applyBlast(pos, radius, power){
@@ -5567,15 +5871,26 @@ function applyBlast(pos, radius, power){
     const dx=b.position.x-pos.x, dy=b.position.y-pos.y, dz=b.position.z-pos.z;
     const d=Math.hypot(dx,dy,dz); if(d>radius||d<0.01) continue;
     const f=power*(1-d/radius)/d;
-    b.wakeUp(); b.applyImpulse(new CANNON.Vec3(dx*f, dy*f+power*(1-d/radius)*0.5, dz*f), b.position);
+    /* ⚠ EL SEGUNDO ARGUMENTO DE applyImpulse ES UN PUNTO RELATIVO AL CENTRO DE
+       MASA, no una posición del mundo. Aquí se le pasaba b.position —un vector
+       de hasta 230 u— y cannon-es lo cruzaba con el impulso para sacar el
+       momento angular: salían 17.400 rad/s, o sea 46 vueltas completas POR
+       CUADRO. Eso es lo que convertía cada escombro en un borrón negro girando.
+       El impulso de una onda expansiva es central: va sin punto. El pequeño
+       desplazamiento aleatorio es solo para que no salgan todos a plomo. */
+    b.wakeUp(); b.applyImpulse(new CANNON.Vec3(dx*f, dy*f+power*(1-d/radius)*0.5, dz*f),
+      new CANNON.Vec3((Math.random()-0.5)*pb.gr, (Math.random()-0.5)*pb.gr, (Math.random()-0.5)*pb.gr));
     if(pb.explosive && !pb.exploding && d<radius*0.75){ pb.exploding=true; barrelQueue.push(pb); }
   }
 }
 function explodeBarrel(pb){
   const p=new THREE.Vector3(pb.body.position.x, pb.body.position.y, pb.body.position.z);
   spawnExplosion(p, 10, 0xffb030);
-  for(const e of enemies){ if(e.alive && e.pos.distanceTo(p)<11) damageEnemy(e, 90); }
-  if(player.alive && player.pos.distanceTo(p)<11) damagePlayer(45);
+  // 8 metros, no 57: un bidón de gasolina es peligroso a 5-10 m, no a media
+  // manzana. El 11 de antes eran 11 UNIDADES = 57,4 m.
+  const RL=8*M;
+  for(const e of enemies){ if(e.alive && e.pos.distanceTo(p)<RL) damageEnemy(e, 90); }
+  if(player.alive && player.pos.distanceTo(p)<RL) damagePlayer(45);
   // (la onda y la reacción en cadena las aplica spawnExplosion)
   // retira el barril
   const i=physBodies.indexOf(pb); if(i>=0){ scene.remove(pb.mesh); disposeGroup(pb.mesh); physWorld.removeBody(pb.body); physBodies.splice(i,1); }
@@ -5778,8 +6093,26 @@ function updateHUD(dt){
   else { $('boostBar').style.width=(player.boost*100)+'%'; $('vitals').querySelector('.boost .lbl').textContent='ENERGÍA'; }
   $('ammoTxt').textContent = mode==='drone'? (drone.kamikaze?'KMKZ':'DRON '+Math.round(drone.batt*100)+'%') : (player.reload>0?'⟳':'LISTO');
   // telemetría
-  const spd=Math.round(player.vel.length()*3.6);
-  $('telem').innerHTML='VEL <b>'+(mode==='drone'?Math.round(drone.vel.length()*3.6):spd)+'</b> km/h · RUMBO <b>'+String(Math.round(((mode==='drone'?drone.yaw:player.yaw)*180/Math.PI+360))%360).padStart(3,'0')+'°</b>';
+  /* ⚠ drone.vel y player.vel están en UNIDADES/s, y una unidad son 5,22 m.
+     Faltaba el MPU: el marcador escribía 21 km/h mientras el dron volaba a 108,
+     y 9 km/h con el UGV a 49. Un simulador que miente en el velocímetro no
+     sirve para formar a nadie. */
+  const kmh=v=>Math.round(v.length()*MPU*3.6);
+  let telem='VEL <b>'+(mode==='drone'?kmh(drone.vel):kmh(player.vel))+'</b> km/h';
+  if(mode==='drone' && drone.active){
+    /* ALTÍMETRO. No había ninguno, y el techo del dron llega a 678 m: el
+       jugador subía medio kilómetro sin un solo número que se lo dijera.
+       Se mide sobre el terreno que tiene debajo (AGL), que es la altura que
+       cuenta al volar. El límite de 120 m es el de vuelo a la vista de la
+       aeronáutica civil (RAC 91 en Colombia): se enseña en rojo, no se impide —
+       este es un simulador, y saber cuándo te pasas es parte del oficio. */
+    const agl=(drone.pos.y-terrainHeight(drone.pos.x,drone.pos.z))*MPU;
+    const vs=drone.vel.y*MPU;
+    telem+=' · ALT <b'+(agl>120?' style="color:var(--rojo-2)"':'')+'>'+Math.round(agl)+'</b> m'
+         + ' · V/S <b>'+(vs>=0?'+':'')+vs.toFixed(1)+'</b> m/s';
+  }
+  telem+=' · RUMBO <b>'+String(Math.round(((mode==='drone'?drone.yaw:player.yaw)*180/Math.PI+360))%360).padStart(3,'0')+'°</b>';
+  $('telem').innerHTML=telem;
   // SEÑAL real (enlace por línea de vista)
   const bars=clamp(Math.round(signal*5+0.15),0,5);
   const sig=$('sig').children; for(let i=0;i<5;i++){ sig[i].style.height=(5+i*2)+'px';
@@ -6153,7 +6486,7 @@ function dueloFin(gane){
 function dueloTick(dt, inp){
   if(!duelo.active) return;
   const r=duelo.rival;
-  if(!r.mesh){ r.mesh=buildDrone(0xff5555); scene.add(r.mesh); addHeat(r.mesh,0.4,4); r.mesh.visible=false; }
+  if(!r.mesh){ r.mesh=buildDrone(0xff5555); scene.add(r.mesh); addHeat(r.mesh,0.4,2.2); r.mesh.visible=false; }
   if(r.alHay){
     r.t=Math.min(1, r.t+dt/DUELO_TX);               // 0→1 entre dos avisos de posición
     r.mesh.visible=true;
@@ -6479,8 +6812,10 @@ function wireUI(){
   $('btnVoice').onclick=()=>toggleVoice();
   $('gazeCal').onclick=(e)=>{ e.stopPropagation(); calibrateGaze(); };
   $('gazeInv').onclick=(e)=>{ e.stopPropagation(); gaze.invertYaw=!gaze.invertYaw; feed('Mirada '+(gaze.invertYaw?'invertida':'normal')); };
-  $('gazeMas').onclick=(e)=>{ e.stopPropagation(); gaze.rate=Math.min(16,gaze.rate*1.35); feed('Mirada más rápida ('+gaze.rate.toFixed(1)+')'); };
-  $('gazeMenos').onclick=(e)=>{ e.stopPropagation(); gaze.rate=Math.max(1.5,gaze.rate/1.35); feed('Mirada más lenta ('+gaze.rate.toFixed(1)+')'); };
+  // gaze.rate escala el TOPE de giro: se enseña en °/s, que es lo que se siente
+  const dime=()=>Math.round(clamp(gaze.rate*0.175,0.35,2.1)*180/Math.PI)+' °/s';
+  $('gazeMas').onclick=(e)=>{ e.stopPropagation(); gaze.rate=Math.min(12,gaze.rate*1.3); feed('Mirada más rápida · tope '+dime()); };
+  $('gazeMenos').onclick=(e)=>{ e.stopPropagation(); gaze.rate=Math.max(2,gaze.rate/1.3); feed('Mirada más lenta · tope '+dime()); };
   // botón KAMIKAZE (un toque = picado y detonación)
   $('btnKmk').addEventListener('pointerdown',e=>{ e.preventDefault(); if(playing) armKamikaze(); });
   // guerra: elegir bando
@@ -6615,7 +6950,15 @@ if(location.search.indexOf('dbg')>=0) window.DRONES={
      de saber si un vehiculo tiene el tamano que dice tener. */
   medidas:()=>{
     const caja=new THREE.Box3(), v=new THREE.Vector3(), r={};
-    const mide=(nombre,obj)=>{ if(!obj) return; caja.setFromObject(obj); caja.getSize(v);
+    /* ⚠ Mide SOLO mallas. Box3.setFromObject mete también los sprites, y el de
+       la firma térmica es más grande que el vehículo: esta herramienta llegó a
+       informar 'UGV 4,00 × 4,00 × 4,04 m' de un UGV que mide 2,40 m. Una
+       herramienta de medida que miente es peor que no tenerla. */
+    const mide=(nombre,obj)=>{ if(!obj) return; caja.makeEmpty();
+      obj.updateWorldMatrix(true,true);
+      obj.traverse(o=>{ if(o.isMesh && o.geometry){ if(!o.geometry.boundingBox) o.geometry.computeBoundingBox();
+        const bb=o.geometry.boundingBox.clone(); bb.applyMatrix4(o.matrixWorld); caja.union(bb); } });
+      if(caja.isEmpty()) return; caja.getSize(v);
       r[nombre]={ ancho:+(v.x*MPU).toFixed(2), alto:+(v.y*MPU).toFixed(2), largo:+(v.z*MPU).toFixed(2) }; };
     mide('UGV_jugador', player.mesh);
     const pe=enemies.find(e=>e.kind==='perro'); if(pe) mide('perro_robot', pe.mesh);
@@ -6624,7 +6967,10 @@ if(location.search.indexOf('dbg')>=0) window.DRONES={
     if(drone.active) mide('dron', drone.mesh);
     r.velocidades_kmh={ UGV:+(stats.speed*MPU*3.6).toFixed(0),
       dron_horizontal:+(VEL_DRON*MPU*3.6).toFixed(0), dron_subida:+(VEL_SUBE*MPU*3.6).toFixed(0) };
-    r.camara_m={ persecucion:+(7).toFixed(0), dron_fpv:+(3.6).toFixed(1) };
+    r.camara_m={ persecucion:+(7).toFixed(0), dron_fpv:0.42 };   // ahora va en el morro, no 3,6 m detrás
+    r.vuelo={ inclinacion_max_grados:+(TILT_MAX*180/Math.PI).toFixed(0),
+      acel_max_g:+((9.81*Math.tan(TILT_MAX))/9.81).toFixed(2),
+      frenada_desde_punta_m:+((VEL_DRON*MPU)*(VEL_DRON*MPU)/(2*9.81*Math.tan(TILT_MAX))).toFixed(0) };
     return r; },
   /* lleva el dron junto a un enemigo de ese tipo, para poder mirarlo de cerca */
   verEnemigo:(tipo, dist)=>{ const e=enemies.find(x=>x.alive && x.kind===tipo);
@@ -6644,9 +6990,68 @@ if(location.search.indexOf('dbg')>=0) window.DRONES={
   apuntar:()=>{ let m=null,md=1e9;
     for(const e of enemies){ if(!e.alive) continue; const d=e.pos.distanceTo(player.pos); if(d<md){md=d;m=e;} }
     if(!m) return 'sin blancos';
-    player.view.yaw=Math.atan2(m.pos.x-player.pos.x, m.pos.z-player.pos.z);
-    player.view.pitch=-Math.atan2(m.pos.y+1-player.pos.y-2, md);
-    return { blanco:m.kind, dist:Math.round(md) }; },
+    /* El rumbo también se mide desde la BOCA, no desde el centro del vehículo:
+       el cañón sobresale metro y medio, y a 30 m eso ya es un error de 3° —
+       suficiente para fallar un blanco de 1,8 m de radio. */
+    const boca=turretMuzzle();
+    player.view.yaw=Math.atan2(m.pos.x-boca.x, m.pos.z-boca.z);
+    /* ⚠ EL SIGNO DEL CABECEO. aimDir() construye la dirección con y=sin(pitch),
+       así que para apuntar a algo MÁS ALTO hace falta pitch POSITIVO. Aquí había
+       un menos delante del atan2, y encima medía desde player.pos con un "+1 −2"
+       en unidades (5,2 y 10,4 m) que compensaba el error a medias por
+       casualidad. Los tiros caían 9 metros largos y parecía que el juego no
+       registraba los impactos: era la herramienta de prueba la que apuntaba mal.
+       La boca se pide a turretMuzzle(), que es de donde sale el proyectil de
+       verdad, y la caída del tiro se SUMA. */
+    const tv=md/Math.max(stats.cannon.pspeed,1), caida=0.5*CANNON_GRAV*tv*tv;
+    const dh=Math.hypot(m.pos.x-boca.x, m.pos.z-boca.z);
+    player.view.pitch=clamp(Math.atan2((m.pos.y+0.4*M-boca.y)+caida, dh), -0.7, 0.5);
+    return { blanco:m.kind, dist:Math.round(md*MPU)+' m', caida_m:+(caida*MPU).toFixed(2) }; },
+  /* ¿CUÁNTOS DISPAROS BIEN APUNTADOS ACIERTAN? Nació de descubrir que el
+     impacto se comprobaba en un punto y no a lo largo del tramo: a 1.044 m/s el
+     proyectil salta 17 m por cuadro y solo uno de cada cinco disparos
+     registraba. Esta prueba es la que dice si volvió a romperse. */
+  tiro:(n,dist)=>{ const N=n||20; let dados=0;
+    /* Se coloca a la distancia pedida del blanco (200 m por defecto). Si no, la
+       prueba mide la puntería a media legua en vez de medir lo que quiere
+       medir: si el juego REGISTRA los impactos. */
+    const bl=enemies.find(e=>e.alive); if(!bl) return 'sin blancos';
+    const dm=(dist||200)*M;
+    /* Da una vuelta alrededor del blanco hasta encontrar un sitio con la línea
+       de vista libre. Si no, la prueba dispara contra una loma y luego echa la
+       culpa al motor: la primera versión informaba "1 acierto de 8" desde
+       detrás de una colina. */
+    let an=Math.atan2(player.pos.x-bl.pos.x, player.pos.z-bl.pos.z), tapado=true;
+    for(let k=0;k<16;k++){
+      const a2=an+k*Math.PI/8;
+      const px=bl.pos.x+Math.sin(a2)*dm, pz=bl.pos.z+Math.cos(a2)*dm;
+      if(Math.abs(px)>HALF-4||Math.abs(pz)>HALF-4) continue;
+      const py=terrainHeight(px,pz)+1*M;
+      if(!IA.losBlocked({x:px,y:py+1.2*M,z:pz},{x:bl.pos.x,y:bl.pos.y+0.8*M,z:bl.pos.z})){
+        player.pos.set(px,py,pz); tapado=false; break; }
+    }
+    if(tapado){ player.pos.x=bl.pos.x+Math.sin(an)*dm; player.pos.z=bl.pos.z+Math.cos(an)*dm;
+      player.pos.y=terrainHeight(player.pos.x,player.pos.z)+1*M; }
+    TIRO_DBG={total:0,blanco:0,suelo:0,perdido:0,barril:0,rebote:0,penetra:0,minDist:1,tgt:bl};
+    const vivos0=enemies.filter(e=>e.alive).length;
+    let hp0=0; for(const e of enemies) if(e.alive) hp0+=e.hp;
+    for(let i=0;i<N;i++){
+      if(!enemies.some(e=>e.alive)) break;
+      DRONES.apuntar();
+      for(let k=0;k<45;k++) simulate(1/60);      // que la torreta llegue a girar
+      DRONES.apuntar(); player.reload=0; firePlayerCannon();
+      if(projectiles.length) projectiles[projectiles.length-1].dbg=true; dados++;
+      for(let k=0;k<90;k++) simulate(1/60);      // 1,5 s de vuelo del proyectil
+    }
+    let hp1=0; for(const e of enemies) if(e.alive) hp1+=e.hp;
+    const vivos1=enemies.filter(e=>e.alive).length;
+    const c=TIRO_DBG; TIRO_DBG=null;
+    return { a_metros:Math.round(dm*MPU), linea_de_vista:tapado?'TAPADA':'libre',
+      disparos:dados, aciertos:c.blanco, en_el_suelo:c.suelo, perdidos:c.perdido,
+      rebotes:c.rebote, penetraciones:c.penetra,
+      cae_a_metros_del_blanco:c.ultimaDist,
+      bajas:vivos0-vivos1, dano_total:+(hp0-hp1).toFixed(0),
+      dano_de_un_impacto:stats.cannon.dmg }; },
   snapshot:()=>{ try{ const w=320,h=180; renderer.setSize(w,h,false); camera.aspect=w/h; camera.updateProjectionMatrix();
     if(composer)composer.setSize(w,h); if(skyMesh)skyMesh.position.copy(camera.position); renderScene();
     const gl=renderer.getContext(); const px=new Uint8Array(w*h*4); gl.readPixels(0,0,w,h,gl.RGBA,gl.UNSIGNED_BYTE,px);
@@ -6727,6 +7132,35 @@ if(location.search.indexOf('dbg')>=0) window.DRONES={
   vuelo:()=>({ vel:+Math.hypot(drone.vel.x,drone.vel.z).toFixed(2), yawVel:+(drone.yawVel||0).toFixed(3),
     pitch:+drone.pitch.toFixed(3), roll:+drone.roll.toFixed(3), fov:+camera.fov.toFixed(1),
     camRoll:+(typeof camRollFPV!=='undefined'?camRollFPV:0).toFixed(3), batt:+drone.batt.toFixed(2) }),
+  /* QUÉ HAY EN EL AIRE, en metros. Nació de una queja de Joan —"cosas negras
+     volando"— que resultó ser cierta: escombros de 7,8 m y humo de 67 m, porque
+     el reescalado del mundo (1 u = 5,22 m) se aplicó a las máquinas y no a lo
+     que sale volando. Esta herramienta existe para que eso no vuelva a pasar
+     sin que nadie se entere: da el tamaño y la altura reales de todo lo que
+     está en vuelo. */
+  aire:()=>{
+    const r={efectos:[], cuerpos:{n:0, mayor_m:0, mas_alto_m:0, mas_rapido_ms:0}};
+    const suelo=(x,z)=>terrainHeight(x,z);
+    const porTipo={};
+    for(const e of effects){
+      if(!e.mesh) continue;
+      const t=e.kind, sc=e.mesh.scale?Math.max(e.mesh.scale.x,e.mesh.scale.y,e.mesh.scale.z):0;
+      const m=sc*MPU, alt=(e.mesh.position.y-suelo(e.mesh.position.x,e.mesh.position.z))*MPU;
+      const a=porTipo[t]||(porTipo[t]={n:0, mayor_m:0, mas_alto_m:0});
+      a.n++; if(m>a.mayor_m)a.mayor_m=+m.toFixed(1); if(alt>a.mas_alto_m)a.mas_alto_m=+alt.toFixed(1);
+    }
+    r.efectos=porTipo;
+    for(const pb of physBodies){ const b=pb.body;
+      r.cuerpos.n++;
+      const m=pb.gr*2*MPU, alt=(b.position.y-suelo(b.position.x,b.position.z))*MPU,
+            v=Math.hypot(b.velocity.x,b.velocity.y,b.velocity.z)*MPU;
+      if(m>r.cuerpos.mayor_m) r.cuerpos.mayor_m=+m.toFixed(2);
+      if(alt>r.cuerpos.mas_alto_m) r.cuerpos.mas_alto_m=+alt.toFixed(1);
+      if(v>r.cuerpos.mas_rapido_ms) r.cuerpos.mas_rapido_ms=+v.toFixed(1);
+      const g=Math.hypot(b.angularVelocity.x,b.angularVelocity.y,b.angularVelocity.z);
+      if(!r.cuerpos.mas_giro_rad_s || g>r.cuerpos.mas_giro_rad_s) r.cuerpos.mas_giro_rad_s=+g.toFixed(1);
+    }
+    return r; },
   /* ¿En qué píxel cae este punto del mundo? Para recortar capturas SIN adivinar:
      apuntar, foto, pantalla(x,y,z), recorte justo ahí. */
   pantalla:(x,y,z)=>{ const v=new THREE.Vector3(x,y,z).project(camera);
@@ -6789,8 +7223,26 @@ if(location.search.indexOf('dbg')>=0) window.DRONES={
     loadout:store.loadout, env:Object.assign({},store.env), vol:store.vol }),
   terrH:(x,z)=>+terrainHeight(x,z).toFixed(2),
   waterY:()=>(water&&water.visible)?water.position.y:null,
-  simGaze:(headYaw,headPitch)=>{ gaze.active=true; gaze.detected=true; gaze.ready=true; gaze.hasEye=false;
-    gaze.baseYaw=0; gaze.basePitch=0; gaze.yaw=headYaw||0; gaze.pitch=headPitch||0; return true; },
+  /* Simula un giro de cabeza SIN cámara, para poder medir la curva de puntería
+     con números en vez de a ojo. Salta el filtro a propósito: aquí se mide la
+     respuesta del mando, no la del filtro. Deja la histéresis y la orden
+     suavizada como estén — así se puede medir también el arranque. */
+  simGaze:(headYaw,headPitch,limpio)=>{ gaze.active=true; gaze.detected=true; gaze.ready=true; gaze.hasEye=false;
+    gaze.baseYaw=0; gaze.basePitch=0; gaze.yaw=headYaw||0; gaze.pitch=headPitch||0;
+    gaze.fYaw={x:gaze.yaw,dx:0}; gaze.fPitch={x:gaze.pitch,dx:0};
+    if(limpio){ gaze.velMando=0; gaze.moviendo=false; gaze.buf=[]; gaze.reposo=0; }
+    return true; },
+  /* La curva de puntería entera, de un vistazo: cuántos grados por segundo gira
+     la torreta para cada giro de cabeza. Nació de la queja "la mirada es muy
+     sensible", que resultó ser 544 °/s con 20° de cabeza. */
+  curvaMirada:()=>{ const G=180/Math.PI, t=[];
+    for(const gr of [1,2,3,4,5,7,10,15,20,25,30,35,45,60]){
+      gaze.moviendo=true;
+      const a=Math.abs(gr/G), u=clamp((a-0.035)/(0.611-0.035),0,1);
+      t.push(gr+'° -> '+(u*u*clamp(gaze.rate*0.175,0.35,2.1)*G).toFixed(1)+' °/s');
+    }
+    gaze.moviendo=false;
+    return { tope:(clamp(gaze.rate*0.175,0.35,2.1)*G).toFixed(0)+' °/s', zona_muerta:'3° entra / 2° sale', tabla:t }; },
   viewYaw:()=>+player.view.yaw.toFixed(3),
   postfx:()=>({bloom:useComposer, phys:physReady}),
   /* Lo que de verdad cuesta dibujar un cuadro, sin depender de los FPS: los FPS

@@ -1,4 +1,4 @@
-# Estado de Drones de Combate · 15 de agosto de 2026
+# Estado de Drones de Combate · 18 de agosto de 2026
 
 **Vive en `Desktop\drones`** (antes `Desktop\maquinas`; se renombró el 15-ago
 porque ya no comparte carpeta con ningún otro juego).
@@ -187,6 +187,96 @@ La raíz de `joanhispanista-star.github.io` enlaza a `/joan-te-presta/crm.html`,
 el panel de Tu Garantía. Quien tenga el enlace del juego puede recortar la URL y
 llegar. Pide clave, pero está publicado. **No se tocó porque es su página de
 negocio.**
+
+
+## 18-ago: el reescalado estaba a medias, y se notaba en veinte sitios
+
+Joan reportó tres cosas: **"cosas negras volando"**, **"el vuelo del dron no es
+tan realista"** y **"cuando activo la mirada es muy sensible y no apunta bien o
+se mueve mucho"**. Las tres resultaron ser **la misma causa**.
+
+Cuando se arreglaron las máquinas gigantes (1 unidad = 5,22 m), se reescalaron
+**las mallas del tanque, el dron y el perro — y nada más**. Todo lo demás siguió
+suponiendo que una unidad era un metro. Medido en vivo, esto es lo que quedaba:
+
+| Cosa | Estaba en | Es de verdad |
+|---|---|---|
+| Escombros de explosión | 7,8 m y casi negros | 1,3 m |
+| Impulso de la onda sobre esos escombros | 240 m/s, subían 250 m | 19 m/s, 13 m |
+| Giro de los escombros | **17.400 rad/s** (46 vueltas por CUADRO) | 11 rad/s |
+| Humo de explosión | 67 m, gris casi negro | 9,6 m, gris cálido |
+| Gravedad del mundo físico | 22 u/s² = **11,7 g** | 9,81·M |
+| Colisionador del UGV | 24 m de largo | 2,4 m |
+| Bola de fuego de un obús de 90 mm | 161 m de diámetro | 11 m |
+| Radio letal de un barril | 57 m | 8 m |
+| Huella de la suspensión | 22 × 15 m | 2,4 × 1,24 m |
+| Ojo del sensor de la IA | mástil de 10,4 m | 1,15 m |
+| Velocímetro del HUD | dividía por 5,22 (108 km/h → "21") | correcto |
+| Lluvia | gotas de 3,1 m a 313 m/s | 16 cm a 9 m/s |
+| Sombra al atardecer | despegada hasta 17 m | 1 m |
+| Zancada del perro | 83% deslizamiento | sin deslizar |
+
+**La regla que salió de aquí, y que está escrita al principio del archivo:**
+todo lo que tenga un tamaño físico se escribe **en metros y se multiplica por
+M**. Lo único que va en unidades crudas son las coordenadas del mundo.
+
+### El vuelo
+
+No era falta de efectos: era que **la inclinación no causaba nada**. El dron
+frenaba a 3,9 g estando plano (0,2° de inclinación), y un cuadricóptero no tiene
+frenos — lo único que puede hacer es inclinar el disco de los rotores. Ahora
+`θ = atan(a/g)` y la aceleración está topada a `g·tan(35°)`, así que postura y
+movimiento no pueden volver a contradecirse.
+
+| | Antes | Ahora | Un dron real |
+|---|---|---|---|
+| Aceleración | 16,8 g | 0,68 g | 0,5–0,8 g |
+| Frena de 108 km/h en | 0,8 s y 5 m | 5,8 s y 66 m | 4–6 s, 45–75 m |
+| Inclinación al frenar | 0,2° | 35° | 25–35° |
+
+La cámara "FPV" además **no era FPV**: estaba 3,6 m detrás de un aparato de
+0,9 m, con un brazo elástico que filtraba toda la vibración. Ahora va en el
+morro (8 cm), sin suavizado, con gran angular de 95° y vibración de motores a
+47–61 Hz. En ACRO el cabeceo del aparato entra en la mirada; en fácil manda el
+gimbal, para no endurecer el modo fácil que Joan pidió.
+
+### La mirada
+
+| Giras la cabeza | Antes | Ahora |
+|---|---|---|
+| 10° | 219 °/s | 3,4 °/s |
+| 20° | 544 °/s | 17,9 °/s |
+| 45° | 1497 °/s | 60 °/s (tope) |
+
+Y **la deriva con la cabeza quieta pasó de 4,6 °/s a cero**. Cuatro causas, no
+una: la zona muerta (1,15°) era menor que el ruido del sensor; la pose de cabeza
+entraba sin filtrar; al yaw en radianes se le sumaba un número sin unidades del
+iris que ganaba a la cabeza (y por el reflejo vestíbulo-ocular RESTABA, así que
+la torreta arrancaba al revés); y el centrado tomaba **una** muestra a ciegas a
+los 1,6 s sin comprobar siquiera que hubiera un rostro. Ahora: filtro "un euro",
+zona muerta de 3° con histéresis, curva cuadrática con tope, los ojos fuera del
+integrador de giro, centrado por mediana de 20 muestras y recentrado automático.
+Y el parpadeo ya no pega el tirón vertical (el `||0.01` solo saltaba con el cero
+exacto; al parpadear el divisor valía 0,0015).
+
+### Herramientas de medida nuevas (con `?dbg`)
+
+- `DRONES.aire()` — qué hay volando y **de qué tamaño en metros**. Es la que
+  habría cazado esto en su día.
+- `DRONES.curvaMirada()` — la tabla entera de grados de cabeza → °/s de torreta.
+- `DRONES.tiro(n, metros)` — cuántos disparos aciertan y dónde mueren los que no.
+- `DRONES.medidas()` **ya no miente**: medía la caja del sprite térmico y decía
+  "UGV de 4,00 × 4,00 × 4,04 m" de un UGV de 2,4 m. Ahora mide solo mallas.
+
+### Lo que queda abierto de esta tanda
+
+- **El UGV mide 2,48 × 2,36 × 4,04 m** y el dron **1,56 m** de envergadura
+  cuando `ESC_DRON` dice 0,9. Los factores `ESC_*` normalizan una medida del
+  casco, no la envergadura total. Joan no lo ha reportado: **no se tocó**, pero
+  está medido y es real.
+- `DRONES.tiro()` **no adelanta el tiro a blancos en movimiento**, así que su
+  porcentaje de acierto mezcla el registro de impactos con la puntería. Sirve
+  para ver que los enemigos mueren; no para dar un porcentaje limpio.
 
 ## Trampas que ya costaron tiempo
 
