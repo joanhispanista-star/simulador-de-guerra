@@ -1,5 +1,8 @@
 # Estado de Drones de Combate · 15 de agosto de 2026
 
+**Vive en `Desktop\drones`** (antes `Desktop\maquinas`; se renombró el 15-ago
+porque ya no comparte carpeta con ningún otro juego).
+
 ## El juego cambió de naturaleza (15-ago): ahora ES de drones, y de guerra
 
 Joan pidió "completa todo hasta D3" y las cuatro fases del PLAN-GUERRA.md
@@ -186,6 +189,13 @@ llegar. Pide clave, pero está publicado. **No se tocó porque es su página de
 negocio.**
 
 ## Trampas que ya costaron tiempo
+
+- **Renombrar la carpeta:** Windows la da por ocupada al primer intento
+  (`Device or resource busy`) porque OneDrive la tiene. `Rename-Item` de
+  PowerShell sí puede, y si no, reintentar unas veces. El renombrado salió
+  barato porque `servidor.js` usa `__dirname` y `JUGAR.bat` usa `%~dp0`: rutas
+  relativas. Lo único absoluto estaba en los dos `launch.json` (el del proyecto
+  y el de PLAZA, que es desde donde se levanta el servidor).
 
 - **Drones es INDEPENDIENTE: no enlaza a nada.** Se sacaron del repositorio
   `plaza.html` (el índice de todos los proyectos de Joan, que se publicó una vez
