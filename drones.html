@@ -67,6 +67,9 @@
   .sig i{width:3px;background:var(--hud);border-radius:1px;opacity:.9}
   .sig i.off{background:var(--gris-2);opacity:.4}
   .obj{font-size:12.5px;font-weight:800;color:#eaf6f1;max-width:56vw;line-height:1.25}
+  /* el marcador del duelo solo existe cuando hay duelo */
+  .duelo-hud{display:none;margin-top:6px;font-size:14px;letter-spacing:.02em}
+  .duelo-hud.on{display:block}
   .obj .k{color:var(--ambar)}
   .miss-timer{font-size:16px;font-weight:900;color:var(--hud);letter-spacing:.04em}
   .miss-timer.low{color:var(--rojo-2);animation:blink .7s infinite}
@@ -410,6 +413,7 @@
         <div class="sig" id="sig"><i></i><i></i><i></i><i></i><i></i></div>
         <div class="miss-timer" id="mtimer">--:--</div>
         <div class="obj" id="objText"><span class="k">OBJETIVO</span></div>
+        <div class="obj duelo-hud" id="dueloHud"></div>
       </div>
     </div>
 
@@ -506,7 +510,7 @@
         <button data-tab="missions" class="on">▤ Misiones</button>
         <button data-tab="real">🌍 Mundo real</button>
         <button data-tab="garage">🔧 Garaje</button>
-        <button data-tab="pair">📱 Mando</button>
+        <button data-tab="pair">⚔️ Duelo 1v1</button>
         <button data-tab="guerra">⚔️ Guerra</button>
         <button data-tab="help">? Controles</button>
       </div>
@@ -976,7 +980,20 @@ function fbm(x,y,oct){ let s=0,amp=.5,f=1,tot=0; for(let i=0;i<oct;i++){ s+=amp*
    no, los tanques salen del tamaño de una casa), cambia CUÁNTAS unidades mide
    el mundo. Los mapas normales y las misiones de menú vuelven a 460. */
 let WORLD=460, HALF=WORLD/2;
-function fijarCampo(spanM){ WORLD=Math.round((spanM||2400)/5.22); HALF=WORLD/2; }
+/* Cambiar el tamaño del campo NO es solo cambiar dos números: hay cosas que se
+   calcularon una vez con el mundo de 2,4 km y hay que moverlas con él. Todas
+   viven aquí, que es el único sitio por el que pasan todos los mapas.
+     · SIG_RANGE — el alcance del enlace. Estaba clavado en 280 u: en un campo
+       de 7,2 km el enlace se perdía a 1,3 km y el 90 % del mapa quedaba
+       inalcanzable. Peor aún, en duelo los dos nacían FUERA de alcance, sin
+       poder disparar. La proporción 280/230 se conserva.
+     · water.scale — el plano de agua se horneó para WORLD=460.
+   MPU en vez de 5.22 a pelo: la escala tiene una sola fuente. */
+function fijarCampo(spanM){
+  WORLD=Math.round((spanM||2400)/MPU); HALF=WORLD/2;
+  SIG_RANGE=Math.max(280, Math.round(HALF*(280/230)));
+  if(typeof water!=='undefined' && water) water.scale.setScalar(WORLD/460);
+}
 const BIOMES={
   desierto:{ name:'Desierto', seed:11, sky:0xf0d8a8, skyTop:0x6fa8d8, fog:0xe8cf9e, fogN:0.0016,
     sun:0xfff0d8, amb:0x6b5a3a, ground:[0xd9b571,0xcaa25c,0xe6c98a],
@@ -1665,6 +1682,12 @@ function clearTerrain(){
     if(farMesh.material.map)farMesh.material.map.dispose(); farMesh.material.dispose(); farMesh=null; }
   if(propGroup){ scene.remove(propGroup); disposeGroup(propGroup); propGroup=null; }
   colliders=[]; MAT_EDIFICIOS=null;
+  /* La rejilla de obstáculos se dimensiona con WORLD y se indexa con HALF, pero
+     su caché solo miraba CUÁNTOS obstáculos hay. Al cambiar de tamaño de campo
+     con el mismo número de edificios, seguía usando la rejilla del mundo viejo:
+     los índices caían fuera y las colisiones dejaban de existir en media
+     ciudad. Aquí es donde pasan TODOS los mundos nuevos, así que aquí muere. */
+  CGRID=null;
 }
 /* roca (en laderas) y línea de nieve (cumbres) por bioma */
 const ROCKCOL={desierto:0x9c7a4a, nieve:0x7e8894, canon:0x6e3a24, ruinas:0x565b64, mar:0x7a7256};
@@ -1936,7 +1959,7 @@ async function buildRealWorld(map){
   REAL=null; clearTerrain();
   const spanM = map.spanM || REAL_SPAN_DEF;
   fijarCampo(spanM);                              // el mundo crece en UNIDADES; la escala no se toca
-  if(water){ water.scale.setScalar(WORLD/460); }  // el plano de agua se construyó para 460
+                                                  // (el agua y el enlace los reajusta fijarCampo)
   const ZE=15;                                    // elevación: máximo zoom que existe en Terrarium
   /* satélite: un punto de zoom MENOS por cada duplicación del campo. El lienzo
      es fijo (4096): a 4,8 km con el zoom de 2,4 km serían ~960 teselas por
@@ -3538,7 +3561,7 @@ const physBodies=[], barrelQueue=[]; let tankBody=null;
    26 = 6,9 g, 11,7 g y 13,8 g) porque cada uno se escribió antes del cambio de
    escala. Una sola gravedad, la de la Tierra. */
 const CANNON_GRAV=9.81*M;
-const SIG_RANGE=280;         // alcance del enlace (unidades)
+let SIG_RANGE=280;           // alcance del enlace (unidades). Lo escala fijarCampo() con el mundo.
 let gunAim={range:0, impact:new THREE.Vector3(), hit:false, valid:false};
 let TIRO_DBG=null;   // lo enciende DRONES.tiro(); null = apagado, coste cero
 let windVec=new THREE.Vector3();
@@ -4563,6 +4586,12 @@ function updateAllies(dt){
 function moverAliado(a, orden, dt){
   const enFormacion = (a.ia.estado==='PATRULLA' || a.ia.estado==='IDLE' || !orden.ir);
   let goal=orden.ir;
+  /* La formación sigue a la unidad que ESTÁS PILOTANDO, no al chasis. Desde
+     que la misión arranca en el aire (D0), el tanque se queda aparcado en el
+     punto de partida: con player.pos, el escuadrón entero se quedaba dando
+     vueltas alrededor de un tanque vacío mientras tú volabas a un kilómetro,
+     y parecía que la IA estaba rota. */
+  const jefe=activeUnitPos();
   if(a.tierra){
     /* PERRO ALIADO: mismo cerebro, cuerpo por tierra. Escolta en un anillo
        CORTO (7 u, no 13): un perro guardaespaldas va al lado, no dando vueltas
@@ -4572,7 +4601,7 @@ function moverAliado(a, orden, dt){
        lo puso a 7 u creyendo que eran metros y los perros escoltaban a 36 m —
        a escala real (90 cm de perro) ni se veían. */
     if(enFormacion){ const ang=a.offset*2.6+missionTime*0.1;
-      goal={ x:player.pos.x+Math.cos(ang)*1.9, z:player.pos.z+Math.sin(ang)*1.9 }; }
+      goal={ x:jefe.x+Math.cos(ang)*1.9, z:jefe.z+Math.sin(ang)*1.9 }; }
     const dx=goal.x-a.pos.x, dz=goal.z-a.pos.z, L=Math.hypot(dx,dz)||1;
     const lejos=L>0.7;
     const my = lejos ? Math.atan2(dx,dz)
@@ -4591,9 +4620,9 @@ function moverAliado(a, orden, dt){
   } else {
   if(enFormacion){                                   // vuela en formación alrededor del jugador
     const ang=a.offset*2.2+missionTime*0.15;
-    goal={ x:player.pos.x+Math.cos(ang)*13, z:player.pos.z+Math.sin(ang)*13 };
+    goal={ x:jefe.x+Math.cos(ang)*13, z:jefe.z+Math.sin(ang)*13 };
   }
-  const alt = enFormacion ? player.pos.y+16 : terrainHeight(goal.x,goal.z)+15;
+  const alt = enFormacion ? jefe.y+16 : terrainHeight(goal.x,goal.z)+15;
   const dx=goal.x-a.pos.x, dz=goal.z-a.pos.z, L=Math.hypot(dx,dz)||1;
   const sp=17*(orden.prisa||1);
   _al.set(L>3?dx/L*sp:0, (alt-a.pos.y)*1.6, L>3?dz/L*sp:0);
@@ -5702,12 +5731,18 @@ function resetPlay(){
   setSensor(0);
 }
 /* despliega la misión sobre el terreno YA construido (biomas o mundo real) */
+/* Cuánto se abre el despliegue. Vale exactamente 1 en el mundo de siempre
+   (HALF=230), así que a 2,4 km nada cambia; en un campo de 7,2 km reparte la
+   guerra por todo el mapa en vez de dejarla apiñada en el centro — que era lo
+   que pasaba: mapa gigante y todos los enemigos en el mismo kilómetro de
+   siempre, con el resto vacío. */
+function escCampo(){ return HALF/230; }
 function enemySpot(air){
-  const wl=(water&&water.visible)? water.position.y : -9999;
-  for(let t=0;t<14;t++){ const a=Math.random()*TAU, r=70+Math.random()*120, x=Math.cos(a)*r, z=Math.sin(a)*r;
+  const wl=(water&&water.visible)? water.position.y : -9999, e=escCampo();
+  for(let t=0;t<14;t++){ const a=Math.random()*TAU, r=(70+Math.random()*120)*e, x=Math.cos(a)*r, z=Math.sin(a)*r;
     if(air || wl<-9000 || terrainHeight(x,z)>wl+0.6) return [x,z];   // los terrestres, en tierra firme
   }
-  const a=Math.random()*TAU, r=95; return [Math.cos(a)*r, Math.sin(a)*r];
+  const a=Math.random()*TAU, r=95*e; return [Math.cos(a)*r, Math.sin(a)*r];
 }
 function deployMission(m){
   mission=m; surviveTimer=m.survive||0;
@@ -5732,12 +5767,12 @@ function deployMission(m){
   // escuadrón de compañeros IA
   if(stats.allies && stats.allies.count>0){ for(let i=0;i<stats.allies.count;i++) spawnAlly(i, stats.allies.lvl, stats.allies.tierra); }
   if(m.objs.some(o=>o.type==='reach')){
-    const a=Math.random()*TAU, r=150; extractZone=new THREE.Vector3(Math.cos(a)*r,0,Math.sin(a)*r);
+    const a=Math.random()*TAU, r=150*escCampo(); extractZone=new THREE.Vector3(Math.cos(a)*r,0,Math.sin(a)*r);
     extractZone.y=terrainHeight(extractZone.x,extractZone.z);
     objMarker=makeZoneMarker(0x3ff0c0); objMarker.position.copy(extractZone); scene.add(objMarker);
   } else extractZone=null;
   const recon=m.objs.find(o=>o.type==='recon');
-  if(recon){ for(let i=0;i<recon.n;i++){ const a=Math.random()*TAU, r=60+Math.random()*130;
+  if(recon){ const e=escCampo(); for(let i=0;i<recon.n;i++){ const a=Math.random()*TAU, r=(60+Math.random()*130)*e;
     const p=new THREE.Vector3(Math.cos(a)*r,0,Math.sin(a)*r); p.y=terrainHeight(p.x,p.z)+1;
     const marker=makeZoneMarker(0xffb020); marker.position.copy(p); scene.add(marker);
     reconPoints.push({pos:p, done:false, marker}); } }
@@ -5777,16 +5812,17 @@ async function startRealMission(map){
           'El relieve, la imagen del satélite y los edificios de '+map.name+
           ' se descargan en el momento: no están dentro de la app y no caben.\n\n'+
           'Sin conexión sí puedes jugar las MISIONES del menú principal, que van completas.');
-    return;
+    return false;
   }
   currentReal=map; missionIdx=-1;
   resetPlay();
   showLoading('Descargando terreno real', map.name+' · elevación + satélite');
   try{ await buildRealWorld(map); }
   catch(e){ hideLoading(); $('menu').classList.add('on');
-    alert('No se pudo descargar el terreno real.\n'+(e&&e.message||e)+'\n\nRevisa tu conexión e inténtalo de nuevo.'); return; }
+    alert('No se pudo descargar el terreno real.\n'+(e&&e.message||e)+'\n\nRevisa tu conexión e inténtalo de nuevo.'); return false; }
   hideLoading();
   deployMission(realMissionFor(map));
+  return true;   // "logré arrancar": el duelo lo necesita para no quedarse encendido en falso
 }
 function makeZoneMarker(color){
   const g=new THREE.Group();
@@ -5827,9 +5863,15 @@ function endMission(win, reason){
   }
   setTimeout(()=>{
     $('hud').classList.remove('on'); $('touch').classList.remove('on'); $('utiles').classList.remove('on'); $('rotate').classList.remove('on');
-    $('resTitle').textContent=win?'MISIÓN CUMPLIDA':'MISIÓN FALLIDA';
+    // un duelo no es una misión: el marcador y el rival mandan sobre el guion militar
+    const d=duelo.ultimo;
+    $('resTitle').textContent = d ? (win?'⚔️ DUELO GANADO':'⚔️ DUELO PERDIDO')
+                                  : (win?'MISIÓN CUMPLIDA':'MISIÓN FALLIDA');
     $('resTitle').style.color=win?'var(--hud)':'var(--rojo-2)';
-    $('resDesc').textContent=win? '¡Operación completada, comandante!' : (reason||'Vuelve a intentarlo.');
+    $('resDesc').textContent = d ? (win? 'Ganaste el duelo '+d.marcador[0]+'–'+d.marcador[1]+(d.donde?' en '+d.donde:'')
+                                       : (reason||'El rival pudo más.'))
+                                 : (win? '¡Operación completada, comandante!' : (reason||'Vuelve a intentarlo.'));
+    duelo.ultimo=null;   // se consume: la próxima misión normal no debe salir como duelo
     $('resStats').innerHTML='Enemigos destruidos: <b>'+killCount.enemy+'</b><br>Blindaje restante: <b>'+Math.max(0,Math.round(player.hp))+'</b>'+(store.best[mission.id]?'<br>Mejor puntaje: <b style="color:var(--ambar)">'+store.best[mission.id]+'</b>':'');
     $('rNext').style.display = (win && !mission.real && missionIdx<MISSIONS.length-1)?'block':'none';
     $('result').classList.add('on');
@@ -5962,7 +6004,7 @@ function spawnClutter(){
   // racimos: barriles juntos -> reacción en cadena; cajas de cobertura
   const clusters=4+Math.floor(Math.random()*3);
   for(let c=0;c<clusters;c++){
-    const a=Math.random()*TAU, r=32+Math.random()*135, cx=Math.cos(a)*r, cz=Math.sin(a)*r;
+    const a=Math.random()*TAU, r=(32+Math.random()*135)*escCampo(), cx=Math.cos(a)*r, cz=Math.sin(a)*r;
     if(Math.hypot(cx,cz)<24) continue;
     const nB=2+Math.floor(Math.random()*4), nC=1+Math.floor(Math.random()*3);
     for(let i=0;i<nB;i++){ const x=cx+(Math.random()-0.5)*5, z=cz+(Math.random()-0.5)*5; if(Math.abs(x)<HALF-6&&Math.abs(z)<HALF-6) spawnBarrel(x,z); }
@@ -6097,7 +6139,7 @@ function updateChips(){
 }
 const radarCtx=$('radar').getContext('2d');
 function drawRadar(){
-  const ctx=radarCtx, S=200, c=S/2, range=160;
+  const ctx=radarCtx, S=200, c=S/2, range=160*escCampo();
   ctx.clearRect(0,0,S,S);
   // barrido
   ctx.strokeStyle='rgba(63,240,192,.15)'; ctx.beginPath(); ctx.arc(c,c,c-4,0,TAU); ctx.stroke();
@@ -6106,8 +6148,13 @@ function drawRadar(){
   const grad=ctx.createLinearGradient(c,c, c+Math.cos(sweep)*c, c+Math.sin(sweep)*c);
   grad.addColorStop(0,'rgba(63,240,192,.5)'); grad.addColorStop(1,'rgba(63,240,192,0)');
   ctx.strokeStyle=grad; ctx.beginPath(); ctx.moveTo(c,c); ctx.lineTo(c+Math.cos(sweep)*(c-4), c+Math.sin(sweep)*(c-4)); ctx.stroke();
-  const map=(wx,wz)=>{ // relativo al jugador, norte arriba
-    const dx=wx-player.pos.x, dz=wz-player.pos.z;
+  /* El radar se centra en la unidad que PILOTAS, y el alcance se abre con el
+     campo. Con la misión arrancando en el aire (D0), centrarlo en player.pos
+     dejaba al piloto fuera de su propio radar: volabas a un kilómetro y el
+     minimapa seguía enseñando el tanque aparcado con todo alrededor. */
+  const u=activeUnitPos();
+  const map=(wx,wz)=>{ // relativo a la unidad activa, norte arriba
+    const dx=wx-u.x, dz=wz-u.z;
     return [c+ dx/range*(c-6), c+ dz/range*(c-6)];
   };
   // objetivos
@@ -6118,13 +6165,14 @@ function drawRadar(){
     if(Math.hypot(px-c,py-c)<c-4){ ctx.fillStyle=e.marked?'#fff':(e.jammer?'#b040ff':(e.air?'#ff9a4a':'#ff4a4a'));
       ctx.beginPath(); ctx.arc(px,py, e.marked?3:2.5, 0,TAU); ctx.fill();
       if(e.jammer){ ctx.strokeStyle='rgba(176,64,255,.25)'; ctx.beginPath(); ctx.arc(px,py, 95/range*(c-6), 0,TAU); ctx.stroke(); } } }
-  // dron
-  if(drone.active){ const[px,py]=map(drone.pos.x,drone.pos.z); if(Math.hypot(px-c,py-c)<c-4){ ctx.fillStyle='#37b6ff'; ctx.beginPath(); ctx.arc(px,py,3,0,TAU); ctx.fill(); } }
+  // la OTRA máquina: si pilotas el dron, marca dónde dejaste el blindado, y al revés
+  { const o = (mode==='drone'&&drone.active)? player.pos : (drone.active?drone.pos:null);
+    if(o){ const[px,py]=map(o.x,o.z); if(Math.hypot(px-c,py-c)<c-4){ ctx.fillStyle='#37b6ff'; ctx.beginPath(); ctx.arc(px,py,3,0,TAU); ctx.fill(); } } }
   // compañeros IA (aliados)
   for(const a of allies){ if(!a.alive)continue; const[px,py]=map(a.pos.x,a.pos.z);
     if(Math.hypot(px-c,py-c)<c-4){ ctx.fillStyle='#2f9bff'; ctx.beginPath(); ctx.moveTo(px,py-3); ctx.lineTo(px+2.5,py+2); ctx.lineTo(px-2.5,py+2); ctx.closePath(); ctx.fill(); } }
   // jugador (flecha según rumbo)
-  ctx.save(); ctx.translate(c,c); ctx.rotate(player.yaw*-1+Math.PI);
+  ctx.save(); ctx.translate(c,c); ctx.rotate(((mode==='drone'&&drone.active)?drone.yaw:player.yaw)*-1+Math.PI);
   ctx.fillStyle='#eef1f6'; ctx.beginPath(); ctx.moveTo(0,-7); ctx.lineTo(5,6); ctx.lineTo(0,3); ctx.lineTo(-5,6); ctx.closePath(); ctx.fill(); ctx.restore();
 }
 let sigT=0;
@@ -6245,7 +6293,7 @@ function simulate(dt){
   F('fisica');   stepPhysics(dt);
   if(mode==='tank') computeGunnery();
   // objetivo "llegar a la zona"
-  if(extractZone && player.pos.distanceTo(extractZone)<8){ const st=objState.find(s=>s.def.type==='reach'); if(st&&!st.done){ st.done=true; feed('Zona alcanzada','good'); checkObjectives(); } }
+  if(extractZone && activeUnitPos().distanceTo(extractZone)<8){ const st=objState.find(s=>s.def.type==='reach'); if(st&&!st.done){ st.done=true; feed('Zona alcanzada','good'); checkObjectives(); } }
   // supervivencia + oleadas
   if(mission.survive){ surviveTimer-=dt; if(surviveTimer<=0){ const st=objState.find(s=>s.def.type==='survive'); if(st&&!st.done){ st.done=true; checkObjectives(); } }
     if(enemies.filter(e=>e.alive).length<2 && surviveTimer>4){ const a=Math.random()*TAU, r=150; spawnEnemy('tank', Math.cos(a)*r, Math.sin(a)*r); } }
@@ -6373,7 +6421,12 @@ function frame(){
 /* =====================================================================
    PAUSA / NAV
    ===================================================================== */
-function doPause(){ paused=true; if(document.exitPointerLock)document.exitPointerLock();
+function doPause(){
+  /* En duelo NO hay pausa: el rival sigue volando y disparando al otro lado de
+     internet. Pausar solo te dejaba ciego e indefenso — congelaba tu bucle (y
+     con él tu reaparición) mientras te seguían llegando impactos. */
+  if(duelo.active && !duelo.fin){ feed('⚔️ En duelo no hay pausa: el rival sigue ahí','bad'); return; }
+  paused=true; if(document.exitPointerLock)document.exitPointerLock();
   $('pauseObj').innerHTML=mission?mission.name:''; $('pause').classList.add('on'); }
 function resume(){ paused=false; $('pause').classList.remove('on'); }
 /* Cuatro pasos en vez de un interruptor: apagado / bajo / normal / alto.
@@ -6393,6 +6446,7 @@ function toMenu(){ playing=false; paused=false; SONIDO.parar();
   $('pause').classList.remove('on'); $('result').classList.remove('on'); $('hud').classList.remove('on'); $('touch').classList.remove('on'); $('utiles').classList.remove('on'); $('rotate').classList.remove('on');
   setSensor(0); $('linkFx').style.opacity=0; $('linkWarn').classList.remove('on'); $('underFx').classList.remove('on');   // limpia overlays
   IA.dbgOff();
+  dueloCerrar();   // salir al menú TERMINA el duelo: si no, su estado se cuela en la siguiente partida
   $('menu').classList.add('on'); renderMissions(); }
 
 /* =====================================================================
@@ -6402,8 +6456,20 @@ const SUPA={ URL:'https://iqnqpmeljmlszgvzilyh.supabase.co',
   KEY:'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlxbnFwbWVsam1sc3pndnppbHloIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI1OTgyOTAsImV4cCI6MjA5ODE3NDI5MH0.OO52bdziBS6zDSeCemR4tbkFxSs_V7V9iVFkNiGyy4Y' };
 const remote={ active:false, role:null, ch:null, sb:null, code:null,
   in:{throttle:0,yaw:0,pitch:0,roll:0,fire:false}, connected:false };
-function loadSupa(){ return new Promise((res,rej)=>{ if(window.supabase&&window.supabase.createClient)return res(window.supabase);
-  const s=document.createElement('script'); s.src='https://unpkg.com/@supabase/supabase-js@2'; s.onload=()=>res(window.supabase); s.onerror=()=>rej(new Error('no se pudo cargar el conector')); document.head.appendChild(s); }); }
+/* Memoizado: dos llamadas seguidas (entrar a Guerra y crear un duelo casi a la
+   vez) metían DOS etiquetas <script> del conector y la segunda pisaba a la
+   primera a mitad de carga. En el fallo se limpia, para poder reintentar. */
+let _supaProm=null;
+function loadSupa(){
+  if(window.supabase&&window.supabase.createClient) return Promise.resolve(window.supabase);
+  if(_supaProm) return _supaProm;
+  _supaProm=new Promise((res,rej)=>{
+    const s=document.createElement('script'); s.src='https://unpkg.com/@supabase/supabase-js@2';
+    s.onload=()=>res(window.supabase);
+    s.onerror=()=>{ _supaProm=null; s.remove(); rej(new Error('no se pudo cargar el conector')); };
+    document.head.appendChild(s); });
+  return _supaProm;
+}
 /* =====================================================================
    ⚔️ DUELO 1v1 · dron contra dron por Supabase Realtime
    ---------------------------------------------------------------------
@@ -6430,7 +6496,12 @@ async function dueloCanal(code){
   const supa=await loadSupa();
   duelo.sb=supa.createClient(SUPA.URL, SUPA.KEY, {realtime:{params:{eventsPerSecond:20}}});
   duelo.ch=duelo.sb.channel('duelo-'+code, {config:{broadcast:{self:false}}});
-  duelo.ch.on('broadcast',{event:'hola'},()=>{ if(duelo.role!=='host')return;
+  /* Un 'hola' con partida EN CURSO no reinicia nada. supabase-js reemite
+     'SUBSCRIBED' al reconectar el socket, así que al rival se le podía caer el
+     wifi un segundo y el marcador se iba a 0-0 con el mundo recargándose a
+     mitad de duelo. Y un tercero que teclee los mismos 4 dígitos tampoco
+     puede borrar una partida ajena. */
+  duelo.ch.on('broadcast',{event:'hola'},()=>{ if(duelo.role!=='host'||duelo.active)return;
     // el rival llegó: le mando el mapa y arranco yo también
     const sel=$('citySel'); const [la,lo]=(sel&&sel.value?sel.value:'4.5975,-74.0755').split(',').map(Number);
     const nombre=sel&&sel.options[sel.selectedIndex]?sel.options[sel.selectedIndex].textContent:'La Candelaria';
@@ -6439,24 +6510,33 @@ async function dueloCanal(code){
     dueloUI('dueloHostPill','ok','Rival conectado · desplegando');
     dueloArrancar(cfg);
   });
-  duelo.ch.on('broadcast',{event:'inicio'},({payload})=>{ if(duelo.role!=='guest')return;
+  duelo.ch.on('broadcast',{event:'inicio'},({payload})=>{ if(duelo.role!=='guest'||duelo.active)return;
     dueloUI('dueloJoinPill','ok','Conectado · desplegando');
     dueloArrancar(payload);
+  });
+  duelo.ch.on('broadcast',{event:'abort'},()=>{
+    if(!duelo.active) return;
+    feed('El rival no pudo cargar el mapa · duelo cancelado','bad');
+    toMenu();          // toMenu cierra el duelo y devuelve al jugador al menú
   });
   duelo.ch.on('broadcast',{event:'pos'},({payload})=>{
     const r=duelo.rival;
     r.pAnt.copy(r.alHay ? r.p : new THREE.Vector3(payload.p[0],payload.p[1],payload.p[2]));
     r.p.set(payload.p[0],payload.p[1],payload.p[2]);
-    r.yaw=payload.y; r.t=0; r.alHay=true;
+    r.yaw=payload.y; r.t=0; r.alHay=true; r.mudo=0;   // sigue vivo: reinicia el reloj de silencio
   });
+  /* Los mensajes de red llegan aunque la simulación esté parada (menú de
+     pausa, pestaña de fondo). Sin esta guarda te derribaban DENTRO del menú de
+     pausa y el reloj de reaparición no corría, porque vive en dueloTick. */
   duelo.ch.on('broadcast',{event:'tiro'},({payload})=>{
+    if(!duelo.active||!playing||paused) return;
     // el tiro del rival se ve y se oye; el daño llega aparte en 'pum'
     const o=new THREE.Vector3(...payload.o), d=new THREE.Vector3(...payload.d);
     fireProjectile(o, d, {speed:MG_VELOCIDAD, dmg:0, from:'enemy', kind:'bala', traza:true, life:1.6});
     SONIDO.rifle(o);
   });
   duelo.ch.on('broadcast',{event:'pum'},({payload})=>{
-    if(duelo.respawnT>0) return;                     // ya derribado: no acumula
+    if(!duelo.active||duelo.fin||!playing||paused||duelo.respawnT>0) return;                     // ya derribado: no acumula
     duelo.hp-=payload.dmg||DUELO_DMG;
     if(mode==='drone') $('linkFx').style.opacity=0.5;
     if(duelo.hp<=0){ dueloDerribado(); }
@@ -6469,8 +6549,9 @@ async function dueloCanal(code){
     dueloMarcador();
     if(duelo.score[0]>=DUELO_DERRIBOS){ dueloFin(true); }
   });
-  duelo.ch.subscribe(st=>{ if(st==='SUBSCRIBED' && duelo.role==='guest')
-    duelo.ch.send({type:'broadcast',event:'hola',payload:{}}); });
+  duelo.ch.subscribe(st=>{ if(st==='SUBSCRIBED' && duelo.role==='guest' && !duelo.saludado){
+    duelo.saludado=true;   // una sola vez: 'SUBSCRIBED' vuelve en cada reconexión
+    duelo.ch.send({type:'broadcast',event:'hola',payload:{}}); } });
 }
 
 async function dueloCrear(){
@@ -6490,26 +6571,70 @@ async function dueloUnir(code){
   }catch(e){ dueloUI('dueloJoinPill','bad', e.message||'Error de conexión'); }
 }
 
-function dueloArrancar(cfg){
-  duelo.active=true; duelo.fin=false; duelo.score=[0,0]; duelo.hp=DUELO_HP; duelo.respawnT=0;
+/* El duelo NO se da por activo hasta que el mundo está de verdad construido.
+   Antes se encendía la bandera y se llamaba a startRealMission sin esperarla:
+   si la descarga de teselas fallaba (pasa, el servidor de elevación se cae),
+   el jugador volvía al menú con duelo.active en true y el canal vivo — y eso
+   se colaba en TODO lo que hiciera después: aparecía teletransportado a una
+   esquina en una misión de un jugador, con el marcador del duelo encima, y
+   sus victorias dejaban de sumar en la guerra el resto de la sesión. */
+async function dueloArrancar(cfg){
+  duelo.fin=false; duelo.score=[0,0]; duelo.hp=DUELO_HP; duelo.respawnT=0;
   duelo.cfg=cfg;   // la guerra necesita saber DÓNDE se peleó
   duelo.rival.alHay=false;
-  startRealMission({ id:'duelo_'+cfg.lat.toFixed(2), name:'Duelo · '+cfg.nombre, pais:'⚔️ '+cfg.nombre,
+  duelo.active=true;
+  const ok=await startRealMission({ id:'duelo_'+cfg.lat.toFixed(2), name:'Duelo · '+cfg.nombre, pais:'⚔️ '+cfg.nombre,
     lat:cfg.lat, lon:cfg.lon, vexag:1.0, spanM:cfg.spanM||2400,
     enemies:[],                                     // sin IA: la guerra es entre personas
     objs:[{type:'destroy',tag:'enemy',n:999,text:'Duelo a '+DUELO_DERRIBOS+' derribos'}] });
+  if(!ok){
+    try{ if(duelo.ch) duelo.ch.send({type:'broadcast',event:'abort',payload:{}}); }catch(e){}
+    dueloCerrar();
+    dueloUI(duelo.role==='host'?'dueloHostPill':'dueloJoinPill','bad','No se pudo cargar el mapa · duelo cancelado');
+  }
 }
 /* la base de cada uno en su esquina, la MISMA en ambas máquinas por el rol */
 function dueloEsquina(){ const s=duelo.role==='host'?-1:1; return {x:s*HALF*0.35, z:s*HALF*0.35}; }
 function dueloColocar(){
   const e=dueloEsquina();
   player.pos.x=e.x; player.pos.z=e.z; player.pos.y=terrainHeight(e.x,e.z)+0.5;
+  /* La MALLA del blindado también, no solo su posición lógica: deployMission ya
+     la había colocado en el centro del mapa, y como en modo dron updatePlayer
+     no la vuelve a mover, el chasis se quedaba dibujado en mitad de la ciudad
+     mientras tu posición real estaba en la esquina. */
+  player.yaw=Math.atan2(-e.x,-e.z); player.view.yaw=player.yaw;
+  if(player.mesh) player.mesh.position.copy(player.pos);
+  cmdPost.set(e.x, terrainHeight(e.x,e.z), e.z);   // y el puesto de mando, o naces sin enlace
+  if(cmdMesh) cmdMesh.position.copy(cmdPost);
   if(!drone.active) toggleDrone();
   drone.pos.set(e.x, terrainHeight(e.x,e.z)+6, e.z); drone.vel.set(0,0,0);
   drone.yaw=Math.atan2(-e.x, -e.z);                 // mirando al centro (al rival)
 }
-function dueloMarcador(){ try{ $('objText').innerHTML='⚔️ '+duelo.score[0]+' – '+duelo.score[1]+
-  ' · tu dron: '+Math.max(0,Math.round(duelo.hp))+'%'; }catch(e){} }
+/* El marcador tiene SU PROPIA caja, no la de objetivos: updateObjText() escribe
+   en #objText cada vez que cambia un objetivo, así que compartirla era una
+   carrera — el marcador aparecía y desaparecía sin motivo aparente.
+   Y lleva BRÚJULA Y DISTANCIA al rival, que no es adorno: un dron mide 90 cm y
+   el campo 2,4 km. Sin una flecha que diga hacia dónde, un duelo se convierte
+   en dos personas dando vueltas sin encontrarse nunca. */
+const _FLECHAS=['↑','↗','→','↘','↓','↙','←','↖'];
+function dueloMarcador(){
+  const el=$('dueloHud'); if(!el) return;
+  if(!duelo.active){ el.classList.remove('on'); el.innerHTML=''; return; }
+  el.classList.add('on');
+  let rumbo='';
+  if(duelo.rival.alHay && drone.active){
+    const dx=duelo.rival.p.x-drone.pos.x, dz=duelo.rival.p.z-drone.pos.z;
+    const m=Math.round(Math.hypot(dx,dz)*MPU);
+    // ángulo del rival RELATIVO a hacia dónde miro: la flecha es de pantalla
+    let a=Math.atan2(dx,dz)-drone.yaw;
+    a=((a%TAU)+TAU)%TAU;
+    rumbo=' · '+_FLECHAS[Math.round(a/(TAU/8))%8]+' '+(m>=1000?(m/1000).toFixed(1)+' km':m+' m');
+  } else if(!duelo.rival.alHay){ rumbo=' · <span style="color:var(--ambar)">sin señal del rival</span>'; }
+  const vida=Math.max(0,Math.round(duelo.hp));
+  el.innerHTML='<b style="color:var(--hud)">⚔️ '+duelo.score[0]+'</b> – <b style="color:var(--rojo-2)">'+duelo.score[1]+
+    '</b> · <span style="color:'+(vida<35?'var(--rojo-2)':'var(--hueso)')+'">'+vida+'%</span>'+rumbo+
+    (duelo.respawnT>0?' · <span style="color:var(--ambar)">reaparece en '+Math.ceil(duelo.respawnT)+'</span>':'');
+}
 function dueloDerribado(){
   duelo.score[1]++; duelo.respawnT=3; duelo.hp=DUELO_HP;
   duelo.ch.send({type:'broadcast',event:'boom',payload:{}});
@@ -6520,9 +6645,35 @@ function dueloDerribado(){
 }
 function dueloFin(gane){
   duelo.fin=true;
+  duelo.respawnT=0;          // sin esto el perdedor REAPARECÍA 3 s después de haber perdido
   feed(gane?'🏆 GANASTE EL DUELO':'Duelo perdido · la revancha es un código nuevo', gane?'good':'bad');
   // guerra: el duelo ganado vale 2 puntos en esa ciudad
   if(gane && duelo.cfg) guerraParte(2, duelo.cfg.lat, duelo.cfg.lon);
+  /* Cerrar la partida como cualquier otra: pantalla de resultado. El duelo se
+     desmonta DESPUÉS, para que el punto de guerra ya haya salido.
+     ⚠ La pantalla de resultado se pinta dentro de un setTimeout de endMission,
+     así que para entonces dueloCerrar ya habrá borrado el marcador. Por eso el
+     resultado se guarda en una copia APARTE, que sobrevive al cierre. */
+  const local=duelo.cfg?duelo.cfg.nombre:'';
+  duelo.ultimo={ gane, marcador:duelo.score.slice(), donde:local };
+  setTimeout(()=>{ dueloCerrar(); }, 400);
+  endMission(gane, gane?null:('Te derribaron '+DUELO_DERRIBOS+' veces en '+local));
+}
+/* Cierra el duelo y NO deja rastro: sin esto, duelo.active seguía en true al
+   volver al menú, dueloTick seguía corriendo en la misión siguiente (mandando
+   posiciones a una sala muerta y pintando el marcador encima del objetivo), y
+   el dron rojo del rival se quedaba flotando en el mapa nuevo. */
+function dueloCerrar(){
+  if(!duelo.active && !duelo.ch) return;
+  try{ if(duelo.ch) duelo.ch.unsubscribe(); }catch(e){}
+  try{ if(duelo.sb && duelo.sb.removeAllChannels) duelo.sb.removeAllChannels(); }catch(e){}
+  duelo.active=false; duelo.fin=false; duelo.ch=null; duelo.role=null; duelo.code=null;
+  duelo.score=[0,0]; duelo.hp=DUELO_HP; duelo.respawnT=0; duelo.cfg=null;
+  const r=duelo.rival;
+  if(r.mesh){ scene.remove(r.mesh); disposeGroup(r.mesh); r.mesh=null; }
+  r.alHay=false; r.mudo=0;
+  dueloMarcador();                                     // apaga la caja del HUD
+  ['dueloHostBox','dueloJoinBox'].forEach(id=>{ const e=$(id); if(e) e.style.display='none'; });
 }
 /* corre dentro de simulate(): mueve al rival interpolado, transmite mi posición,
    y resuelve mi fuego. El rival es un DRON DIBUJADO, no una unidad con IA. */
@@ -6536,6 +6687,12 @@ function dueloTick(dt, inp){
     r.mesh.position.lerpVectors(r.pAnt, r.p, r.t);
     r.mesh.rotation.y=r.yaw;
     if(r.mesh.userData.rotors) for(const ro of r.mesh.userData.rotors) ro.rotation.y+=dt*70;
+    /* SE FUE. Si en 4 s no llega una posición, el rival cerró la pestaña, se
+       le cayó el internet o se fue. Antes su dron se quedaba clavado en el
+       aire para siempre y el otro seguía disparándole a un fantasma. */
+    r.mudo=(r.mudo||0)+dt;
+    if(r.mudo>4){ r.alHay=false; r.mesh.visible=false;
+      if(!duelo.fin) feed('📡 Se perdió el rival · duelo suspendido','bad'); }
   }
   // reaparición tras derribo
   if(duelo.respawnT>0){ duelo.respawnT-=dt; if(duelo.respawnT<=0){ dueloColocar(); drone.batt=1; } }
@@ -6600,13 +6757,20 @@ function pintarFaccion(){
 }
 function elegirFaccion(f){ store.faccion=f; save(); pintarFaccion();
   feed((f==='azul'?'🔵':'🔴')+' Te uniste al bando '+f.toUpperCase()); }
+/* Cada entrada a la pestaña es una consulta; entrar y salir rápido lanzaba
+   varias y la LENTA pisaba a la rápida al volver. El contador de generación
+   hace que solo la última tenga permiso de pintar. */
+let guerraGen=0;
 async function cargarGuerra(){
+  const gen=++guerraGen;
   pintarFaccion();
   const est=$('guerraEstado'), mapa=$('guerraMapa'), pie=$('guerraPie');
   est.textContent='Consultando el frente…'; pie.textContent='';
   try{
     const sb=await guerraCliente();
+    if(gen!==guerraGen) return;
     const {data,error}=await sb.from('guerra_territorios').select('*').order('nombre');
+    if(gen!==guerraGen) return;
     if(error) throw error;
     guerraTerr=data;
     const az=data.filter(t=>t.dueno==='azul').length, ro=data.filter(t=>t.dueno==='rojo').length;
@@ -6625,8 +6789,27 @@ async function cargarGuerra(){
     }
     pie.textContent=store.faccion?'':'Elige bando arriba: sin bando, tus victorias no suman.';
   }catch(e){
-    est.textContent='El frente aún no está desplegado.';
-    if(mapa) mapa.innerHTML='';
+    if(gen!==guerraGen) return;
+    /* Sin conexión y "sin tablas" no son lo mismo, y decir lo segundo cuando
+       pasa lo primero manda a Joan a Supabase a buscar un problema que no
+       existe. Se distinguen por el mensaje. */
+    const red = !navigator.onLine || /conector|Failed to fetch|NetworkError|network/i.test(String(e&&e.message||e));
+    if(red){ est.innerHTML='📡 Sin conexión: no se pudo consultar el frente.';
+      if(pie) pie.textContent='Vuelve a entrar cuando tengas internet.'; if(mapa) mapa.innerHTML=''; return; }
+    /* Sin las tablas todavía, la pestaña enseña el MAPA de lo que se va a
+       disputar — las mismas ciudades del catálogo — pero SIN marcadores ni
+       dueños, porque no los hay. Enseñar el tablero vacío es honesto; enseñar
+       puntos inventados para que se vea bonito sería mentir. */
+    est.innerHTML='⚠️ El frente todavía no está desplegado: <b>nadie domina nada aún</b>.';
+    if(mapa){ mapa.innerHTML='';
+      for(const g of CIUDADES) for(const [nom,la,lo] of g.c){
+        const el=document.createElement('button'); el.className='mcard'; el.style.borderLeftColor='#5b6273'; el.style.opacity='.72';
+        el.innerHTML='<div class="mtop"><span class="biome" style="color:var(--gris-2)">SIN DESPLEGAR</span><span class="diff">'+g.g+'</span></div>'+
+          '<h4>'+nom+'</h4><p>Territorio en espera. Puedes pelear aquí igual: lo que ganes contará en cuanto se encienda el frente.</p>';
+        el.onclick=()=>{ const seg=[...document.querySelectorAll('#navSeg button')].find(b=>b.dataset.tab==='real');
+          if(seg) seg.click(); $('czLat').value=la; $('czLon').value=lo; };
+        mapa.appendChild(el);
+      } }
     if(pie) pie.innerHTML='Para encenderlo: aplicar <b>guerra.sql</b> en Supabase (SQL Editor → pegar → Run). El juego no se rompe mientras tanto — esta pestaña espera.';
   }
 }
@@ -6838,7 +7021,13 @@ function wireUI(){
   $('brGarage').onclick=()=>{ $('briefing').classList.remove('on'); $('menu').classList.add('on'); switchTab('garage'); };
   $('brBack').onclick=()=>{ $('briefing').classList.remove('on'); $('menu').classList.add('on'); };
   // pausa
-  $('pResume').onclick=resume; $('pRestart').onclick=()=>{ $('pause').classList.remove('on'); currentReal?startRealMission(currentReal):startMission(missionIdx); }; $('pMenu').onclick=toMenu;
+  $('pResume').onclick=resume;
+  /* paused=false ANTES de recargar: si no, la descarga del mundo real corre con
+     el juego en pausa y al volver todo sigue congelado. Y se cierra el duelo:
+     reiniciar una misión arrastrando una sala viva no tiene sentido. */
+  $('pRestart').onclick=()=>{ $('pause').classList.remove('on'); paused=false; dueloCerrar();
+    currentReal?startRealMission(currentReal):startMission(missionIdx); };
+  $('pMenu').onclick=toMenu;
   // resultado
   $('rRetry').onclick=()=>{ currentReal?startRealMission(currentReal):startMission(missionIdx); }; $('rMenu').onclick=toMenu;
   $('rNext').onclick=()=>{ if(!currentReal && missionIdx<MISSIONS.length-1) startMission(missionIdx+1); else toMenu(); };

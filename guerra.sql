@@ -38,11 +38,18 @@ create policy "territorios: leer todos"
 
 create table if not exists guerra_partes (
   id         bigint generated always as identity primary key,
-  territorio text not null references guerra_territorios(id),
+  territorio text not null,
   faccion    text not null check (faccion in ('azul','rojo')),
   puntos     integer not null check (puntos between 1 and 3),
   creado     timestamptz not null default now()
 );
+-- ⚠ SIN llave foránea a propósito. Se puede pelear en CUALQUIER coordenada del
+-- planeta ("tu zona") y en los 9 mapas de montaña del catálogo, no solo en las
+-- 23 ciudades sembradas. Con la foránea, esos partes los rechazaba la base y
+-- se perdían en silencio: el jugador ganaba y no pasaba nada, sin explicación.
+-- Ahora el territorio se crea solo la primera vez que alguien pelea ahí
+-- (lo hace el trigger de abajo), que es como se debe abrir un frente nuevo.
+alter table guerra_partes drop constraint if exists guerra_partes_territorio_fkey;
 alter table guerra_partes enable row level security;
 
 drop policy if exists "partes: presentar" on guerra_partes;
@@ -58,6 +65,15 @@ create policy "partes: leer"
 create or replace function guerra_sumar() returns trigger
 language plpgsql security definer set search_path = public as $$
 begin
+  -- Frente nuevo: si nadie ha peleado nunca aquí, el territorio se abre solo.
+  -- El nombre provisional son sus coordenadas; se puede renombrar después.
+  insert into guerra_territorios (id, nombre, lat, lon)
+  values (new.territorio,
+          'Frente ' || new.territorio,
+          coalesce(split_part(new.territorio, ',', 1)::double precision, 0),
+          coalesce(split_part(new.territorio, ',', 2)::double precision, 0))
+  on conflict (id) do nothing;
+
   update guerra_territorios t set
     puntos_azul = t.puntos_azul + case when new.faccion='azul' then new.puntos else 0 end,
     puntos_rojo = t.puntos_rojo + case when new.faccion='rojo' then new.puntos else 0 end,
@@ -100,5 +116,15 @@ insert into guerra_territorios (id, nombre, lat, lon) values
   ('41.89,12.49', 'Roma · Coliseo', 41.89, 12.49),
   ('35.66,139.70', 'Tokio · Shibuya', 35.66, 139.70),
   ('25.20,55.27', 'Dubái · Burj Khalifa', 25.20, 55.27),
-  ('30.05,31.24', 'El Cairo · Centro', 30.05, 31.24)
+  ('30.05,31.24', 'El Cairo · Centro', 30.05, 31.24),
+  -- y los 9 mapas de montaña del catálogo, que también se disputan
+  ('6.79,-72.97', 'Cañón del Chicamocha', 6.79, -72.97),
+  ('4.89,-75.32', 'Nevado del Ruiz', 4.89, -75.32),
+  ('10.83,-73.72', 'Sierra Nevada de Santa Marta', 10.83, -73.72),
+  ('36.15,-112.05', 'Gran Cañón', 36.15, -112.05),
+  ('35.36,138.73', 'Monte Fuji', 35.36, 138.73),
+  ('27.99,86.92', 'Everest', 27.99, 86.92),
+  ('-0.68,-78.44', 'Volcán Cotopaxi', -0.68, -78.44),
+  ('-50.94,-73.03', 'Torres del Paine', -50.94, -73.03),
+  ('-32.65,-70.01', 'Aconcagua', -32.65, -70.01)
 on conflict (id) do nothing;

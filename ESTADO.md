@@ -41,6 +41,63 @@ y las trampas que ya costaron tiempo una vez.
 
 ---
 
+## La revisión adversaria de D0–D3 (15-ago) — 33 defectos, 16 arreglados
+
+Seis lentes en paralelo revisaron el código nuevo y cada hallazgo pasó por un
+verificador que intentaba REFUTARLO leyendo el código. Sobrevivieron 33. Los
+que introdujeron D0–D3 quedaron arreglados; el resto está listado abajo.
+
+**Del duelo (todos eran míos):**
+- `duelo.active` se encendía ANTES de construir el mundo. Si fallaba la
+  descarga de teselas, el jugador volvía al menú con el duelo encendido: la
+  misión siguiente lo teletransportaba a una esquina, el marcador se pintaba
+  encima del objetivo y sus victorias dejaban de sumar en la guerra el resto
+  de la sesión. Ahora `startRealMission` DEVUELVE si logró arrancar.
+- Un segundo `hola` reiniciaba la partida a 0–0 y recargaba el mundo. Pasaba
+  con solo caerse el wifi un segundo (supabase-js reemite `SUBSCRIBED` al
+  reconectar), con doble clic, o si un tercero tecleaba los mismos 4 dígitos.
+- Los mensajes de red actuaban con la simulación parada: te derribaban DENTRO
+  del menú de pausa y el reloj de reaparición no corría. Ahora en duelo **no
+  hay pausa** (el rival sigue ahí) y `pum`/`tiro` exigen `playing && !paused`.
+- `dueloFin` no cerraba nada: el perdedor reaparecía 3 s después de perder.
+  Ahora hay pantalla de resultado propia (⚔️ DUELO GANADO / PERDIDO).
+- `dueloColocar` movía tu posición pero no la MALLA del blindado ni el puesto
+  de mando: el chasis se quedaba dibujado en el centro del mapa y nacías con
+  el enlace medido desde el sitio equivocado.
+- Reiniciar desde la pausa no cerraba la sala y dejaba el juego congelado
+  durante la descarga (`paused` seguía en true).
+
+**Del campo grande:**
+- `SIG_RANGE` estaba clavado en 280 u: en un campo de 7,2 km el enlace moría a
+  1,3 km y el 90 % del mapa era inalcanzable — y en duelo los dos nacían fuera
+  de alcance, sin poder disparar. Ahora escala con el campo (medido: a 1,6 km
+  quedan 4 barras donde antes no había ninguna).
+- El despliegue entero (enemigos, chatarra, extracción, puntos de recon) usaba
+  radios absolutos: mapa gigante y toda la guerra apiñada en el kilómetro del
+  centro. Ahora escalan con `escCampo()`, que vale exactamente 1 a 2,4 km.
+- La rejilla de colisiones se cacheaba mirando solo CUÁNTOS obstáculos hay: al
+  cambiar de tamaño de campo seguía usando la del mundo viejo y las colisiones
+  desaparecían en media ciudad. Se invalida en `clearTerrain`.
+
+**Del pivote a drones** (arrancar en el aire dejó al chasis aparcado, y medio
+juego seguía mirándolo a él):
+- El escuadrón aliado escoltaba al tanque vacío mientras tú volabas lejos.
+- La zona de extracción solo contaba si llegaba el tanque.
+- El radar se centraba en el tanque: volabas a un kilómetro y no salías en tu
+  propio minimapa. Ahora los tres usan `activeUnitPos()`.
+
+**De la guerra:** los partes de los 9 mapas de montaña y de "tu zona" los
+rechazaba la llave foránea y **se perdían en silencio**. Se quitó la foránea y
+el trigger ABRE el territorio la primera vez que alguien pelea ahí.
+
+### Lo que queda sin arreglar (de otras sesiones, no de D0–D3)
+
+Verificados y reales, anotados para quien siga: el UGV arranca flotando 2,6 m
+(el `+0.5` son unidades, no metros); volver al tanque con F deja el dron
+activo y congelado en el aire recargando batería; la mancha térmica sobrevive
+entre misiones; el techo del dron cuelga de la cumbre del mapa en vez del
+suelo que tiene debajo; y `computeGunnery` barre 420 u fijas.
+
 ## Lo que se hizo en esta sesión
 
 Se partió de un juego que vivía suelto en una carpeta sin git y que en Bogotá
