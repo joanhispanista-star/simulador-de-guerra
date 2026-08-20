@@ -3209,10 +3209,18 @@ function geo(clave, hacer){ return GEO[clave] || (GEO[clave]=hacer()); }
    está más abajo en metros, no en números sueltos.
    --------------------------------------------------------------------- */
 // (MPU y M se declaran arriba del todo: los usan tablas que se evalúan antes)
-const ESC_UGV  = 2.4*M/4.2;        // el casco medía 4,2 u de largo → 2,4 m
-const ESC_DRON = 0.9*M/1.9;        // 1,9 u de envergadura → 0,9 m (dron pesado de ataque)
-const ESC_PERRO= 0.9*M/1.9;        // 1,9 u → 0,9 m de largo
-const ESC_TORRETA=2.5*M/4.8;       // emplazamiento de arma remota: 2,5 m de alto
+/* ⚠ EL DENOMINADOR ES LO QUE MIDE EL MODELO EN CRUDO, Y HAY QUE MEDIRLO, NO
+   SUPONERLO. Aquí estaba supuesto y estaba mal: se dijo "el casco mide 4,2 u"
+   cuando el modelo entero mide 7,07 u, y "1,9 u de envergadura" cuando el dron
+   mide 3,29 u. Resultado: las dos máquinas salían 1,7 veces más grandes de lo
+   que el propio comentario prometía — el UGV medía 2,48 m de ancho y 4,04 de
+   largo, y el dron 1,56 m para una envergadura declarada de 0,9.
+   Los números de abajo salen de medir con DRONES.medidas() y dividir. Si
+   alguien cambia un modelo, hay que volver a medir: el comentario no basta. */
+const ESC_UGV  = 3.0*M/7.07;       // el modelo entero mide 7,07 u → 3,0 m con el cañón
+const ESC_DRON = 1.0*M/3.29;       // 3,29 u de punta a punta → 1,0 m (0,9 de bastidor + hélices)
+const ESC_PERRO= 0.9*M/1.94;       // 1,94 u de alto → 0,9 m a la cruz
+const ESC_TORRETA=2.5*M/2.80;      // 2,80 u de alto → 2,5 m el emplazamiento
 const ESC_JAMMER =8.0*M/7.0;       // mastil de interferencia: 8 m
 
 /* =====================================================================
@@ -3743,6 +3751,10 @@ function updateProjectiles(dt){
       let u=((c.x-_pa.x)*ax+(c.y-_pa.y)*ay+(c.z-_pa.z)*az)/L2; u=u<0?0:u>1?1:u;
       const qx=_pa.x+ax*u-c.x, qy=_pa.y+ay*u-c.y, qz=_pa.z+az*u-c.z;
       return Math.sqrt(qx*qx+qy*qy+qz*qz); };
+    // ¿a cuánto pasó del blanco? Sin este número no se puede saber si falla la
+    // puntería o el registro del impacto, y son arreglos distintos
+    if(TIRO_DBG && p.dbg && TIRO_DBG.tgt){ const dd=dSeg(TIRO_DBG.tgt.pos);
+      if(dd<TIRO_DBG.minDist) TIRO_DBG.minDist=dd; }
     /* ⚠ LOS BLANCOS SE MIRAN ANTES QUE EL SUELO. Parece un detalle de orden y
        no lo es: el proyectil salta hasta 17 m por cuadro, y un disparo tenso que
        pasa rozando el terreno pisa el suelo y el blanco EN EL MISMO CUADRO. Con
@@ -5163,7 +5175,7 @@ function updatePlayer(dt, inp){
        que es el UGV. Estuvieron en 2,1 y 1,4 UNIDADES = 22 × 15 m, la mitad de
        una manzana: el vehículo promediaba el terreno de media cuadra y por eso
        se inclinaba a destiempo y flotaba sobre los baches. */
-    const cl=1.2*M, cs=0.62*M;
+    const cl=1.2*M, cs=0.9*M;
     const hFL=terrainHeight(player.pos.x+fX*cl-rX*cs, player.pos.z+fZ*cl-rZ*cs);
     const hFR=terrainHeight(player.pos.x+fX*cl+rX*cs, player.pos.z+fZ*cl+rZ*cs);
     const hRL=terrainHeight(player.pos.x-fX*cl-rX*cs, player.pos.z-fZ*cl-rZ*cs);
@@ -5215,6 +5227,37 @@ function oirDesdeCamara(pos, alcance){
 function aimDir(){ // dirección de disparo (mundo) según view
   const cy=Math.cos(player.view.yaw), sy=Math.sin(player.view.yaw), cp=Math.cos(player.view.pitch), sp=Math.sin(player.view.pitch);
   return new THREE.Vector3(sy*cp, sp, cy*cp).normalize();
+}
+/* ⚠ APUNTAR A UN BLANCO, CON ADELANTO Y CON CAÍDA. Solo la usan las pruebas
+   (?dbg), pero tuvo dos fallos que hicieron creer que el juego no registraba
+   los impactos, así que merece estar escrita en serio:
+     · EL SIGNO. aimDir() construye la dirección con y=sin(pitch), así que
+       apuntar más alto pide pitch POSITIVO. Tenía un menos delante del atan2, y
+       encima medía desde player.pos con un "+1 −2" en UNIDADES (5,2 y 10,4 m)
+       que compensaba el error a medias por casualidad: los tiros caían nueve
+       metros largos y parecía que el motor no registraba nada.
+     · EL ADELANTO. Un obús tarda medio segundo en llegar a 500 m y un UGV
+       recorre siete metros en ese tiempo: apuntar a donde ESTÁ el blanco es
+       fallar por el ancho de un vehículo. El punto de intercepción sale de
+       iterar el tiempo de vuelo tres veces; con un proyectil cinco veces más
+       rápido que el blanco, converge de sobra.
+   Rumbo y cabeceo se miden desde la BOCA, no desde el centro del vehículo: el
+   cañón sobresale metro y medio y a 30 m eso ya son 3°. */
+const _ipA=new THREE.Vector3(), _v0A=new THREE.Vector3();
+function apuntarA(m){
+  const md=m.pos.distanceTo(player.pos);
+  const boca=turretMuzzle(), vel=Math.max(stats.cannon.pspeed,1);
+  let tv=md/vel;
+  for(let k=0;k<3;k++){
+    _ipA.copy(m.pos).addScaledVector(m.vel||_v0A.set(0,0,0), tv);
+    tv=_ipA.distanceTo(boca)/vel;
+  }
+  const caida=0.5*CANNON_GRAV*tv*tv;
+  const dh=Math.hypot(_ipA.x-boca.x, _ipA.z-boca.z);
+  player.view.yaw=Math.atan2(_ipA.x-boca.x, _ipA.z-boca.z);
+  player.view.pitch=clamp(Math.atan2((_ipA.y+0.4*M-boca.y)+caida, dh), -0.7, 0.5);
+  return { blanco:m.kind, dist:Math.round(md*MPU)+' m',
+    adelanto_m:+(_ipA.distanceTo(m.pos)*MPU).toFixed(1), caida_m:+(caida*MPU).toFixed(2) };
 }
 function turretMuzzle(){
   const ud=player.mesh.userData; const m=new THREE.Vector3();
@@ -5575,7 +5618,7 @@ function updateCamera(dt){
          aparato de 0,9 m —cuatro envergaduras— con un brazo elástico de 0,1 s
          encima: eso es una cámara de persecución, no un FPV, y filtraba toda la
          vibración. Sin lerp: la cámara está atornillada, no colgada. */
-      camera.position.set(drone.pos.x+dx*0.08, drone.pos.y+dy*0.08+0.03, drone.pos.z+dz*0.08);
+      camera.position.set(drone.pos.x+dx*0.2*M, drone.pos.y+dy*0.2*M+0.05*M, drone.pos.z+dz*0.2*M);
       V2.set(drone.pos.x+dx*30*M, drone.pos.y+dy*30*M, drone.pos.z+dz*30*M);
       camera.lookAt(V2);
       /* El HORIZONTE SE INCLINA con el banqueo. En acro va entero (la cámara es
@@ -5816,7 +5859,7 @@ async function initPhysics(){
     physWorld.sleepSpeedLimit=0.1*M;
     // cuerpo cinemático del UGV: empuja los objetos. Semi-extensiones: el UGV
     // mide 1,2 × 1,0 × 2,4 m. Estuvo en 3,2×1,8×4,6 u = un camión de 24 metros.
-    tankBody=new CANNON.Body({ mass:0, type:CANNON.Body.KINEMATIC, shape:new CANNON.Box(new CANNON.Vec3(0.6*M,0.5*M,1.2*M)) });
+    tankBody=new CANNON.Body({ mass:0, type:CANNON.Body.KINEMATIC, shape:new CANNON.Box(new CANNON.Vec3(0.92*M,0.87*M,1.5*M)) });
     physWorld.addBody(tankBody);
     physReady=true;
   }catch(e){ CANNON=false; console.warn('Física de terceros no disponible:', e&&e.message); }
@@ -6967,7 +7010,7 @@ if(location.search.indexOf('dbg')>=0) window.DRONES={
     if(drone.active) mide('dron', drone.mesh);
     r.velocidades_kmh={ UGV:+(stats.speed*MPU*3.6).toFixed(0),
       dron_horizontal:+(VEL_DRON*MPU*3.6).toFixed(0), dron_subida:+(VEL_SUBE*MPU*3.6).toFixed(0) };
-    r.camara_m={ persecucion:+(7).toFixed(0), dron_fpv:0.42 };   // ahora va en el morro, no 3,6 m detrás
+    r.camara_m={ persecucion:+(7).toFixed(0), dron_fpv:0.20 };   // ahora va en el morro, no 3,6 m detrás
     r.vuelo={ inclinacion_max_grados:+(TILT_MAX*180/Math.PI).toFixed(0),
       acel_max_g:+((9.81*Math.tan(TILT_MAX))/9.81).toFixed(2),
       frenada_desde_punta_m:+((VEL_DRON*MPU)*(VEL_DRON*MPU)/(2*9.81*Math.tan(TILT_MAX))).toFixed(0) };
@@ -6987,26 +7030,15 @@ if(location.search.indexOf('dbg')>=0) window.DRONES={
       .map(e=>({k:e.kind, esc:+e.mesh.scale.x.toFixed(1), vida:e.life}));
     return { efectos:c, proyectiles:g, demasiadoGrandes:may.slice(0,6) }; },
   /* apunta la torreta al enemigo vivo más cercano — para probar el fuego sin jugar */
+  /* Apunta al enemigo más cercano CON ADELANTO.
+     (el cálculo vive en apuntarA(), abajo del todo, para poder apuntar también
+      a un blanco concreto desde las pruebas) */
+  /* Apunta al enemigo más cercano, CON ADELANTO. El cálculo vive en apuntarA(),
+     junto a las demás funciones, para poder apuntar también a un blanco fijo
+     desde las pruebas. */
   apuntar:()=>{ let m=null,md=1e9;
     for(const e of enemies){ if(!e.alive) continue; const d=e.pos.distanceTo(player.pos); if(d<md){md=d;m=e;} }
-    if(!m) return 'sin blancos';
-    /* El rumbo también se mide desde la BOCA, no desde el centro del vehículo:
-       el cañón sobresale metro y medio, y a 30 m eso ya es un error de 3° —
-       suficiente para fallar un blanco de 1,8 m de radio. */
-    const boca=turretMuzzle();
-    player.view.yaw=Math.atan2(m.pos.x-boca.x, m.pos.z-boca.z);
-    /* ⚠ EL SIGNO DEL CABECEO. aimDir() construye la dirección con y=sin(pitch),
-       así que para apuntar a algo MÁS ALTO hace falta pitch POSITIVO. Aquí había
-       un menos delante del atan2, y encima medía desde player.pos con un "+1 −2"
-       en unidades (5,2 y 10,4 m) que compensaba el error a medias por
-       casualidad. Los tiros caían 9 metros largos y parecía que el juego no
-       registraba los impactos: era la herramienta de prueba la que apuntaba mal.
-       La boca se pide a turretMuzzle(), que es de donde sale el proyectil de
-       verdad, y la caída del tiro se SUMA. */
-    const tv=md/Math.max(stats.cannon.pspeed,1), caida=0.5*CANNON_GRAV*tv*tv;
-    const dh=Math.hypot(m.pos.x-boca.x, m.pos.z-boca.z);
-    player.view.pitch=clamp(Math.atan2((m.pos.y+0.4*M-boca.y)+caida, dh), -0.7, 0.5);
-    return { blanco:m.kind, dist:Math.round(md*MPU)+' m', caida_m:+(caida*MPU).toFixed(2) }; },
+    return m ? apuntarA(m) : 'sin blancos'; },
   /* ¿CUÁNTOS DISPAROS BIEN APUNTADOS ACIERTAN? Nació de descubrir que el
      impacto se comprobaba en un punto y no a lo largo del tramo: a 1.044 m/s el
      proyectil salta 17 m por cuadro y solo uno de cada cinco disparos
@@ -7032,26 +7064,46 @@ if(location.search.indexOf('dbg')>=0) window.DRONES={
     }
     if(tapado){ player.pos.x=bl.pos.x+Math.sin(an)*dm; player.pos.z=bl.pos.z+Math.cos(an)*dm;
       player.pos.y=terrainHeight(player.pos.x,player.pos.z)+1*M; }
-    TIRO_DBG={total:0,blanco:0,suelo:0,perdido:0,barril:0,rebote:0,penetra:0,minDist:1,tgt:bl};
+    TIRO_DBG={total:0,blanco:0,suelo:0,perdido:0,barril:0,rebote:0,penetra:0,minDist:1e9,tgt:bl,pasa:[]};
     const vivos0=enemies.filter(e=>e.alive).length;
     let hp0=0; for(const e of enemies) if(e.alive) hp0+=e.hp;
+    /* ⚠ SE DISPARA SIEMPRE AL MISMO BLANCO Y SE PARA CUANDO CAE. La primera
+       versión seguía disparando después de matarlo, y como el contador medía la
+       distancia a ESE blanco, los tiros siguientes salían "a 66 metros" y
+       parecía un 30% de acierto. Lo que medía era la distancia a un cadáver. Se
+       le devuelve la vida entre disparos para poder encadenar la muestra. */
+    const hpB=bl.hp;
     for(let i=0;i<N;i++){
-      if(!enemies.some(e=>e.alive)) break;
-      DRONES.apuntar();
-      for(let k=0;k<45;k++) simulate(1/60);      // que la torreta llegue a girar
-      DRONES.apuntar(); player.reload=0; firePlayerCannon();
-      if(projectiles.length) projectiles[projectiles.length-1].dbg=true; dados++;
+      if(!bl.alive) break;
+      bl.hp=hpB;
+      /* Tres segundos para que la torreta acabe de girar. Con 0,75 s bastaba
+         para un giro pequeño, pero si el blanco quedaba a la espalda el cañón
+         seguía barriendo al disparar y los tiros salían a 246, 238, 224... m:
+         una escalera perfecta que delataba que era la torreta, no el motor. */
+      apuntarA(bl);
+      for(let k=0;k<180;k++) simulate(1/60);
+      apuntarA(bl); player.reload=0; firePlayerCannon();
+      if(projectiles.length) projectiles[projectiles.length-1].dbg=true;
+      TIRO_DBG.minDist=1e9; dados++;
       for(let k=0;k<90;k++) simulate(1/60);      // 1,5 s de vuelo del proyectil
+      if(TIRO_DBG.minDist<1e8) TIRO_DBG.pasa.push(+(TIRO_DBG.minDist*MPU).toFixed(2));
     }
     let hp1=0; for(const e of enemies) if(e.alive) hp1+=e.hp;
     const vivos1=enemies.filter(e=>e.alive).length;
     const c=TIRO_DBG; TIRO_DBG=null;
+    /* LA CIFRA QUE IMPORTA no es el porcentaje de acierto —eso mide la puntería
+       de la prueba contra un blanco que se mueve— sino si el motor REGISTRA los
+       tiros que sí pasan por encima del blanco. Se cuentan los que pasaron
+       dentro del radio y se comparan con los que se registraron: si no son el
+       mismo número, el proyectil está atravesando enemigos otra vez. */
+    const R=bl.radius*MPU, dentro=c.pasa.filter(x=>x<=R).length;
     return { a_metros:Math.round(dm*MPU), linea_de_vista:tapado?'TAPADA':'libre',
-      disparos:dados, aciertos:c.blanco, en_el_suelo:c.suelo, perdidos:c.perdido,
-      rebotes:c.rebote, penetraciones:c.penetra,
-      cae_a_metros_del_blanco:c.ultimaDist,
-      bajas:vivos0-vivos1, dano_total:+(hp0-hp1).toFixed(0),
-      dano_de_un_impacto:stats.cannon.dmg }; },
+      disparos:dados, radio_del_blanco_m:+R.toFixed(2),
+      pasaron_dentro_del_radio:dentro, registrados:c.blanco,
+      registro: dentro===c.blanco ? 'EXACTO' : 'FALLA: '+(dentro-c.blanco)+' sin registrar',
+      paso_a_metros_del_blanco:c.pasa,
+      en_el_suelo:c.suelo, rebotes:c.rebote, penetraciones:c.penetra,
+      bajas:vivos0-vivos1, dano_de_un_impacto:stats.cannon.dmg }; },
   snapshot:()=>{ try{ const w=320,h=180; renderer.setSize(w,h,false); camera.aspect=w/h; camera.updateProjectionMatrix();
     if(composer)composer.setSize(w,h); if(skyMesh)skyMesh.position.copy(camera.position); renderScene();
     const gl=renderer.getContext(); const px=new Uint8Array(w*h*4); gl.readPixels(0,0,w,h,gl.RGBA,gl.UNSIGNED_BYTE,px);

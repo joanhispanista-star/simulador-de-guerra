@@ -268,15 +268,38 @@ exacto; al parpadear el divisor valía 0,0015).
 - `DRONES.medidas()` **ya no miente**: medía la caja del sprite térmico y decía
   "UGV de 4,00 × 4,00 × 4,04 m" de un UGV de 2,4 m. Ahora mide solo mallas.
 
-### Lo que queda abierto de esta tanda
+### Los tres cabos sueltos, ya cerrados
 
-- **El UGV mide 2,48 × 2,36 × 4,04 m** y el dron **1,56 m** de envergadura
-  cuando `ESC_DRON` dice 0,9. Los factores `ESC_*` normalizan una medida del
-  casco, no la envergadura total. Joan no lo ha reportado: **no se tocó**, pero
-  está medido y es real.
-- `DRONES.tiro()` **no adelanta el tiro a blancos en movimiento**, así que su
-  porcentaje de acierto mezcla el registro de impactos con la puntería. Sirve
-  para ver que los enemigos mueren; no para dar un porcentaje limpio.
+**Las escalas normalizaban una medida que no era la suya.** `ESC_UGV` decía "el
+casco mide 4,2 u" cuando el modelo entero mide **7,07**, y `ESC_DRON` decía
+"1,9 u de envergadura" cuando el dron mide **3,29**. Por eso las dos máquinas
+salían 1,7 veces más grandes de lo que su propio comentario prometía. Los
+denominadores ahora salen de medir con `DRONES.medidas()`, no de suponer:
+
+| | Antes | Ahora |
+|---|---|---|
+| UGV (ancho × alto × largo) | 2,48 × 2,36 × 4,04 m | **1,84 × 1,75 × 3,00 m** |
+| Dron | 1,56 × 0,51 × 1,55 m | **1,00 × 0,33 × 1,00 m** |
+| Torreta (alto) | 1,46 m | **2,50 m**, como decía el comentario |
+
+Con ellas se ajustaron el colisionador físico del UGV, la huella de la
+suspensión y la posición de la cámara del morro (20 cm, no 42).
+
+**Y `DRONES.tiro()` ya adelanta el tiro** (punto de intercepción por iteración
+del tiempo de vuelo) y dispara siempre al MISMO blanco, dándole la vida entre
+disparos. Con eso da la cifra que importa, que no es el porcentaje de acierto
+sino **si el motor registra los tiros que sí pasan por encima del blanco**:
+
+    50 m … 1500 m → pasaron dentro del radio: 19 · registrados: 19 · EXACTO
+
+Tres cosas que costaron una hora de diagnóstico falso y conviene no repetir:
+- **El contador medía la distancia a un cadáver.** El blanco moría al tercer
+  tiro y los siguientes salían "a 66 metros"; parecía un 30% de acierto.
+- **La propia herramienta de puntería tenía el signo del cabeceo invertido** y
+  medía desde `player.pos` con un "+1 −2" en unidades. Los tiros caían nueve
+  metros largos y la culpa parecía del motor.
+- **La torreta seguía girando al disparar.** Con 0,75 s de espera, un blanco a
+  la espalda daba la escalera 246 → 238 → 224 → … → 1 m. Ahora espera 3 s.
 
 ## Trampas que ya costaron tiempo
 
