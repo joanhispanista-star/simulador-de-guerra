@@ -1104,8 +1104,13 @@ const CATALOG={
        de la distancia. Es la herramienta de mirar sin que te vean. */
     {id:'ave', name:'Ave espía (ornitóptero)', cost:22, armed:false, cam:1.5, maxAlt:120, ave:true, sigilo:0.33,
       note:'Parece un pájaro: te detectan a UN TERCIO de distancia. Desarmado, para reconocer sin que te vean'},
-    {id:'marino', name:'Marítimo (USV)', cost:20, armed:true, dmg:55, cam:1.2, maxAlt:40, domain:'surface', note:'Nave de superficie: domina el mar (mapas navales)'},
-    {id:'sub', name:'Submarino (UUV)', cost:26, armed:true, dmg:60, cam:1.1, maxAlt:60, domain:'sub', note:'Opera BAJO el agua (mapas navales)'},
+    /* `vMax` en m/s reales. Una lancha rápida no tripulada hace 40 nudos; un
+       sumergible, 6. Esa diferencia de siete veces ES la diferencia entre los
+       dos oficios, y antes los dos iban a la misma velocidad del cuadricóptero. */
+    {id:'marino', name:'Marítimo (USV)', cost:20, armed:true, dmg:55, cam:1.2, maxAlt:40, domain:'surface', vMax:20,
+      note:'Lancha no tripulada, 72 km/h. Empuja por la hélice y gobierna con timón: sin arrancada no obedece'},
+    {id:'sub', name:'Submarino (UUV)', cost:26, armed:true, dmg:60, cam:1.1, maxAlt:60, domain:'sub', vMax:3,
+      note:'Sumergible, 11 km/h. Lento y silencioso; llena lastres para bajar'},
     {id:'hibrido', name:'Híbrido aire-agua', cost:34, armed:true, dmg:55, cam:1.4, maxAlt:150, domain:'amph', fiber:true, note:'Vuela y se sumerge; enlace por fibra'},
   ]},
   aliados:{ label:'Compañeros IA (escuadrón)', pick:[
@@ -5769,6 +5774,11 @@ function updateDrone(dt, inp){
   const inPitch=clamp(inp.dr_pitch||0,-1,1), inRoll=clamp(inp.dr_roll||0,-1,1);
   const lift=(inp.up?1:0)-(inp.down?1:0);
   const vx0=drone.vel.x, vz0=drone.vel.z;   // para medir la aceleración de este cuadro
+  /* Qué es este aparato decide CÓMO se mueve, y hay que saberlo antes de
+     elegir el modelo: un casco en el agua no obedece a las mismas ecuaciones
+     que un rotor en el aire, y hasta ahora usaban las mismas. */
+  const dom=stats.drone.domain;
+  const NAVAL = (dom==='surface' || dom==='sub');
   const cy=Math.cos(drone.yaw), sy=Math.sin(drone.yaw);
   // "right" es la DERECHA DE LA PANTALLA (comprobado con la matriz de la cámara):
   // con el signo anterior, inclinar a la derecha desplazaba el dron a la izquierda.
@@ -5791,9 +5801,25 @@ function updateDrone(dt, inp){
        inclinar, subir/bajar = cabecear. No hay palancas nuevas que aprender. */
     const VC=(stats.drone.vCrucero||38)*M, VP=(stats.drone.vPerdida||16)*M;
     drone.vAire=drone.vAire==null?VC:drone.vAire;
-    // gas: la palanca de adelante pide más velocidad; el aire frena siempre
-    const gas=inPitch;
-    drone.vAire=clamp(damp(drone.vAire, VC*(1+gas*0.55), 0.5, dt), VP*0.55, VC*1.6);
+    /* ⚠ EL GAS DA EMPUJE, NO VELOCIDAD. Antes la palanca PEDÍA una velocidad y
+       el aparato la tomaba: eso es un coche con control de crucero, no un
+       avión. La diferencia se nota en todo lo que importa —trepar cuesta
+       velocidad, picar la regala, el último nudo cuesta el doble que el
+       primero— y ninguna de esas tres cosas existía.
+       Ahora es la ecuación de siempre:   dV/dt = (T − D)/m − g·sen(γ)
+       con la resistencia cuadrática D/m = k·V². La constante k se despeja para
+       que a todo gas y en vuelo horizontal el empuje iguale a la resistencia
+       justo en la velocidad de nunca exceder: la punta SALE del modelo, no está
+       escrita a mano. Con estos números el crucero cae en el 71% de gas y el
+       planeo sin motor es de unos 22 a 1, que es lo de un ala de gran
+       autonomía. */
+    const VNE=VC*1.45;                       // velocidad de nunca exceder
+    const A_EMP=3.5*M;                       // empuje máximo, en aceleración
+    const kD=A_EMP/(VNE*VNE);                // resistencia: T=D exactamente en VNE
+    const gas=clamp(inPitch*0.5+0.5, 0, 1);  // la palanca centrada = medio gas
+    const gamma=drone.pitch||0;
+    drone.vAire += ((A_EMP*gas*power) - kD*drone.vAire*drone.vAire - 9.81*M*Math.sin(gamma))*dt;
+    drone.vAire = clamp(drone.vAire, VP*0.45, VNE*1.12);
     // inclinación: la palanca de lado la pide, y el aparato tarda en tomarla
     const FI_MAX=45*Math.PI/180;
     drone.roll=damp(drone.roll, clamp(inRoll,-1,1)*FI_MAX + (inp.dr_yaw||0)*0.10, 2.6, dt);
@@ -5804,9 +5830,14 @@ function updateDrone(dt, inp){
     drone.yawVel=(9.81*M)*Math.tan(drone.roll)/Math.max(drone.vAire,VP*0.6)*sust;
     drone.yaw-=drone.yawVel*dt;
     // cabeceo: la palanca de subir/bajar pide trayectoria, y subir cuesta velocidad
-    const senda=clamp(lift*0.30 - (enPerdida?0.55:0), -0.6, 0.35);
-    drone.pitch=damp(drone.pitch, senda, 2.2, dt);
-    drone.vAire-=Math.sin(drone.pitch)*9.81*M*dt*0.75;   // trepar frena, picar acelera
+    /* La senda de vuelo la pide la palanca de subir/bajar. Lo que cuesta trepar
+       ya lo cobra la ecuación de arriba (el término −g·sen γ), así que aquí NO
+       se vuelve a restar: hacerlo dos veces era cobrar el peaje dos veces.
+       Y el ángulo de subida está topado por lo que el motor puede sostener:
+       pedir más morro del que da el empuje solo te frena hasta la pérdida, que
+       es exactamente lo que pasa de verdad. */
+    const senda=clamp(lift*0.32 - (enPerdida?0.6:0), -0.65, 0.32);
+    drone.pitch=damp(drone.pitch, senda, 2.0, dt);
     // y la velocidad se convierte en movimiento por donde apunta el morro
     const cp=Math.cos(drone.pitch), sp=Math.sin(drone.pitch);
     drone.vel.set(sy*cp, sp, cy*cp).multiplyScalar(drone.vAire*power);
@@ -5848,6 +5879,77 @@ function updateDrone(dt, inp){
     /* Resistencia del aire: τ≈1,3 s. Con el 0,12 de antes (τ=0,47 s) el aparato
        se paraba solo en medio segundo y eso mataba la inercia que define el acro. */
     drone.vel.x*=Math.pow(0.45,dt); drone.vel.z*=Math.pow(0.45,dt); drone.vel.y*=Math.pow(0.75,dt);
+  } else if(NAVAL){
+    /* ================== CASCO EN EL AGUA (USV y UUV) ==================
+       Un barco NO es un dron que flota, y hasta ahora lo era: usaba el modelo
+       del cuadricóptero, así que se desplazaba de lado, giraba parado y se
+       detenía en seco. Tres cosas que ningún casco hace.
+
+       Lo que manda en el agua:
+         · EL EMPUJE VA POR EL EJE. La hélice empuja hacia proa y punto. No hay
+           forma de moverse de costado.
+         · SIN ARRANCADA NO HAY GOBIERNO. El timón desvía el agua que pasa por
+           él: parado no pasa agua y el barco no obedece. Es la primera lección
+           de cualquiera que aprende a gobernar, y es la que más cambia el
+           pilotaje respecto a un dron.
+         · LA RESISTENCIA ES CUADRÁTICA. Por eso la velocidad punta sale sola de
+           la potencia (T = D) en vez de estar puesta a mano, y por eso el
+           último nudo cuesta el doble que el primero.
+         · Y UN CASCO NO FRENA: desplaza toneladas de agua y sigue. La distancia
+           de parada de un USV a toda máquina son decenas de metros.
+       ================================================================ */
+    const esSub = dom==='sub';
+    const VMAX=(stats.drone.vMax || (esSub?3:20))*M;        // m/s reales
+    const gas=clamp(inPitch,-1,1);
+    // resistencia cuadrática ajustada para que T=D justo en VMAX
+    const A_EMP=3.2*M*(esSub?0.35:1);                        // aceleración de la hélice
+    const kDrag=A_EMP/(VMAX*VMAX);
+    const v=Math.hypot(drone.vel.x, drone.vel.z);
+    const empuje=A_EMP*gas*power - kDrag*v*v*Math.sign(gas>=0?1:1);
+    // marcha atrás: la hélice rinde la mitad y el casco va sucio
+    const acel=(gas<0? A_EMP*gas*0.45*power : A_EMP*gas*power) - kDrag*v*v;
+    /* TIMÓN. La autoridad crece con la arrancada y se satura: por debajo de un
+       nudo y medio no gobierna, y a partir de media máquina ya no gana más. */
+    const arrancada=clamp(v/(VMAX*0.35), 0, 1);
+    const TIMON=(esSub?0.55:0.85);
+    drone.yawVel=damp(drone.yawVel||0, -clamp(inRoll+ (inp.dr_yaw||0),-1,1)*TIMON*arrancada, 2.2, dt);
+    drone.yaw-=drone.yawVel*dt;
+    // el empuje se aplica SOLO por el eje del casco
+    const proa=_dv1.set(sy,0,cy);
+    drone.vel.x+=proa.x*acel*dt; drone.vel.z+=proa.z*acel*dt;
+    /* Deriva: el casco no puede ir de lado, así que la componente transversal
+       de la velocidad se mata deprisa. Lo poco que queda es el abatimiento
+       real, y es lo que hace que en un viraje cerrado el barco "patine". */
+    const trav=drone.vel.x*(-cy) + drone.vel.z*(sy);
+    drone.vel.x-=(-cy)*trav*Math.min(1, 2.4*dt);
+    drone.vel.z-=( sy)*trav*Math.min(1, 2.4*dt);
+    // el viento y la corriente empujan (a un submarino sumergido, mucho menos)
+    drone.vel.x+=windVec.x*dt*(esSub?0.15:0.55);
+    drone.vel.z+=windVec.z*dt*(esSub?0.15:0.55);
+    /* PROFUNDIDAD. El USV flota y no elige; el UUV llena y vacía lastres, que
+       es lento a propósito: un sumergible no sube y baja como un ascensor. */
+    if(esSub || dom==='amph'){
+      drone.vel.y=damp(drone.vel.y, lift*1.2*M*power, 1.1, dt);
+    } else {
+      drone.vel.y=damp(drone.vel.y, 0, 4, dt);              // el casco se queda en su línea de flotación
+    }
+    /* ASPECTO. Escora HACIA DENTRO del viraje (un casco planeador se tumba
+       hacia el lado del giro) y la proa se levanta al acelerar y se hunde al
+       parar, que es la marca de que hay agua debajo. Un submarino sumergido no
+       hace ninguna de las dos: no hay superficie que lo incline. */
+    const enSuperficie = !esSub || (water && water.visible && drone.pos.y > water.position.y-0.4*M);
+    if(enSuperficie){
+      drone.roll = damp(drone.roll, clamp(-drone.yawVel*1.1, -0.42, 0.42), 2.4, dt);
+      const proaArriba=clamp((v/VMAX)*0.22 - Math.min(0,acel/A_EMP)*0.18, -0.12, 0.22);
+      drone.pitch=damp(drone.pitch, proaArriba, 1.8, dt);
+      // y la mar: el casco cabecea con el oleaje, más cuanto más viento
+      const mar=Math.min(1, windVec.length()*0.4);
+      drone.pitch += Math.sin(missionTime*1.35)*0.05*mar;
+      drone.roll  += Math.sin(missionTime*0.95+1.1)*0.07*mar;
+    } else {
+      drone.roll =damp(drone.roll,  clamp(-drone.yawVel*0.5,-0.2,0.2), 1.6, dt);
+      drone.pitch=damp(drone.pitch, clamp(-drone.vel.y*2.2,-0.35,0.35), 1.6, dt);
+    }
   } else {
     /* FÁCIL — como vuela un dron comercial de hoy, que es lo que hace que
        cualquiera pueda pilotarlo:
@@ -5903,7 +6005,7 @@ function updateDrone(dt, inp){
   drone.pos.addScaledVector(drone.vel, dt);
   // límites y suelo
   drone.pos.x=clamp(drone.pos.x,-HALF+4,HALF-4); drone.pos.z=clamp(drone.pos.z,-HALF+4,HALF-4);
-  const dom=stats.drone.domain, gy=terrainHeight(drone.pos.x,drone.pos.z);
+  const gy=terrainHeight(drone.pos.x,drone.pos.z);
   const wl = (water&&water.visible)? water.position.y : -9999;
   let minY;
   if(dom==='sub'||dom==='amph') minY=gy+0.4*M;                     // se sumergen hasta el fondo
