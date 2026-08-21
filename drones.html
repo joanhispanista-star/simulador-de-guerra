@@ -1886,6 +1886,48 @@ const REAL_MAPS=[
     enemies:[{t:'tank',n:10},{t:'airdrone',n:6}], objs:[{type:'destroy',tag:'enemy',n:16,text:'Conquista la cumbre (16)'}] },
 
   /* ---------------------------------------------------------------------
+     ZONAS QUE PIDIÓ JOAN. Las tres existen y son terreno real descargado: el
+     Donbás, Taiwán y el Canal de Panamá. Los bandos del juego siguen siendo
+     AZUL y ROJO, inventados a propósito — aquí lo que se trae es la geografía,
+     igual que el Everest o el Gran Cañón.
+     Cada coordenada se sondeó antes con DRONES.sonda(lat,lon), que mide el
+     desnivel y el agua que quedan DENTRO del campo jugable de 2,4 km, y el
+     número de la ficha es el que salió. Se descartaron los puntos que daban
+     terreno plano o agua de un palmo.
+     ⚠ EL RELIEVE Y EL SATÉLITE SON FIABLES; LOS EDIFICIOS NO. Vienen de la API
+     de Overpass, que limita las peticiones seguidas: en las pruebas Avdíivka
+     trajo 1.193 edificios reales y diez minutos después la misma consulta
+     devolvía vacío en las tres ciudades siguientes. Por eso ninguna ficha
+     promete edificios salvo la que se pudo comprobar. El juego ya los trae en
+     segundo plano y avisa; si no llegan, el mapa se juega igual con su relieve
+     y su imagen de satélite.
+     --------------------------------------------------------------------- */
+  { id:'bajmut', name:'Donbás · Bajmut', pais:'Ucrania 🇺🇦', lat:48.595, lon:38.000, zoom:12, tiles:3, vexag:1.0,
+    desc:'Estepa ondulada de la cuenca minera. Medido: 56 m de desnivel en 2,4 km — campo abierto, casi sin dónde esconderse.',
+    enemies:[{t:'tank',n:7},{t:'turret',n:4},{t:'perro',n:5},{t:'airdrone',n:4}],
+    objs:[{type:'destroy',tag:'enemy',n:18,text:'Toma el pueblo (18)'}] },
+  { id:'avdiivka', name:'Donbás · Avdíivka', pais:'Ucrania 🇺🇦', lat:48.140, lon:37.750, zoom:12, tiles:3, vexag:1.0,
+    desc:'Llanura industrial. Medido: 33 m de desnivel y 1.193 edificios reales de OpenStreetMap (el más alto, 14 pisos): el terreno más plano del catálogo y la ciudad más completa.',
+    enemies:[{t:'tank',n:8},{t:'turret',n:5},{t:'airdrone',n:5}],
+    objs:[{type:'destroy',tag:'enemy',n:18,text:'Despeja la llanura (18)'}] },
+  { id:'taroko', name:'Taiwán · Garganta de Taroko', pais:'Taiwán 🇹🇼', lat:24.170, lon:121.490, zoom:12, tiles:3, vexag:0.9,
+    desc:'Desfiladero de mármol de paredes verticales. Medido: 1.451 m de desnivel — el mapa más quebrado que hay, y el más difícil de volar.',
+    enemies:[{t:'tank',n:5},{t:'turret',n:6},{t:'airdrone',n:6},{t:'perro',n:4}],
+    objs:[{type:'destroy',tag:'enemy',n:18,text:'Limpia el desfiladero (18)'}] },
+  { id:'yushan', name:'Taiwán · Yushan (Monte Jade)', pais:'Taiwán 🇹🇼', lat:23.470, lon:120.957, zoom:12, tiles:3, vexag:0.85,
+    desc:'El techo de Taiwán, 3.952 m. Medido: 1.096 m de desnivel arrancando ya a 2.700 m de altura. Aire fino y laderas largas.',
+    enemies:[{t:'tank',n:6},{t:'airdrone',n:6},{t:'perro',n:4}],
+    objs:[{type:'destroy',tag:'enemy',n:16,text:'Domina la cumbre (16)'}] },
+  { id:'culebra', name:'Canal de Panamá · Corte Culebra', pais:'Panamá 🇵🇦', lat:9.060, lon:-79.680, zoom:12, tiles:3, vexag:1.0,
+    desc:'El tajo que partió la cordillera: el tramo más estrecho del canal, entre laderas. Medido: 177 m de desnivel.',
+    enemies:[{t:'tank',n:6},{t:'turret',n:5},{t:'perro',n:5},{t:'airdrone',n:4}],
+    objs:[{type:'destroy',tag:'enemy',n:18,text:'Controla el corte (18)'}] },
+  { id:'panamapac', name:'Canal de Panamá · entrada del Pacífico', pais:'Panamá 🇵🇦', lat:8.900, lon:-79.530, zoom:12, tiles:3, vexag:0.9, naval:'somero',
+    desc:'La bahía donde esperan los barcos. Medido: 98% de agua y 7 m de fondo — mar somero, para lancha (USV).',
+    enemies:[{t:'airdrone',n:7},{t:'tank',n:4},{t:'turret',n:3}],
+    objs:[{type:'destroy',tag:'enemy',n:14,text:'Asegura el fondeadero (14)'}] },
+
+  /* ---------------------------------------------------------------------
      MARES. Las mismas teselas de elevación traen BATIMETRÍA, así que un mapa de
      mar no hay que inventarlo: se descarga igual que una montaña y el agua se
      enciende sola porque el relieve baja de cero.
@@ -7604,17 +7646,25 @@ if(location.search.indexOf('dbg')>=0) window.DRONES={
      "fondo a −135 m" y dentro del campo no había más de 6 metros de agua: la
      caída al azul estaba fuera. Elegir un punto de mar a ojo no funciona; hay
      que medir el agua que queda DENTRO del campo, y eso es lo que da esto. */
-  sonda:async(lat,lon,zoom)=>{
-    const m={ id:'__sonda', name:'sonda '+lat+','+lon, pais:'—', lat, lon, zoom:zoom||12, tiles:3,
-      vexag:0.9, naval:true, desc:'', enemies:[{t:'tank',n:1}], objs:[{type:'destroy',tag:'enemy',n:1,text:'—'}] };
+  sonda:async(lat,lon,opt)=>{
+    opt=opt||{};
+    const m={ id:'__sonda', name:'sonda '+lat+','+lon, pais:'—', lat, lon, zoom:opt.zoom||12, tiles:3,
+      vexag:0.9, naval:opt.mar?'profundo':false, desc:'',
+      enemies:[{t:'tank',n:1}], objs:[{type:'destroy',tag:'enemy',n:1,text:'—'}] };
     const ok=await startRealMission(m);
     if(!ok || !REAL) return {error:'no cargó'};
-    const mar=REAL.seaY; let hondo=-1e9, seco=0, mojado=0;
+    const mar=REAL.seaY; let hondo=-1e9, seco=0, mojado=0, alto=-1e9, bajo=1e9;
     for(let x=-HALF*0.95;x<=HALF*0.95;x+=HALF/18) for(let z=-HALF*0.95;z<=HALF*0.95;z+=HALF/18){
-      const p=mar-terrainHeight(x,z); if(p>hondo)hondo=p; if(p>0)mojado++; else seco++; }
-    return { teselas:{fondo_m:Math.round(REAL.minE), cima_m:Math.round(REAL.maxE)},
-      dentro_del_campo:{ agua_mas_honda_m:+(hondo*MPU).toFixed(0),
-        porcentaje_de_agua:Math.round(mojado/(mojado+seco)*100)+'%' } }; },
+      const h=terrainHeight(x,z), p=mar-h;
+      if(p>hondo)hondo=p; if(p>0)mojado++; else seco++;
+      if(h>alto)alto=h; if(h<bajo)bajo=h; }
+    const rango=REAL.maxE-REAL.minE;
+    return { teselas:{fondo_m:Math.round(REAL.minE), cima_m:Math.round(REAL.maxE), rango_m:Math.round(rango)},
+      dentro_del_campo:{ desnivel_m:+((alto-bajo)*MPU).toFixed(0),
+        agua_mas_honda_m:+(hondo*MPU).toFixed(0),
+        porcentaje_de_agua:Math.round(mojado/(mojado+seco)*100)+'%' },
+      satelite: REAL.hasTex===undefined ? (terrainMesh&&terrainMesh.material&&!!terrainMesh.material.map) : !!REAL.hasTex,
+      veredicto: rango<5 ? 'SIN DATOS' : (REAL.minE<-12000||REAL.maxE>9000) ? 'DATOS IMPOSIBLES' : 'ok' }; },
   realInfo:()=>REAL?{G:REAL.G,minE:Math.round(REAL.minE),maxE:Math.round(REAL.maxE),seaY:+REAL.seaY.toFixed(1),
     spanKm:+(REAL.spanM/1000).toFixed(2), mPorUnidad:+REAL.mPerU.toFixed(2), zoomTex:REAL.Z,
     suelo:{ lienzo:lienzoDeZoom(REAL.Z), mPorPixel:+(REAL.spanM/lienzoDeZoom(REAL.Z)).toFixed(2) },
