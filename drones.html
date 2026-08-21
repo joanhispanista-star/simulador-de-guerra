@@ -371,6 +371,26 @@
   #condBar .seg button{min-width:48px;font-size:12px;padding:7px 6px}
   .cz-in{flex:1;min-width:0;background:var(--panel-2);border:1.5px solid var(--linea);color:#fff;border-radius:10px;padding:12px;font-size:14px;font-weight:600;font-family:inherit}
   .cz-in:focus{outline:none;border-color:var(--hud)}
+  /* MAPAMUNDI: el planeta como selector de misión. La imagen es satélite de
+     verdad (las mismas teselas que usa el terreno), y encima van las chinchetas
+     de cada zona colocadas por su latitud y longitud reales. */
+  #mundoWrap{position:relative;width:100%;border:1px solid var(--linea);border-radius:12px;overflow:hidden;
+    background:#06121f;margin-bottom:12px;aspect-ratio:1024/601}
+  #mundoCv{display:block;width:100%;height:100%}
+  #mundoPins{position:absolute;inset:0;pointer-events:none}
+  .pin{position:absolute;transform:translate(-50%,-50%);pointer-events:auto;cursor:pointer;
+    width:15px;height:15px;border-radius:50%;border:2px solid #fff;background:var(--hud);
+    box-shadow:0 0 0 2px rgba(0,0,0,.55), 0 0 10px rgba(63,240,192,.7);transition:transform .12s}
+  .pin.mar{background:#37b6ff;box-shadow:0 0 0 2px rgba(0,0,0,.55), 0 0 10px rgba(55,182,255,.8)}
+  .pin.hecho{background:var(--ambar)}
+  .pin:hover,.pin:focus{transform:translate(-50%,-50%) scale(1.5);z-index:3;outline:none}
+  .pin b{position:absolute;left:50%;top:-6px;transform:translate(-50%,-100%);white-space:nowrap;
+    font-size:10px;font-weight:800;letter-spacing:.04em;padding:3px 7px;border-radius:6px;
+    background:rgba(6,10,16,.92);border:1px solid var(--linea);color:var(--hud);opacity:0;transition:opacity .12s}
+  .pin.mar b{color:#8ad4ff}
+  .pin:hover b,.pin:focus b{opacity:1}
+  #mundoEstado{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);text-align:center;
+    font-size:11px;font-weight:700;letter-spacing:.06em;color:var(--hud);text-transform:uppercase;opacity:.8}
   /* apuntar con la mirada (webcam) */
   #gazeBox{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(var(--sa-b) + 6px);z-index:9;display:none;pointer-events:none;
     background:rgba(8,10,14,.6);border:1px solid var(--linea);border-radius:11px;padding:6px 10px}
@@ -528,6 +548,13 @@
 
       <!-- MUNDO REAL -->
       <div id="tab-real" style="display:none">
+        <div class="h-sec">🌐 Mapamundi · toca una zona del planeta</div>
+        <div class="subtitle" style="margin-bottom:10px">Cada chincheta es un lugar real. <b style="color:var(--hud)">Verdes</b>: tierra, montaña y ciudad. <b style="color:#37b6ff">Azules</b>: <b>mar</b> — arrecifes, estrechos y fosas, con el fondo submarino de verdad. Para los azules necesitas un dron <b>Marítimo</b>, <b>Submarino</b> o <b>Híbrido</b> del Garaje.</div>
+        <div id="mundoWrap">
+          <canvas id="mundoCv" width="1024" height="601"></canvas>
+          <div id="mundoPins"></div>
+          <div id="mundoEstado">cargando el planeta…</div>
+        </div>
         <div class="h-sec">Mundo real · relieve + satélite + ciudad en 3D</div>
         <div class="subtitle" style="margin-bottom:10px">Se descargan la <b>altura real</b> del terreno, la <b>imagen satelital</b> y, de <b>OpenStreetMap</b>, los <b>edificios con su forma real</b>, los ríos, lagos y el arbolado del lugar. El campo abarca <b>~2,4 km</b> a escala correcta (1 unidad ≈ 5 m). Tarda unos segundos y necesita internet.</div>
         <div class="missions" id="realList"></div>
@@ -1064,7 +1091,19 @@ const CATALOG={
     {id:'recon', name:'Reconocimiento', cost:10, armed:false, cam:1.3, maxAlt:130, note:'Marca blancos, ligero'},
     {id:'ataque', name:'Ataque', cost:22, armed:true, dmg:60, cam:1.0, maxAlt:130, note:'Suelta cargas explosivas'},
     {id:'fibra', name:'Fibra óptica', cost:24, armed:true, dmg:50, cam:1.6, maxAlt:150, fiber:true, note:'Inmune a jamming, sin pérdida de señal, video nítido, largo alcance'},
-    {id:'largo', name:'Larga distancia', cost:26, armed:false, cam:2.2, maxAlt:230, view360:true, note:'Gran altura y alcance, cámara 360° de reconocimiento'},
+    /* `ala:true` NO es un adorno: cambia el modelo de vuelo entero (ver
+       updateDrone). Un aparato de larga distancia es de ALA FIJA — no puede
+       quedarse quieto en el aire, se sustenta con la velocidad y vira
+       inclinándose. Es otro oficio, y por eso lleva su propio piloto
+       automático de órbita. */
+    {id:'largo', name:'Larga distancia (ala fija)', cost:26, armed:false, cam:2.2, maxAlt:230, view360:true, ala:true,
+      vCrucero:38, vPerdida:16, note:'ALA FIJA: no para en el aire, se sustenta con la velocidad. Vuela alto y lejos; órbita automática con la tecla O'},
+    /* El ave espía existe de verdad y se usa: aparatos con forma y aleteo de
+       pájaro que a doscientos metros no se distinguen de uno vivo. Su ventaja
+       no es el arma —no lleva— sino que la IA enemiga lo detecta a un tercio
+       de la distancia. Es la herramienta de mirar sin que te vean. */
+    {id:'ave', name:'Ave espía (ornitóptero)', cost:22, armed:false, cam:1.5, maxAlt:120, ave:true, sigilo:0.33,
+      note:'Parece un pájaro: te detectan a UN TERCIO de distancia. Desarmado, para reconocer sin que te vean'},
     {id:'marino', name:'Marítimo (USV)', cost:20, armed:true, dmg:55, cam:1.2, maxAlt:40, domain:'surface', note:'Nave de superficie: domina el mar (mapas navales)'},
     {id:'sub', name:'Submarino (UUV)', cost:26, armed:true, dmg:60, cam:1.1, maxAlt:60, domain:'sub', note:'Opera BAJO el agua (mapas navales)'},
     {id:'hibrido', name:'Híbrido aire-agua', cost:34, armed:true, dmg:55, cam:1.4, maxAlt:150, domain:'amph', fiber:true, note:'Vuela y se sumerge; enlace por fibra'},
@@ -1845,6 +1884,37 @@ const REAL_MAPS=[
   { id:'aconcagua', name:'Aconcagua', pais:'Argentina 🇦🇷', lat:-32.653, lon:-70.011, zoom:12, tiles:4, vexag:1.0,
     desc:'La cumbre más alta de América (6.961 m). Mapa de alta resolución (4×4).',
     enemies:[{t:'tank',n:10},{t:'airdrone',n:6}], objs:[{type:'destroy',tag:'enemy',n:16,text:'Conquista la cumbre (16)'}] },
+
+  /* ---------------------------------------------------------------------
+     MARES. Las mismas teselas de elevación traen BATIMETRÍA, así que un mapa de
+     mar no hay que inventarlo: se descarga igual que una montaña y el agua se
+     enciende sola porque el relieve baja de cero.
+     ⚠ PERO EL ARCHIVO NO CUBRE TODO EL MAR, y esta lista es corta por eso, no
+     por falta de ganas. Se sondearon quince puntos con DRONES.sonda(lat,lon),
+     que mide el agua que queda DENTRO del campo jugable de 2,4 km, y el
+     resultado fue:
+       · Gibraltar, Ormuz, Gran Barrera y las Marianas → SIN DATOS (todo a cero)
+       · Malpelo y Gorgona → datos corruptos: fondos de −24.764 y −7.583 m
+       · Islas del Rosario → 1 m de agua: no es navegable por debajo
+       · San Andrés → 5 m; es un arrecife somero, no una fosa
+       · Galápagos → 192 m y 100% agua. El único mar profundo de verdad.
+     Solo van los que se midieron y funcionan, y cada uno dice la profundidad
+     que TIENE, no la que sería bonita. Un mapa que promete fosa y entrega un
+     charco es peor que no tenerlo.
+     Para volver a sondear un punto: DRONES.sonda(lat, lon) con ?dbg.
+     --------------------------------------------------------------------- */
+  { id:'galapagos', name:'Galápagos · canal profundo', pais:'Ecuador 🇪🇨', lat:-0.400, lon:-91.300, zoom:12, tiles:3, vexag:0.8, naval:'profundo',
+    desc:'Mar abierto entre volcanes: ni un palmo de tierra. Medido: 170 m de inmersión real. EL mapa del submarino.',
+    enemies:[{t:'airdrone',n:8},{t:'tank',n:4}],
+    objs:[{type:'destroy',tag:'enemy',n:12,text:'Limpia el canal (12)'}] },
+  { id:'isabela', name:'Galápagos · costa de Isabela', pais:'Ecuador 🇪🇨', lat:-0.300, lon:-91.550, zoom:12, tiles:3, vexag:0.9, naval:'somero',
+    desc:'Volcán que cae al océano. Medido: 7 m de agua navegable dentro del campo — costa, no fosa.',
+    enemies:[{t:'tank',n:5},{t:'airdrone',n:6},{t:'turret',n:3}],
+    objs:[{type:'destroy',tag:'enemy',n:14,text:'Domina la costa (14)'}] },
+  { id:'sanandres', name:'San Andrés', pais:'Colombia 🇨🇴', lat:12.583, lon:-81.700, zoom:12, tiles:3, vexag:0.9, naval:'somero',
+    desc:'El mar de los siete colores. Medido: 2 m de agua navegable — arrecife para lancha (USV), no para submarino.',
+    enemies:[{t:'tank',n:5},{t:'airdrone',n:5},{t:'turret',n:3}],
+    objs:[{type:'destroy',tag:'enemy',n:13,text:'Asegura el arrecife (13)'}] },
 ];
 /* Ciudades listas para desplegar: se levantan sus edificios reales (OpenStreetMap).
    Añadir una es poner su nombre y sus coordenadas del centro. */
@@ -2003,18 +2073,35 @@ async function buildRealWorld(map){
     // relieve fino: sin esto la foto satelital se ve "pintada" y plana de cerca
     const bump=makeGroundDetailTex(); bump.repeat.set(120,120);
     mat=new THREE.MeshStandardMaterial({ map:tex, bumpMap:bump, bumpScale:0.4, roughness:0.95, metalness:0 }); }
-  else mat=new THREE.MeshStandardMaterial({ vertexColors:true, roughness:1, flatShading:true });
+  if(map.naval || !mat) mat=new THREE.MeshStandardMaterial({ vertexColors:true, roughness:1, flatShading:true });
   // malla desplazada + UV alineadas al norte
   // la malla del terreno crece con el campo (con tope: 448² ya son 400 mil triángulos)
   const SEG=Math.min(448, Math.round(320*WORLD/460));
   const geo=new THREE.PlaneGeometry(WORLD, WORLD, SEG, SEG); geo.rotateX(-Math.PI/2);
   const pos=geo.attributes.position, uv=geo.attributes.uv;
-  const cols= imgOK?null:new Float32Array(pos.count*3), cc=new THREE.Color();
+  /* ⚠ EN LOS MAPAS DE MAR SE DESCARTA EL SATÉLITE A PROPÓSITO. La imagen de
+     satélite sobre el agua es una sábana azul lisa: el sensor no ve el fondo.
+     Pegarla al relieve submarino sería pintar de azul plano un cañón de mil
+     metros — más falso, no menos. Se pinta por PROFUNDIDAD, que es como se
+     dibuja una carta náutica de verdad: arena en el bajo, turquesa en la
+     plataforma, azul oscuro en el talud, casi negro en la fosa. */
+  const porFondo=!!map.naval;
+  const cols=(imgOK && !porFondo)?null:new Float32Array(pos.count*3), cc=new THREE.Color();
+  const nivelMar=(0-minE)*vScale, hondo=Math.max(1, nivelMar);
   for(let i=0;i<pos.count;i++){ const x=pos.getX(i), zz=pos.getZ(i);
     const y=realHeightAt(x,zz); pos.setY(i,y);
     uv.setXY(i, clamp((x+HALF)/WORLD,0,1), clamp(1-(zz+HALF)/WORLD,0,1));
-    if(cols){ const t=clamp(y/Math.max(1,(maxE-minE)*vScale),0,1);
-      cc.setRGB(0.35+0.5*t, 0.42+0.4*t, 0.3+0.55*(1-t)); cols[i*3]=cc.r; cols[i*3+1]=cc.g; cols[i*3+2]=cc.b; } }
+    if(!cols) continue;
+    if(porFondo && y<nivelMar){
+      const d=clamp((nivelMar-y)/hondo, 0, 1);          // 0 = orilla · 1 = lo más hondo
+      cc.setRGB(0.62-0.56*d, 0.60-0.46*d, 0.44+0.02*d)  // arena → turquesa → azul
+        .lerp(new THREE.Color(0x04101c), d*d);          // y al fondo, casi negro
+    } else if(porFondo){
+      const t=clamp((y-nivelMar)/Math.max(1,(maxE*vScale)),0,1);
+      cc.setRGB(0.72-0.18*t, 0.68-0.10*t, 0.52+0.06*t); // playa y roca de la isla
+    } else { const t=clamp(y/Math.max(1,(maxE-minE)*vScale),0,1);
+      cc.setRGB(0.35+0.5*t, 0.42+0.4*t, 0.3+0.55*(1-t)); }
+    cols[i*3]=cc.r; cols[i*3+1]=cc.g; cols[i*3+2]=cc.b; }
   if(cols) geo.setAttribute('color', new THREE.BufferAttribute(cols,3));
   geo.computeVertexNormals();
   terrainMesh=new THREE.Mesh(geo, mat); terrainMesh.receiveShadow=true; terrainMesh.castShadow=true;
@@ -2032,6 +2119,18 @@ async function buildRealWorld(map){
      El clima sigue multiplicando encima (niebla ×3,6, lluvia, polvo). */
   worldBase={ skyTop:map.skyTop||0x3a72b0, fog:map.fog||0xbcd0e0, fogN:0.00062, amb:0x4a4436 };
   setWater(REAL.seaY, minE<-5);   // agua solo si hay zonas bajo el nivel del mar
+  /* ⚠ GUARDIÁN DE BATIMETRÍA. El archivo de elevación (AWS Terrarium) NO cubre
+     todo el mar: en Gibraltar, Ormuz, la Gran Barrera y las Marianas devuelve
+     ceros, y en Malpelo y Gorgona devuelve basura (fondos de −24.764 m). Sin
+     este aviso el mapa cargaba como una llanura perfectamente lisa y parecía un
+     fallo del juego, cuando el que no tiene el dato es el archivo.
+     El sitio donde se descubre es aquí, con los números delante: se dice y se
+     sigue, en vez de dejar que el jugador lo descubra volando sobre una mesa. */
+  if(map.naval){
+    const rango=maxE-minE;
+    if(rango<5)        feed('⚠ Sin datos de fondo marino en este punto: el archivo de elevación no lo cubre','bad');
+    else if(minE<-12000) feed('⚠ Datos de fondo dudosos aquí ('+Math.round(minE)+' m): el archivo trae valores imposibles','bad');
+  }
   applyEnvironment();
   /* 🏙️ CIUDAD REAL: se trae EN SEGUNDO PLANO. Antes se esperaba aquí y la
      pantalla de carga se quedaba negra 10-20 s (parecía que el juego moría);
@@ -3521,6 +3620,156 @@ function buildDrone(color, opt){
 }
 
 /* =====================================================================
+   LOS OTROS TRES CUERPOS
+   Un cuadricóptero, un ala fija, un pájaro y una lancha no se mueven igual,
+   así que no pueden ser el mismo modelo pintado de otro color: la silueta es
+   lo primero que le dice al operador qué está pilotando. Los tres se escriben
+   con números cómodos de leer y se encogen al final, igual que el
+   cuadricóptero — ver la nota de ESC_DRON.
+   ===================================================================== */
+
+/* ALA FIJA de larga distancia. Fuselaje esbelto, ala recta muy larga (mucha
+   envergadura = mucha autonomía, que es de lo que va este aparato) y cola en V,
+   que es la que llevan casi todos los de reconocimiento porque pesa menos. */
+function buildAlaFija(color){
+  const g=new THREE.Group();
+  const cuerpoM=new THREE.MeshStandardMaterial({color:color||0x9aa4ad, roughness:0.55, metalness:0.2, flatShading:true});
+  const alaM   =new THREE.MeshStandardMaterial({color:0xcdd4da, roughness:0.6, metalness:0.1, flatShading:true});
+  const oscuroM=new THREE.MeshStandardMaterial({color:0x1b1f26, roughness:0.5, metalness:0.4, flatShading:true});
+  const vidrioM=new THREE.MeshStandardMaterial({color:0x0d1a20, roughness:0.08, metalness:0.9});
+  const E=new Ensamblador();
+  // fuselaje: morro redondeado, tramo recto y cola que se afina
+  E.p(geo('afMorro', ()=>new THREE.SphereGeometry(0.20,10,8)), cuerpoM, [0,0,1.05]);
+  E.p(geo('afCuerpo',()=>new THREE.CylinderGeometry(0.20,0.20,1.5,10)), cuerpoM, [0,0,0.3], [Math.PI/2,0,0]);
+  E.p(geo('afCola',  ()=>new THREE.CylinderGeometry(0.20,0.07,1.2,8)),  cuerpoM, [0,0,-1.05], [Math.PI/2,0,0]);
+  // ala recta: 3,2 de envergadura para 2,4 de largo, la proporción de un planeador
+  E.p(geo('afAla',   ()=>new THREE.BoxGeometry(3.2,0.05,0.46)), alaM, [0,0.06,0.35]);
+  E.p(geo('afAlaP1', ()=>new THREE.BoxGeometry(0.5,0.16,0.30)), alaM, [ 1.6,0.10,0.35], [0,0,0.22]);
+  E.p(geo('afAlaP2', ()=>new THREE.BoxGeometry(0.5,0.16,0.30)), alaM, [-1.6,0.10,0.35], [0,0,-0.22]);
+  // cola en V
+  E.p(geo('afCV1',   ()=>new THREE.BoxGeometry(0.7,0.04,0.30)), alaM, [ 0.28,0.20,-1.5], [0,0, 0.62]);
+  E.p(geo('afCV2',   ()=>new THREE.BoxGeometry(0.7,0.04,0.30)), alaM, [-0.28,0.20,-1.5], [0,0,-0.62]);
+  // torreta de la cámara bajo el morro y antena de satélite en el lomo
+  E.p(geo('afBola',  ()=>new THREE.SphereGeometry(0.17,10,8)), oscuroM, [0,-0.20,0.75]);
+  E.p(geo('afLente', ()=>new THREE.CylinderGeometry(0.09,0.09,0.05,10)), vidrioM, [0,-0.30,0.80], [Math.PI/2+0.5,0,0]);
+  E.p(geo('afDomo',  ()=>new THREE.SphereGeometry(0.19,10,6,0,TAU,0,Math.PI/2)), cuerpoM, [0,0.19,-0.15]);
+  E.volcar(g, true);
+  // hélice propulsora en la cola: gira siempre, porque este aparato nunca para
+  const helice=new THREE.Group(); helice.position.set(0,0,-1.68);
+  for(let i=0;i<2;i++){ const pala=new THREE.Mesh(geo('afPala',()=>new THREE.BoxGeometry(0.045,0.62,0.03)), oscuroM);
+    pala.rotation.z=i*Math.PI; helice.add(pala); }
+  g.add(helice);
+  g.scale.setScalar(ESC_DRON*1.9);      // ~1,9 m de envergadura: es un aparato grande
+  g.userData={rotors:[helice], ala:true};
+  return g;
+}
+
+/* AVE ESPÍA (ornitóptero). La silueta ES la función: cuerpo pequeño, dos alas
+   que baten desde el hombro y cola abierta que hace de timón. La cámara va en
+   la cabeza, que es donde la lleva un ave de verdad. */
+function buildAve(color){
+  const g=new THREE.Group();
+  const plumaM=new THREE.MeshStandardMaterial({color:color||0x5a5348, roughness:0.9, metalness:0.05, flatShading:true});
+  const claraM =new THREE.MeshStandardMaterial({color:0x8f8677, roughness:0.9, flatShading:true});
+  const picoM =new THREE.MeshStandardMaterial({color:0x2a2620, roughness:0.6, flatShading:true});
+  const ojoM  =new THREE.MeshStandardMaterial({color:0x0a0c10, roughness:0.1, metalness:0.9});
+  const E=new Ensamblador();
+  E.p(geo('avCuerpo',()=>new THREE.SphereGeometry(0.30,10,8)), plumaM, [0,0,0], [0,0,0], [1,0.82,1.9]);
+  E.p(geo('avCabeza',()=>new THREE.SphereGeometry(0.17,9,7)),  plumaM, [0,0.14,0.52]);
+  E.p(geo('avPico',  ()=>new THREE.ConeGeometry(0.06,0.26,6)), picoM,  [0,0.10,0.70], [Math.PI/2,0,0]);
+  E.p(geo('avOjo1',  ()=>new THREE.SphereGeometry(0.035,6,5)), ojoM,   [ 0.10,0.19,0.58]);
+  E.p(geo('avOjo2',  ()=>new THREE.SphereGeometry(0.035,6,5)), ojoM,   [-0.10,0.19,0.58]);
+  E.p(geo('avCola',  ()=>new THREE.BoxGeometry(0.44,0.03,0.55)), claraM, [0,0.02,-0.66], [-0.16,0,0]);
+  E.volcar(g, true);
+  /* Las alas cuelgan de su propio pivote en el hombro para poder BATIR. Es lo
+     único que de verdad tiene que moverse, y es lo que hace que de lejos se lea
+     como un pájaro y no como un dron con plumas pintadas. */
+  const alas=[];
+  for(const lado of [1,-1]){
+    const hombro=new THREE.Group(); hombro.position.set(lado*0.16,0.14,0.06);
+    const ala=new THREE.Mesh(geo('avAla',()=>new THREE.BoxGeometry(0.86,0.025,0.40)), plumaM);
+    ala.position.set(lado*0.45,0,-0.02); hombro.add(ala);
+    const punta=new THREE.Mesh(geo('avPunta',()=>new THREE.BoxGeometry(0.42,0.02,0.24)), claraM);
+    punta.position.set(lado*1.02,0,-0.10); hombro.add(punta);
+    hombro.userData.lado=lado; g.add(hombro); alas.push(hombro);
+  }
+  g.scale.setScalar(ESC_DRON*0.62);     // ~62 cm de envergadura: una gaviota
+  g.userData={rotors:[], alas};
+  return g;
+}
+
+/* LANCHA NO TRIPULADA (USV). El dron marítimo venía usando el cuerpo de un
+   cuadricóptero flotando sobre el agua, que es exactamente lo que no es. Casco
+   planeador con dos flotadores —un trimarán, que es lo estable en mar picada—
+   y el arma en una torreta a proa. */
+function buildBarco(color){
+  const g=new THREE.Group();
+  const cascoM =new THREE.MeshStandardMaterial({color:color||0x3a4a58, roughness:0.5, metalness:0.35, flatShading:true});
+  const grisM  =new THREE.MeshStandardMaterial({color:0x9aa3ac, roughness:0.6, metalness:0.3, flatShading:true});
+  const oscuroM=new THREE.MeshStandardMaterial({color:0x1b1f26, roughness:0.5, metalness:0.4, flatShading:true});
+  const E=new Ensamblador();
+  E.p(geo('bcCasco', ()=>new THREE.BoxGeometry(0.62,0.34,2.4)), cascoM, [0,0,0]);
+  E.p(geo('bcProa',  ()=>new THREE.ConeGeometry(0.34,0.9,4)),   cascoM, [0,0,1.55], [Math.PI/2,0,Math.PI/4]);
+  E.p(geo('bcFlot1', ()=>new THREE.CylinderGeometry(0.16,0.16,1.7,8)), cascoM, [ 0.72,-0.08,0.15], [Math.PI/2,0,0]);
+  E.p(geo('bcFlot2', ()=>new THREE.CylinderGeometry(0.16,0.16,1.7,8)), cascoM, [-0.72,-0.08,0.15], [Math.PI/2,0,0]);
+  E.p(geo('bcBrazo', ()=>new THREE.BoxGeometry(1.6,0.07,0.22)), grisM, [0,0.02,0.15]);
+  E.p(geo('bcCasa',  ()=>new THREE.BoxGeometry(0.48,0.30,0.7)), grisM, [0,0.32,-0.25]);
+  E.p(geo('bcMastil',()=>new THREE.CylinderGeometry(0.035,0.035,0.8,6)), grisM, [0,0.85,-0.35]);
+  E.p(geo('bcRadar', ()=>new THREE.BoxGeometry(0.42,0.05,0.10)), grisM, [0,1.22,-0.35]);
+  E.p(geo('bcTorre', ()=>new THREE.CylinderGeometry(0.16,0.19,0.20,8)), oscuroM, [0,0.30,0.85]);
+  E.p(geo('bcCanon', ()=>new THREE.CylinderGeometry(0.045,0.05,0.7,7)), oscuroM, [0,0.36,1.2], [Math.PI/2,0,0]);
+  E.volcar(g, true);
+  const helice=new THREE.Group(); helice.position.set(0,-0.16,-1.28);
+  for(let i=0;i<3;i++){ const pala=new THREE.Mesh(geo('bcPala',()=>new THREE.BoxGeometry(0.035,0.26,0.02)), oscuroM);
+    pala.rotation.z=i*TAU/3; helice.add(pala); }
+  g.add(helice);
+  g.scale.setScalar(ESC_DRON*3.4);      // ~3,4 m de eslora: una lancha pequeña
+  g.userData={rotors:[helice], barco:true};
+  return g;
+}
+
+/* SUMERGIBLE NO TRIPULADO (UUV). Casco de torpedo, que es la forma que impone
+   el agua: a esa densidad cualquier arista cuesta autonomía. Timones en cruz
+   en la cola y hélice carenada. Iba con cuerpo de cuadricóptero, con cuatro
+   rotores girando bajo el agua. */
+function buildSub(color){
+  const g=new THREE.Group();
+  const cascoM =new THREE.MeshStandardMaterial({color:color||0x2f3a42, roughness:0.42, metalness:0.5, flatShading:true});
+  const grisM  =new THREE.MeshStandardMaterial({color:0x8d949c, roughness:0.4, metalness:0.7, flatShading:true});
+  const oscuroM=new THREE.MeshStandardMaterial({color:0x14181e, roughness:0.5, metalness:0.4, flatShading:true});
+  const vidrioM=new THREE.MeshStandardMaterial({color:0x0a1418, roughness:0.08, metalness:0.9});
+  const E=new Ensamblador();
+  E.p(geo('sbCasco', ()=>new THREE.CylinderGeometry(0.30,0.30,2.2,12)), cascoM, [0,0,0], [Math.PI/2,0,0]);
+  E.p(geo('sbMorro', ()=>new THREE.SphereGeometry(0.30,12,9)), cascoM, [0,0,1.10], [0,0,0], [1,1,1.5]);
+  E.p(geo('sbCono',  ()=>new THREE.ConeGeometry(0.30,0.8,12)), cascoM, [0,0,-1.4], [-Math.PI/2,0,0]);
+  E.p(geo('sbVela',  ()=>new THREE.BoxGeometry(0.16,0.34,0.62)), cascoM, [0,0.30,0.10]);
+  E.p(geo('sbOjo',   ()=>new THREE.SphereGeometry(0.13,10,8)), vidrioM, [0,0,1.48]);
+  // timones en cruz
+  for(let i=0;i<4;i++){ const a=i*Math.PI/2;
+    E.p(geo('sbTimon',()=>new THREE.BoxGeometry(0.05,0.52,0.34)), grisM, [Math.sin(a)*0.28,Math.cos(a)*0.28,-1.28], [0,0,a]); }
+  E.p(geo('sbAro',   ()=>new THREE.TorusGeometry(0.26,0.035,6,14)), grisM, [0,0,-1.78], [Math.PI/2,0,0]);
+  E.volcar(g, true);
+  const helice=new THREE.Group(); helice.position.set(0,0,-1.78);
+  for(let i=0;i<4;i++){ const pala=new THREE.Mesh(geo('sbPala',()=>new THREE.BoxGeometry(0.05,0.36,0.02)), oscuroM);
+    pala.rotation.z=i*Math.PI/2; helice.add(pala); }
+  g.add(helice);
+  g.scale.setScalar(ESC_DRON*2.6);      // ~2,6 m de eslora
+  g.userData={rotors:[helice], barco:true};   // hélice vertical, como la lancha
+  return g;
+}
+
+/* Un solo sitio donde se decide qué cuerpo lleva cada aparato del garaje. */
+function buildAparato(tipo, color){
+  if(!tipo) return buildDrone(color);
+  if(tipo.ala) return buildAlaFija(color);
+  if(tipo.ave) return buildAve(color);
+  if(tipo.domain==='surface') return buildBarco(color);
+  if(tipo.domain==='sub') return buildSub(color);
+  return buildDrone(color);   // el híbrido sí es un cuadricóptero: vuela y se sumerge
+}
+
+
+/* =====================================================================
    ESTADO DE JUEGO
    ===================================================================== */
 let playing=false, paused=false;
@@ -4122,6 +4371,11 @@ const IA=(function(){
   function alcanceEfectivo(u,t){
     const P=CONFIG_IA.PERCEPCION; let a=u.ia.sensor.alcance;
     if(t.obj===player && stats && stats.stealth) a*=stats.stealth;      // motor silencioso
+    /* EL AVE ESPÍA. Aquí es donde su forma de pájaro deja de ser un adorno: la
+       IA la detecta a un tercio de la distancia. No es invisible —si te acercas
+       te ven igual— pero puedes observar desde donde otro dron ya estaría
+       derribado. Es su única ventaja: va desarmada. */
+    if(t.obj===drone && stats && stats.drone && stats.drone.sigilo) a*=stats.drone.sigilo;
     if(NIGHT) a*=P.factorNoche;                                          // de noche se ve menos
     a*=lerp(P.factorClima,1,clamp(visRange,0,1));                        // niebla/lluvia/polvo
     return a;
@@ -4741,6 +4995,14 @@ const keys={};
 addEventListener('keydown',e=>{ keys[e.code]=true;
   if(e.code==='Escape'){ if(foto.on){ /* lo maneja el modo foto */ } else if(playing && !paused) doPause(); }
   if(e.code==='KeyC' && playing){ cycleCam(); }
+  /* ÓRBITA. Un ala fija no puede quedarse mirando un punto: tiene que darle
+     vueltas. Sin esto el modo de larga distancia no sirve para observar, que es
+     justo para lo que existe. */
+  if(e.code==='KeyO' && playing && mode==='drone' && drone.active && stats.drone.ala){
+    if(drone.orbita){ drone.orbita=null; feed('Órbita desconectada · pilotaje manual'); }
+    else { drone.orbita=drone.pos.clone(); feed('◎ Órbita automática sobre este punto','good'); }
+    updateChips();
+  }
   if(e.code==='KeyF' && playing){ toggleDrone(); }
   if(e.code==='KeyV' && playing){ cycleSensor(); }
   if(e.code==='KeyN'){ cicloVolumen(); }
@@ -5362,8 +5624,19 @@ function lockTarget(){
 
 /* ---- DRON AÉREO ---- */
 function deployDrone(){
-  if(drone.mesh){ drone.mesh.visible=true; }
-  else { drone.mesh=buildDrone(stats.color); scene.add(drone.mesh); addHeat(drone.mesh, 0.4, 2.2); }
+  /* ⚠ LA MALLA SE REUSA SOLO SI ES DEL MISMO APARATO. Antes se reusaba
+     siempre, y con un solo cuerpo posible daba igual; ahora hay cuatro —
+     cuadricóptero, ala fija, ave y lancha— y reusar significaba salir a volar
+     un ala fija con el cuerpo del dron de la misión anterior. Se guarda de qué
+     tipo es la malla y se reconstruye cuando cambia. */
+  if(drone.mesh && drone.meshTipo===stats.drone.id){ drone.mesh.visible=true; }
+  else {
+    if(drone.mesh){ scene.remove(drone.mesh); disposeGroup(drone.mesh);
+      for(let i=heatSprites.length-1;i>=0;i--) if(!heatSprites[i].parent) heatSprites.splice(i,1); }
+    drone.mesh=buildAparato(stats.drone, stats.color); scene.add(drone.mesh);
+    drone.meshTipo=stats.drone.id;
+    // el ave casi no da firma térmica: medio kilo de plástico con un motor diminuto
+    addHeat(drone.mesh, 0.4, stats.drone.ave?0.8:(stats.drone.ala?3.0:2.2)); }
   drone.active=true; drone.hp=60; drone.kamikaze=false; drone.diving=false; drone.acro=false;
   droneCam = stats.drone.view360?1:0;   // los de larga distancia arrancan en 360°
   drone.pos.copy(player.pos).add(new THREE.Vector3(0,8*M,0));
@@ -5459,7 +5732,59 @@ function updateDrone(dt, inp){
   // con el signo anterior, inclinar a la derecha desplazaba el dron a la izquierda.
   const fwd=_dv1.set(sy,0,cy), right=_dv2.set(-cy,0,sy);
 
-  if(drone.acro){
+  if(stats.drone.ala){
+    /* =================== ALA FIJA (larga distancia) ===================
+       Un cuadricóptero se sostiene con los motores; un ala fija se sostiene
+       con la VELOCIDAD, y eso cambia todo lo que se siente al pilotarlo:
+         · no puede parar. Por debajo de la velocidad de pérdida deja de volar
+           y cae, y el HUD lo avisa antes de que pase.
+         · no vira con el timón: se INCLINA, y el viraje sale de la componente
+           horizontal de la sustentación. Es la ecuación de siempre,
+           ω = g·tan(φ)/V, y de ahí sale que a más velocidad el radio de giro
+           crece: a 140 km/h con 40° de inclinación el círculo es de 130 m.
+         · el gas cambia la velocidad; el cabeceo cambia la ALTURA, y subir
+           cuesta velocidad. Eso es volar de verdad y es lo que hay que
+           aprender a manejar.
+       Los mandos son los mismos: adelante/atrás = gas, izquierda/derecha =
+       inclinar, subir/bajar = cabecear. No hay palancas nuevas que aprender. */
+    const VC=(stats.drone.vCrucero||38)*M, VP=(stats.drone.vPerdida||16)*M;
+    drone.vAire=drone.vAire==null?VC:drone.vAire;
+    // gas: la palanca de adelante pide más velocidad; el aire frena siempre
+    const gas=inPitch;
+    drone.vAire=clamp(damp(drone.vAire, VC*(1+gas*0.55), 0.5, dt), VP*0.55, VC*1.6);
+    // inclinación: la palanca de lado la pide, y el aparato tarda en tomarla
+    const FI_MAX=45*Math.PI/180;
+    drone.roll=damp(drone.roll, clamp(inRoll,-1,1)*FI_MAX + (inp.dr_yaw||0)*0.10, 2.6, dt);
+    /* Viraje coordinado: ω = g·tan(φ)/V. Si el aparato entra en pérdida ya no
+       hay sustentación que inclinar, así que tampoco hay viraje. */
+    const enPerdida=drone.vAire<VP;
+    const sust=enPerdida?0.25:1;
+    drone.yawVel=(9.81*M)*Math.tan(drone.roll)/Math.max(drone.vAire,VP*0.6)*sust;
+    drone.yaw-=drone.yawVel*dt;
+    // cabeceo: la palanca de subir/bajar pide trayectoria, y subir cuesta velocidad
+    const senda=clamp(lift*0.30 - (enPerdida?0.55:0), -0.6, 0.35);
+    drone.pitch=damp(drone.pitch, senda, 2.2, dt);
+    drone.vAire-=Math.sin(drone.pitch)*9.81*M*dt*0.75;   // trepar frena, picar acelera
+    // y la velocidad se convierte en movimiento por donde apunta el morro
+    const cp=Math.cos(drone.pitch), sp=Math.sin(drone.pitch);
+    drone.vel.set(sy*cp, sp, cy*cp).multiplyScalar(drone.vAire*power);
+    drone.vel.addScaledVector(windVec, 0.6);             // el viento arrastra de verdad
+    if(enPerdida) drone.vel.y-=9.81*M*dt*2.2;            // sin sustentación, cae
+    /* PILOTO AUTOMÁTICO DE ÓRBITA (tecla O). Un ala fija no puede quedarse
+       mirando un punto: tiene que darle vueltas. Es como se vigila de verdad
+       un objetivo desde el aire, y sin esto el modo sería inservible para
+       observar. */
+    if(drone.orbita){
+      const ox=drone.orbita.x-drone.pos.x, oz=drone.orbita.z-drone.pos.z;
+      const dist=Math.hypot(ox,oz), R_ORB=90*M;
+      const rumboAl=Math.atan2(ox,oz);
+      // apunta 90° al lado del objetivo, corrigiendo hacia el radio deseado
+      const desvio=clamp((dist-R_ORB)/R_ORB, -1, 1)*0.9;
+      let err=rumboAl - drone.yaw - (Math.PI/2 - desvio);
+      while(err>Math.PI)err-=TAU; while(err<-Math.PI)err+=TAU;
+      drone.roll=damp(drone.roll, clamp(err*1.6,-FI_MAX,FI_MAX), 2.2, dt);
+    }
+  } else if(drone.acro){
     /* ACRO — el dron de carreras de siempre: la palanca inclina el aparato y
        la inclinación genera el empuje. Sigue avanzando al soltar, se hunde si
        no das gas y el viento te arrastra. Es lo realista para un FPV de
@@ -5582,8 +5907,23 @@ function updateDrone(dt, inp){
     drone.pitch + Math.sin(tv*2.9)*tiemblo,
     drone.yaw,
     -drone.roll + Math.cos(tv*2.1)*tiemblo);
-  // rotores: el régimen sigue al gas (y caen a media marcha sin batería)
-  for(const r of drone.mesh.userData.rotors) r.rotation.y+=dt*(32+52*gasR);
+  /* Lo que se mueve en cada aparato es distinto, y es lo que lo delata de
+     lejos: un cuadricóptero tiene cuatro discos horizontales, un ala fija una
+     hélice vertical en la cola, una lancha una hélice sumergida — y un pájaro
+     no tiene hélice ninguna: BATE. */
+  const ud=drone.mesh.userData;
+  if(ud.alas){
+    /* Aleteo. La frecuencia sube con el esfuerzo, como en un ave de verdad, y
+       las alas suben rápido y bajan despacio (la batida de potencia es la de
+       bajada). Sin esto el ave es un planeador con forma de pájaro. */
+    drone.aleteo=(drone.aleteo||0)+dt*(5.5+4.5*gasR);
+    const bat=Math.sin(drone.aleteo), golpe=bat>0?bat*0.55:bat*0.85;
+    for(const h of ud.alas) h.rotation.z=h.userData.lado*golpe;
+  } else if(ud.ala || ud.barco){
+    for(const r of ud.rotors) r.rotation.z+=dt*(46+60*gasR);   // hélice, no rotor
+  } else {
+    for(const r of ud.rotors) r.rotation.y+=dt*(32+52*gasR);
+  }
   SONIDO.rotores(true, gasR, oirDesdeCamara(drone.pos, 60));
   // reconocimiento: marca puntos cercanos
   drone.dropReload-=dt;
@@ -5724,6 +6064,7 @@ function resetPlay(){
   player.pos.set(0,0,0); player.yaw=0; player.view.yaw=0; player.view.pitch=-0.12;
   player.speed=0; player.yawRate=0; player.susPitch=0; player.susRoll=0; player.dustT=0;
   mode='tank'; camMode=0; droneCam=0; drone.active=false; drone.batt=1; drone.kamikaze=false; if(drone.mesh)drone.mesh.visible=false;
+  drone.orbita=null; drone.vAire=null; drone.aleteo=0;   // estado del ala fija y del ave
   heatSprites.length=0; signal=1; linkAuth=1; linkLost=false; jammed=false; designatedTarget=null;
   dmg.movilidad=dmg.optica=dmg.comms=0;
   if(cmdMesh){ scene.remove(cmdMesh); cmdMesh=null; }
@@ -5747,13 +6088,38 @@ function enemySpot(air){
 function deployMission(m){
   mission=m; surviveTimer=m.survive||0;
   player.hp=stats.hp; player.hpMax=stats.hpMax;
-  player.pos.y=terrainHeight(0,0)+0.5;
+  /* ⚠ EN UN MAPA DE MAR HAY QUE ARRANCAR SOBRE EL AGUA. El centro del mapa es
+     el punto que se pidió, y en San Andrés o Galápagos ese punto es la ISLA:
+     el submarino salía posado en tierra y no podía sumergirse — probado, bajaba
+     y se quedaba 4,7 m POR ENCIMA del nivel del mar. Se busca en espiral el
+     agua más honda cerca del centro y se despliega ahí. Si el mapa resulta no
+     tener agua, no se toca nada y se sale como siempre. */
+  if(currentReal && currentReal.naval && water && water.visible){
+    /* Se barre el campo ENTERO en rejilla, no en espiral corta. Con la espiral
+       de antes (75% del radio) en San Andrés se quedaba en 3 m de agua mientras
+       el mapa tenía un veril de 135 m justo fuera del barrido: el submarino
+       aparecía en la laguna y no podía bajar. */
+    const mar=water.position.y; let mejor=null, hondo=0;
+    const PASO=HALF/14;
+    for(let x=-HALF*0.92; x<=HALF*0.92; x+=PASO) for(let z=-HALF*0.92; z<=HALF*0.92; z+=PASO){
+      const prof=mar-terrainHeight(x,z);
+      if(prof>hondo){ hondo=prof; mejor=[x,z]; }
+    }
+    if(mejor && hondo>1.5*M){ player.pos.x=mejor[0]; player.pos.z=mejor[1];
+      /* Se anuncia la profundidad MEDIDA, no la de la ficha. Las fichas se
+         escriben una vez y el archivo de elevación cambia; el número de aquí
+         sale del terreno que se acaba de descargar, así que no puede mentir. */
+      const m=Math.round(hondo*MPU);
+      feed('⚓ Despliegue sobre '+m+' m de agua'+(m<12?' · somera: la lancha (USV) manda aquí':' · el submarino puede bajar'),'good'); }
+    else feed('⚠ No se encontró agua navegable en este campo','bad');
+  }
+  player.pos.y=terrainHeight(player.pos.x,player.pos.z)+0.5;
   if(player.mesh){ scene.remove(player.mesh); disposeGroup(player.mesh); }
   player.mesh=buildVehicle({color:stats.color, accent:0x2a3038, led:0x3ff0c0}); scene.add(player.mesh);
   player.mesh.position.copy(player.pos);
   addHeat(player.mesh, 2.2, 3.2);
   // puesto de mando (estación del operador) — referencia del enlace
-  cmdPost.set(0, terrainHeight(0,0), 0);
+  cmdPost.set(player.pos.x, terrainHeight(player.pos.x,player.pos.z), player.pos.z);
   cmdMesh=new THREE.Group();
   const mast=new THREE.Mesh(new THREE.CylinderGeometry(0.12,0.18,7,6), new THREE.MeshStandardMaterial({color:0x2a2f38,flatShading:true}));
   mast.position.y=3.5; mast.castShadow=true; cmdMesh.add(mast);
@@ -5761,7 +6127,8 @@ function deployMission(m){
   dish.position.y=6.6; dish.rotation.x=-1; cmdMesh.add(dish);
   const blink=new THREE.Mesh(new THREE.SphereGeometry(0.12,6,6), new THREE.MeshStandardMaterial({color:0xff3b46,emissive:0xff3b46,emissiveIntensity:1.5}));
   blink.position.y=7.2; cmdMesh.add(blink);
-  cmdPost.set(6, terrainHeight(6,4), 4); cmdMesh.position.copy(cmdPost); scene.add(cmdMesh);
+  cmdPost.set(player.pos.x+6, terrainHeight(player.pos.x+6,player.pos.z+4), player.pos.z+4);
+  cmdMesh.position.copy(cmdPost); scene.add(cmdMesh);
   (m.enemies||[]).forEach(spec=>{ for(let i=0;i<spec.n;i++){ const [x,z]=enemySpot(spec.t==='airdrone'); spawnEnemy(spec.t, x, z); } });
   spawnClutter();   // barriles/cajas del campo de batalla (motor de física)
   // escuadrón de compañeros IA
@@ -5813,6 +6180,22 @@ async function startRealMission(map){
           ' se descargan en el momento: no están dentro de la app y no caben.\n\n'+
           'Sin conexión sí puedes jugar las MISIONES del menú principal, que van completas.');
     return false;
+  }
+  /* Un mapa de mar con un dron que no nada es una misión imposible, y más vale
+     decirlo antes de descargar 20 MB de relieve que dejar que lo descubra
+     estrellándose contra el agua. No se le impide: se le avisa y decide él. */
+  if(map.naval==='profundo'){
+    const dr=partOf('dron', (store.loadout||{}).dron);
+    if(!dr || !dr.domain){
+      const aviso = `⚓ ${map.name} es un mapa de MAR PROFUNDO.
+
+Llevas «${(dr&&dr.name)||'un dron aéreo'}», que no puede sumergirse ni posarse en el agua: volarás por encima, pero el combate está abajo.
+
+En el Garaje tienes el Marítimo (USV), el Submarino (UUV) y el Híbrido.
+
+¿Vas igual?`;
+      if(!confirm(aviso)) return false;
+    }
   }
   currentReal=map; missionIdx=-1;
   resetPlay();
@@ -6201,6 +6584,17 @@ function updateHUD(dt){
     const vs=drone.vel.y*MPU;
     telem+=' · ALT <b'+(agl>120?' style="color:var(--rojo-2)"':'')+'>'+Math.round(agl)+'</b> m'
          + ' · V/S <b>'+(vs>=0?'+':'')+vs.toFixed(1)+'</b> m/s';
+    /* En un ala fija el número que salva la vida no es la altura: es la
+       VELOCIDAD DEL AIRE. Por debajo de la de pérdida el ala deja de sostener y
+       el aparato cae. Se avisa en ámbar antes y en rojo cuando ya está pasando,
+       porque descubrirlo por el impacto no enseña nada. */
+    if(stats.drone.ala){
+      const VP=(stats.drone.vPerdida||16), va=(drone.vAire||0)*MPU;
+      const col = va<VP ? 'var(--rojo-2)' : va<VP*1.25 ? 'var(--ambar)' : '';
+      telem+=' · AIRE <b'+(col?' style="color:'+col+'"':'')+'>'+Math.round(va*3.6)+'</b> km/h'
+           + (va<VP ? ' <b style="color:var(--rojo-2)">PÉRDIDA</b>' : '')
+           + (drone.orbita?' · <b>◎ ÓRBITA</b>':'');
+    }
   }
   telem+=' · RUMBO <b>'+String(Math.round(((mode==='drone'?drone.yaw:player.yaw)*180/Math.PI+360))%360).padStart(3,'0')+'°</b>';
   $('telem').innerHTML=telem;
@@ -6927,12 +7321,83 @@ function renderGarage(){
   const cost=loadoutCost(l), over=cost>BUDGET;
   const bd=$('budget'); bd.className='budget'+(over?' over':''); bd.innerHTML='Presupuesto: <b>'+cost+' / '+BUDGET+' pts</b>'+(over?' — te pasaste, ajusta piezas':' ✔');
 }
+/* =====================================================================
+   EL MAPAMUNDI
+   El planeta entero como selector de misión: se pinta con las MISMAS teselas
+   de satélite que usa el terreno del juego, pero en zoom 2 (16 teselas =
+   1024×1024 px = el mundo). Encima van las chinchetas, colocadas por su
+   latitud y longitud reales con la proyección de Mercator, que es la misma
+   con la que están hechas las teselas — por eso caen donde tienen que caer y
+   no hay que ajustarlas a mano.
+   Se recorta a ±72° de latitud: por encima Mercator estira tanto que
+   Groenlandia parece África, y ahí no hay ninguna misión.
+   Si no hay internet NO se queda en blanco: dibuja una retícula de meridianos
+   y paralelos y las chinchetas siguen funcionando. El mapa es un selector, y
+   un selector tiene que servir aunque el adorno no cargue.
+   ===================================================================== */
+const MUNDO_LAT_TOPE=72;
+function mercY(lat, px){            // latitud -> píxel vertical, Mercator
+  const r=lat*Math.PI/180;
+  return (1 - Math.log(Math.tan(r)+1/Math.cos(r))/Math.PI)/2*px;
+}
+let mundoPintado=false;
+async function pintarMapamundi(){
+  const cv=$('mundoCv'); if(!cv) return;
+  const g=cv.getContext('2d');
+  const PX=1024, Y0=mercY(MUNDO_LAT_TOPE,PX), Y1=mercY(-MUNDO_LAT_TOPE,PX);
+  const ALTO=Math.round(Y1-Y0);
+  cv.width=PX; cv.height=ALTO;
+  // las chinchetas primero: no dependen de la imagen y así funcionan igual
+  colocarChinchetas(PX, Y0, ALTO);
+  if(mundoPintado) return;
+  // retícula de fondo, que es también el respaldo si no hay red
+  g.fillStyle='#06121f'; g.fillRect(0,0,PX,ALTO);
+  g.strokeStyle='rgba(63,240,192,.16)'; g.lineWidth=1;
+  for(let lon=-180; lon<=180; lon+=30){ const x=(lon+180)/360*PX;
+    g.beginPath(); g.moveTo(x,0); g.lineTo(x,ALTO); g.stroke(); }
+  for(let lat=-60; lat<=60; lat+=30){ const y=mercY(lat,PX)-Y0;
+    g.beginPath(); g.moveTo(0,y); g.lineTo(PX,y); g.stroke(); }
+  g.strokeStyle='rgba(63,240,192,.34)';                 // el ecuador, más marcado
+  const ye=mercY(0,PX)-Y0; g.beginPath(); g.moveTo(0,ye); g.lineTo(PX,ye); g.stroke();
+  if(!navigator.onLine){ $('mundoEstado').textContent='sin conexión · retícula y zonas'; return; }
+  $('mundoEstado').textContent='trayendo el planeta…';
+  const Z=2, N=1<<Z, T=256;
+  let traidas=0;
+  await Promise.all(Array.from({length:N*N}, (_,k)=>{
+    const tx=k%N, ty=(k/N)|0;
+    return new Promise(res=>{
+      const im=new Image(); im.crossOrigin='anonymous';
+      im.onload=()=>{ g.drawImage(im, tx*T, ty*T-Y0, T, T); traidas++; res(); };
+      im.onerror=()=>res();
+      im.src='https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/'+Z+'/'+ty+'/'+tx;
+    });
+  }));
+  if(traidas===0){ $('mundoEstado').textContent='no se pudo traer el satélite · usa la retícula'; return; }
+  mundoPintado=true; $('mundoEstado').style.display='none';
+}
+function colocarChinchetas(PX, Y0, ALTO){
+  const cap=$('mundoPins'); if(!cap) return; cap.innerHTML='';
+  REAL_MAPS.forEach(m=>{
+    const x=(m.lon+180)/360*PX, y=mercY(m.lat,PX)-Y0;
+    if(y<0||y>ALTO) return;                      // fuera del recorte de ±72°
+    const b=document.createElement('button');
+    const hecho=!!store.best['real_'+m.id];
+    b.className='pin'+(m.naval?' mar':'')+(hecho?' hecho':'');
+    b.style.left=(x/PX*100)+'%'; b.style.top=(y/ALTO*100)+'%';
+    b.title=m.name+' · '+m.pais;
+    b.setAttribute('aria-label', m.name+', '+m.pais+(m.naval?', mapa de mar':''));
+    b.innerHTML='<b>'+(m.naval?'⚓ ':'')+m.name+'</b>';
+    b.onclick=()=>startRealMission(m);
+    cap.appendChild(b);
+  });
+}
 function renderReal(){
+  pintarMapamundi();
   const list=$('realList'); list.innerHTML='';
   REAL_MAPS.forEach(m=>{
     const bid='real_'+m.id, best=store.best[bid];
-    const el=document.createElement('button'); el.className='mcard'; el.style.borderLeftColor='#37b6ff';
-    el.innerHTML='<div class="mtop"><span class="biome" style="color:#37b6ff">'+m.pais+'</span><span class="diff">🌍</span></div>'+
+    const el=document.createElement('button'); el.className='mcard'; el.style.borderLeftColor=m.naval?'#37b6ff':'#3ff0c0';
+    el.innerHTML='<div class="mtop"><span class="biome" style="color:'+(m.naval?'#37b6ff':'#3ff0c0')+'">'+m.pais+'</span><span class="diff">'+(m.naval?'⚓':'🌍')+'</span></div>'+
       '<h4>'+m.name+'</h4><p>'+m.desc+'</p>'+
       '<div class="star" style="color:#37b6ff">'+(best?'Mejor: '+best+' · ':'')+'Descargar y jugar →</div>';
     el.onclick=()=>startRealMission(m);
@@ -7133,6 +7598,23 @@ let menuAng=0;
 if(location.search.indexOf('dbg')>=0) window.DRONES={
   start:(i)=>startMission(i||0),
   startReal:(id)=>startRealMission(REAL_MAPS.find(m=>m.id===id)||REAL_MAPS[0]),
+  /* Prueba una latitud y longitud cualesquiera SIN añadirla al catálogo. Nació
+     de una lección concreta: `minE` se calcula sobre las teselas descargadas,
+     que cubren MÁS que el campo jugable de 2,4 km. En San Andrés el mapa decía
+     "fondo a −135 m" y dentro del campo no había más de 6 metros de agua: la
+     caída al azul estaba fuera. Elegir un punto de mar a ojo no funciona; hay
+     que medir el agua que queda DENTRO del campo, y eso es lo que da esto. */
+  sonda:async(lat,lon,zoom)=>{
+    const m={ id:'__sonda', name:'sonda '+lat+','+lon, pais:'—', lat, lon, zoom:zoom||12, tiles:3,
+      vexag:0.9, naval:true, desc:'', enemies:[{t:'tank',n:1}], objs:[{type:'destroy',tag:'enemy',n:1,text:'—'}] };
+    const ok=await startRealMission(m);
+    if(!ok || !REAL) return {error:'no cargó'};
+    const mar=REAL.seaY; let hondo=-1e9, seco=0, mojado=0;
+    for(let x=-HALF*0.95;x<=HALF*0.95;x+=HALF/18) for(let z=-HALF*0.95;z<=HALF*0.95;z+=HALF/18){
+      const p=mar-terrainHeight(x,z); if(p>hondo)hondo=p; if(p>0)mojado++; else seco++; }
+    return { teselas:{fondo_m:Math.round(REAL.minE), cima_m:Math.round(REAL.maxE)},
+      dentro_del_campo:{ agua_mas_honda_m:+(hondo*MPU).toFixed(0),
+        porcentaje_de_agua:Math.round(mojado/(mojado+seco)*100)+'%' } }; },
   realInfo:()=>REAL?{G:REAL.G,minE:Math.round(REAL.minE),maxE:Math.round(REAL.maxE),seaY:+REAL.seaY.toFixed(1),
     spanKm:+(REAL.spanM/1000).toFixed(2), mPorUnidad:+REAL.mPerU.toFixed(2), zoomTex:REAL.Z,
     suelo:{ lienzo:lienzoDeZoom(REAL.Z), mPorPixel:+(REAL.spanM/lienzoDeZoom(REAL.Z)).toFixed(2) },
