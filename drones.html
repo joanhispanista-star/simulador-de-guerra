@@ -373,6 +373,15 @@
   .cz-in:focus{outline:none;border-color:var(--hud)}
   /* La línea pequeña que dice DE DÓNDE sale cada número de la ficha. Es la
      diferencia entre un dato y una explicación. */
+  /* La línea de tiempo de la Historia: una época por tarjeta, con su año como
+     lomo. Sobria a propósito — el contenido es documental, no de menú. */
+  .era{position:relative;padding:12px 14px 12px 18px;margin-bottom:12px;border-left:2px solid var(--hud-2);
+    background:rgba(255,255,255,.025);border-radius:0 10px 10px 0}
+  .era .eaños{font-size:10px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--hud)}
+  .era h4{margin:2px 0 6px;font-size:14px;color:var(--hueso)}
+  .era p{margin:0 0 8px;font-size:12px;line-height:1.6;color:var(--gris)}
+  .era .enota{font-size:10.5px;line-height:1.5;color:var(--gris-2);margin-top:6px;font-style:italic}
+  .era .eplay{width:auto;display:inline-block;margin:2px 0 0;padding:8px 16px;font-size:12px}
   /* El panel de ¿POR QUÉ?: ocupa el centro, pausa el juego y se cierra tocando.
      Pausa a propósito — leer una explicación mientras te disparan no es leer. */
   #porqueBox{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:40;display:none;
@@ -570,6 +579,7 @@
         <button data-tab="garage">🔧 Garaje</button>
         <button data-tab="pair">⚔️ Duelo 1v1</button>
         <button data-tab="guerra">⚔️ Guerra</button>
+        <button data-tab="historia">📜 Historia</button>
         <button data-tab="help">? Controles</button>
       </div>
 
@@ -693,6 +703,12 @@
       </div>
 
       <!-- AYUDA -->
+      <!-- HISTORIA DOCUMENTADA -->
+      <div id="tab-historia" style="display:none">
+        <div class="h-sec">📜 La historia del dron, documentada</div>
+        <div class="subtitle" style="margin-bottom:10px">De los globos de 1849 al FPV de fibra óptica: <b>hechos con fecha y sistemas con nombre</b>, nada inventado. Donde el juego especula (el futuro), lo dice en grande. Las misiones de cada época se vuelan <b>con el aparato de su tiempo</b> — el garaje se equipa solo — y siempre con los bandos ficticios del juego.</div>
+        <div id="eraList"></div>
+      </div>
       <div id="tab-help" style="display:none">
         <div class="h-sec">▶ Primeros pasos (60 segundos)</div>
         <div class="kbd-help">
@@ -2136,6 +2152,27 @@ const REAL_MAPS=[
     desc:'La bahía donde esperan los barcos. Medido: 98% de agua y 7 m de fondo — mar somero, para lancha (USV).',
     enemies:[{t:'airdrone',n:7},{t:'tank',n:4},{t:'turret',n:3}],
     objs:[{type:'destroy',tag:'enemy',n:14,text:'Asegura el fondeadero (14)'}] },
+
+  /* ---------------------------------------------------------------------
+     MEDIO ORIENTE Y TAIPÉI. Sondeadas como todas (DRONES.sonda). La regla no
+     cambia: geografía REAL, contexto DOCUMENTADO en la ficha, y el combate
+     jugable con los bandos ficticios de siempre. Las dos de Medio Oriente
+     están atadas a hitos históricos concretos de la guerra de drones, no a la
+     actualidad de nadie: la Becá 1982 y Mosul 2016-17 están en los libros.
+     Bab el-Mandeb (mar Rojo) se sondeó y NO tiene datos de fondo marino:
+     por eso no está, y la Historia lo cuenta solo con texto. */
+  { id:'beka', name:'Valle de la Becá', pais:'Líbano 🇱🇧', lat:33.850, lon:35.900, zoom:12, tiles:3, vexag:1.0,
+    desc:'Aquí, en 1982, los drones decidieron su primera batalla (ver 📜 Historia). Medido: 259 m de desnivel entre viñedos y laderas.',
+    enemies:[{t:'turret',n:6},{t:'tank',n:5},{t:'airdrone',n:3}],
+    objs:[{type:'destroy',tag:'turret',n:6,text:'Silencia las baterías (6)'},{type:'destroy',tag:'tank',n:5,text:'Y su escolta (5)'}] },
+  { id:'mosul', name:'Mosul', pais:'Irak 🇮🇶', lat:36.340, lon:43.130, zoom:12, tiles:3, vexag:1.0,
+    desc:'La primera guerra urbana de drones (2016-17, ver 📜 Historia). Llano junto al Tigris: la cobertura son las calles.',
+    enemies:[{t:'tank',n:5},{t:'turret',n:4},{t:'perro',n:5},{t:'airdrone',n:5}],
+    objs:[{type:'destroy',tag:'enemy',n:19,text:'Limpia el sector (19)'}] },
+  { id:'taipei', name:'Taipéi', pais:'Taiwán 🇹🇼', lat:25.033, lon:121.565, zoom:12, tiles:3, vexag:1.0,
+    desc:'La capital entre montañas. Medido: 159 m de desnivel dentro del campo, y el 101 si OpenStreetMap responde.',
+    enemies:[{t:'airdrone',n:8},{t:'tank',n:5},{t:'turret',n:4}],
+    objs:[{type:'destroy',tag:'enemy',n:17,text:'Defiende la capital (17)'}] },
 
   /* ---------------------------------------------------------------------
      MARES. Las mismas teselas de elevación traen BATIMETRÍA, así que un mapa de
@@ -6671,7 +6708,7 @@ En el Garaje tienes el Marítimo (USV), el Submarino (UUV) y el Híbrido.
   catch(e){ hideLoading(); $('menu').classList.add('on');
     alert('No se pudo descargar el terreno real.\n'+(e&&e.message||e)+'\n\nRevisa tu conexión e inténtalo de nuevo.'); return false; }
   hideLoading();
-  deployMission(CAMPANA.modo() ? CAMPANA.mision(map) : realMissionFor(map));
+  deployMission(map.misionFija || (CAMPANA.modo() ? CAMPANA.mision(map) : realMissionFor(map)));
   return true;   // "logré arrancar": el duelo lo necesita para no quedarse encendido en falso
 }
 function makeZoneMarker(color){
@@ -7906,6 +7943,101 @@ function renderGarage(){
    El enemigo sigue siendo el Pacto ROJO ficticio de siempre: la campaña usa
    la geografía real, no los países como bandos.
    ===================================================================== */
+/* =====================================================================
+   📜 HISTORIA DOCUMENTADA DEL DRON
+   ---------------------------------------------------------------------
+   Regla dura de esta sección, la misma que la del resto del proyecto: NO SE
+   INVENTA NADA. Cada época lleva hechos con fecha y sistemas con nombre, de
+   los que están en los libros. Donde el juego especula (el futuro), se dice
+   "HIPOTÉTICO" en grande. Y las misiones de época se juegan con los bandos
+   ficticios de siempre: la historia se cuenta con hechos, pero el combate
+   jugable no pone al jugador en la piel de ningún ejército real.
+
+   Cada era puede llevar una misión que se vuela con el aparato de su tiempo:
+   el garaje se equipa solo al lanzarla, porque volar un FPV kamikaze en la
+   era en que solo existía el reconocimiento sería mentir con las manos.
+   ===================================================================== */
+const ERAS=[
+  { id:'origen', años:'1849 · 1918 · 1935', titulo:'Los precursores',
+    texto:'En 1849 Austria soltó globos con bombas sobre Venecia: el primer ataque aéreo sin piloto de la historia. '+
+      'En 1918, el Kettering Bug estadounidense —un "torpedo aéreo" de madera con giróscopos— voló solo hacia su blanco, aunque llegó tarde a la guerra. '+
+      'Y en 1935 el Reino Unido convirtió un biplano en blanco radiocontrolado: el DH.82B Queen Bee ("abeja reina"). '+
+      'De ahí viene la palabra DRON: los pilotos que le disparaban lo llamaban "drone", zángano, por el zumbido.' },
+  { id:'ojos', años:'1964–1975 · Vietnam', titulo:'Primero fueron ojos',
+    texto:'Sobre Vietnam, los Ryan Firebee ("Lightning Bug") volaron más de 3.400 salidas de reconocimiento fotográfico en zonas donde caían demasiados pilotos. '+
+      'Nadie los llamaba armas: eran cámaras con alas y muchos no volvían. La lección quedó escrita: donde el cielo mata, manda una máquina.',
+    mision:{ nombre:'Volar esta época · solo ojos', bioma:'canon', equipo:{dron:'recon'},
+      enemies:[{t:'tank',n:5},{t:'turret',n:2}],
+      objs:[{type:'recon',n:3,text:'Fotografía 3 posiciones (marca con el dron)'}],
+      nota:'Vas DESARMADO, como un Firebee: marca y vuelve. Si te derriban, era lo esperado — a ellos también.' } },
+  { id:'beka', años:'1982 · Valle de la Becá', titulo:'El día que cambió la doctrina',
+    texto:'El 9 de junio de 1982, Israel lanzó drones señuelo sobre las baterías antiaéreas sirias del valle de la Becá (Líbano). '+
+      'Los radares se encendieron para derribarlos, revelaron su posición, y en dos días 29 de 30 baterías fueron destruidas sin perder un avión propio. '+
+      'Operación Mole Cricket 19: la primera vez que los drones DECIDIERON una batalla. Todos los ejércitos del mundo tomaron nota.',
+    zona:'beka',
+    mision:{ nombre:'Volar esta época · señuelo y martillo', equipo:{dron:'recon',secundaria:'misil'},
+      enemies:[{t:'turret',n:6},{t:'tank',n:4}],
+      objs:[{type:'destroy',tag:'turret',n:6,text:'Haz que enciendan el radar y destrúyelos (6)'}],
+      nota:'Tu dron ES el señuelo: deja que las torretas te apunten, desígnalas y que los misiles hagan el resto. El valle es la Becá de verdad.' } },
+  { id:'predator', años:'1995–2007 · Predator y Reaper', titulo:'La cacería persistente',
+    texto:'El RQ-1 Predator voló primero sobre los Balcanes (1995) como ojos que no parpadean: 24 horas sobre el mismo punto. '+
+      'En octubre de 2001 disparó por primera vez un misil Hellfire en Afganistán, y en 2007 llegó el MQ-9 Reaper, diseñado ya como cazador. '+
+      'Nació el combate por pantalla: pilotos en Nevada, aparato en otro continente, y con él un debate ético que sigue abierto.',
+    mision:{ nombre:'Volar esta época · designar y destruir', bioma:'desierto', equipo:{dron:'recon',secundaria:'misil'},
+      enemies:[{t:'tank',n:4},{t:'turret',n:2}],
+      objs:[{type:'destroy',tag:'enemy',n:6,text:'Designa desde el dron y destruye con misiles (6)'}],
+      nota:'El dron marca (dispara = designar) y tus misiles guiados hacen el resto. Persistencia y paciencia.' } },
+  { id:'comercial', años:'2006–2016 · DJI y el FPV', titulo:'El dron se vuelve de todos',
+    texto:'DJI se fundó en 2006 en Shenzhen; con el Phantom (2013) cualquiera pudo volar una cámara estable por unos cientos de dólares. '+
+      'En paralelo, los aficionados a las carreras FPV construían cuadricópteros de 5 pulgadas que hacían 150 km/h. '+
+      'Nadie lo planeó como arma. Pero cuando una tecnología cuesta 500 dólares y está en todas partes, la guerra siguiente la usa — y así fue.' },
+  { id:'mosulera', años:'2016–2017 · Mosul', titulo:'La primera guerra urbana de drones',
+    texto:'En la batalla por Mosul (Irak), ambos bandos usaron por primera vez y en masa drones COMERCIALES: cuadricópteros de tienda '+
+      'soltando granadas por un tubo, corrigiendo morteros, grabando propaganda. La respuesta fueron los primeros jammers portátiles de infantería. '+
+      'Fue el aviso de que ya no hacía falta ser un ejército rico para tener fuerza aérea — bastaba una tarjeta de crédito.',
+    zona:'mosul',
+    mision:{ nombre:'Volar esta época · el cuadricóptero de tienda', equipo:{dron:'ataque'},
+      enemies:[{t:'tank',n:4},{t:'turret',n:3},{t:'perro',n:4}],
+      objs:[{type:'destroy',tag:'enemy',n:11,text:'Limpia el sector desde el aire (11)'}],
+      nota:'Un multirrotor con cargas sobre la ciudad real. Vuela bajo entre calles: arriba te ve todo el mundo.' } },
+  { id:'karabaj', años:'2020 · Alto Karabaj', titulo:'La primera guerra ganada desde el aire sin pilotos',
+    texto:'En 44 días de guerra entre Azerbaiyán y Armenia, los Bayraktar TB2 turcos y las municiones merodeadoras Harop destruyeron cientos de blindados, '+
+      'artillería y defensas aéreas, con los videos publicados cada día como propaganda. Fue la demostración de que un dron de precio medio '+
+      'podía anular a un ejército blindado clásico. Dos años después, medio mundo quería TB2.',
+    mision:{ nombre:'Volar esta época · caza de blindados', bioma:'canon', equipo:{dron:'ataque'},
+      enemies:[{t:'tank',n:8}],
+      objs:[{type:'destroy',tag:'tank',n:8,text:'Destruye la columna blindada (8)'}],
+      nota:'Dron de ataque con cargas: altura, paciencia y soltar en el momento justo. Como un TB2 sobre el corredor de Lachín.' } },
+  { id:'ucrania', años:'2022–hoy · Ucrania', titulo:'La guerra de los drones',
+    texto:'DOCUMENTADO HASTA DONDE LLEGA ESTE JUEGO (inicios de 2026): en Ucrania el dron pasó de herramienta a protagonista. '+
+      'FPV kamikazes de 500 dólares destruyen tanques de millones; ambos bandos fabrican MILLONES al año. '+
+      'Los Shahed-136 llegan en oleadas nocturnas y se les responde con drones interceptores. '+
+      'Las lanchas no tripuladas ucranianas (Magura V5, Sea Baby) expulsaron a la flota rusa del oeste del mar Negro sin tener casi marina. '+
+      'Cuando la guerra electrónica saturó el espectro, apareció el FPV de FIBRA ÓPTICA: un hilo de vidrio de kilómetros que no se puede interferir. '+
+      'Y en junio de 2025, drones ocultos en camiones golpearon bombarderos estratégicos a miles de km del frente (operación Telaraña). '+
+      'Casi todo lo que este juego simula —el FPV, la fibra, el jammer, la lancha, el perro— está aquí porque Ucrania lo puso sobre la mesa.',
+    zona:'avdiivka',
+    mision:{ nombre:'Volar esta época · FPV al frente', equipo:{dron:'fibra'},
+      enemies:[{t:'tank',n:6},{t:'turret',n:3},{t:'perro',n:3}],
+      objs:[{type:'destroy',tag:'enemy',n:12,text:'Rompe la posición con FPV (12)'}],
+      nota:'Fibra óptica: inmune al jamming, como en el frente desde 2024. La ciudad es Avdíivka, con sus edificios reales.' } },
+  { id:'marrojo', años:'2023–hoy · mar Rojo', titulo:'El primer teatro naval de drones',
+    texto:'Desde finales de 2023, el estrecho de Bab el-Mandeb y el sur del mar Rojo son el primer lugar donde drones aéreos y lanchas no tripuladas '+
+      'atacan de forma sostenida el tráfico mercante: cientos de ataques, buques hundidos, y marinas de guerra gastando misiles de dos millones '+
+      'contra aparatos de dos mil. La lección incómoda que las armadas del mundo estudian hoy: el barato satura al caro.',
+    sinMapa:'Se sondeó Bab el-Mandeb para darle mapa: el archivo de elevación no tiene datos de fondo marino ahí (medido con DRONES.sonda). Esta época se cuenta; no se vuela.' },
+  { id:'taiwan', años:'HIPOTÉTICO · años 2030 · Taiwán', titulo:'El enjambre (ficción)',
+    texto:'ESTO NO HA PASADO: es un escenario especulativo, del tipo que los estudios de defensa publican sobre el estrecho de Taiwán. '+
+      'La apuesta teórica: enjambres de cientos de aparatos autónomos coordinados, saturando defensas desde todas las direcciones a la vez, '+
+      'con humanos aprobando y máquinas ejecutando. Aquí se juega con los bandos FICTICIOS de siempre sobre la geografía real de Taiwán: '+
+      'la garganta de Taroko como último bastión del defensor.',
+    zona:'taroko',
+    mision:{ nombre:'Volar el escenario · contra el enjambre', equipo:{dron:'largo'},
+      enemies:[{t:'airdrone',n:14},{t:'tank',n:4},{t:'perro',n:4}],
+      objs:[{type:'destroy',tag:'enemy',n:22,text:'Resiste el enjambre (22)'}],
+      nota:'Catorce aparatos aéreos a la vez. El ala fija en órbita (tecla O) es tu radar viviente; sin ella te rodean.' } },
+];
+
 const CAMPANA={
   modo(){ return (store.campana&&store.campana.modo)||null; },
   datos(){ return store.campana||(store.campana={modo:null,nacion:null,ganadas:{}}); },
@@ -8064,6 +8196,51 @@ function renderCampana(){
     } else pr.textContent='';
   }
 }
+/* La línea de tiempo. Se pinta una vez; lo único vivo son los botones. */
+function renderHistoria(){
+  const w=$('eraList'); if(!w || w.dataset.lista) return; w.dataset.lista='1';
+  ERAS.forEach(era=>{
+    const d=document.createElement('div'); d.className='era';
+    let html='<div class="eaños">'+era.años+'</div><h4>'+era.titulo+'</h4><p>'+era.texto+'</p>';
+    if(era.sinMapa) html+='<p class="enota">'+era.sinMapa+'</p>';
+    d.innerHTML=html;
+    if(era.mision){
+      const b=document.createElement('button'); b.className='play eplay';
+      b.textContent='▶ '+era.mision.nombre;
+      b.onclick=()=>startEra(era);
+      d.appendChild(b);
+      if(era.mision.nota){ const nn=document.createElement('div'); nn.className='enota';
+        nn.textContent=era.mision.nota; d.appendChild(nn); }
+    }
+    w.appendChild(d);
+  });
+}
+/* Lanza la misión de una época. Equipa el aparato de su tiempo ANTES de
+   desplegar — volar un FPV kamikaze en la era del reconocimiento sería mentir
+   con las manos — y avisa de qué se le puso. */
+async function startEra(era){
+  const m=era.mision; if(!m) return;
+  if(m.equipo){ const l=currentLoadout();
+    for(const k in m.equipo) l[k]=m.equipo[k];
+    store.loadout=l; save();
+    feed('🔧 Equipo de la época: '+Object.values(m.equipo).join(' + '));
+  }
+  const misionObj={ id:'era_'+era.id, name:era.titulo, real:!!era.zona, survive:0,
+    enemies:m.enemies, objs:m.objs };
+  if(era.zona){
+    const zona=REAL_MAPS.find(z=>z.id===era.zona);
+    if(!zona){ alert('No encuentro la zona '+era.zona); return; }
+    /* misionFija: que ni la campaña ni la ficha de la zona pisen la misión de
+       época — la época manda. */
+    await startRealMission(Object.assign({}, zona, {misionFija:misionObj}));
+  } else {
+    currentReal=null; missionIdx=-1;
+    resetPlay();
+    buildWorld(m.bioma||'desierto');
+    deployMission(misionObj);
+  }
+}
+
 function renderReal(){
   renderCampana();
   pintarMapamundi();
@@ -8086,12 +8263,13 @@ function renderCond(){
   seg($('segWx'), WEATHER, WX, k=>{WX=k; store.env.wx=k;});
 }
 function switchTab(name){
-  ['missions','real','garage','pair','guerra','help'].forEach(t=>$('tab-'+t).style.display= t===name?'block':'none');
+  ['missions','real','garage','pair','guerra','historia','help'].forEach(t=>$('tab-'+t).style.display= t===name?'block':'none');
   if(name==='guerra') cargarGuerra();
   document.querySelectorAll('#navSeg button').forEach(b=>b.classList.toggle('on', b.dataset.tab===name));
   $('condBar').style.display = (name==='missions'||name==='real')?'flex':'none';
   if(name==='garage') renderGarage();
   if(name==='missions') renderMissions();
+  if(name==='historia') renderHistoria();
   if(name==='real') renderReal();
   if(name==='missions'||name==='real') renderCond();
 }

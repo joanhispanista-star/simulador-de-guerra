@@ -1,4 +1,4 @@
-# Estado de Drones de Combate · 21 de agosto de 2026
+# Estado de Drones de Combate · 22 de agosto de 2026
 
 **Vive en `Desktop\drones`** (antes `Desktop\maquinas`; se renombró el 15-ago
 porque ya no comparte carpeta con ningún otro juego).
@@ -408,6 +408,36 @@ cuadricóptero aplicado a cosas que no lo son:
   y `kW` es potencia al eje: el consumo NO se vuelve a multiplicar.
 - **"0 a 30" no sirve si la punta es 30**: se acerca asintóticamente y sale «no
   llega», que es cierto e inútil. Se mide contra el 90% de su propia punta.
+
+
+## 22-ago: la Historia documentada, Medio Oriente y el enjambre
+
+**Pestaña 📜 Historia**: diez épocas de 1849 a hoy, con la regla de siempre —
+nada inventado, hechos con fecha y sistemas con nombre (Kettering Bug, Queen
+Bee, Firebee, Mole Cricket 19, Predator, TB2, Magura, fibra óptica, Telaraña).
+Donde especula (el enjambre de Taiwán) dice HIPOTÉTICO en grande. Siete épocas
+llevan misión jugable que **equipa sola el aparato de su tiempo** (Vietnam =
+recon desarmado; Ucrania = FPV de fibra sobre la Avdíivka real; el enjambre =
+ala fija contra 14 aparatos aéreos en Taroko). Verificadas jugando: Vietnam
+completa (3 fotos → MISIÓN CUMPLIDA), la Becá con sus 6 baterías, el enjambre
+con sus 22.
+
+**Medio Oriente, con la línea de siempre**: geografía real + contexto
+DOCUMENTADO + bandos ficticios. Se añadieron las zonas atadas a hitos
+históricos de la guerra de drones — **Valle de la Becá** (1982, 259 m de
+desnivel medidos) y **Mosul** (2016-17, primera guerra urbana de drones) — y
+**Taipéi** (159 m) para el escenario futurista. NO se hizo un escenario de la
+guerra actual con sus bandos reales: la regla del proyecto es que la guerra
+jugable es ficticia, y la actualidad se cuenta en la Historia con texto.
+**Bab el-Mandeb se sondeó y no tiene batimetría** (SIN DATOS): la época del
+mar Rojo se cuenta, no se vuela, y la ficha lo dice.
+
+### Trampas nuevas
+- `misionFija` en un mapa se salta la campaña y la ficha de la zona: es para
+  las misiones de época, donde la época manda.
+- Al probar clics de interfaz con el juego corriendo: **cerrar la pantalla de
+  resultado antes**, y no romper el bucle de espera en `playing===true` si la
+  misión ANTERIOR sigue viva — dos lecturas falsas vinieron de ahí.
 
 ## Trampas que ya costaron tiempo
 
