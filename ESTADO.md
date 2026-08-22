@@ -468,6 +468,108 @@ NO afirma qué pasa hoy. Zona nueva: **Montes Alborz** (917 m de desnivel
 medidos, sondeado con DRONES.sonda). Misión de época: fibra óptica contra
 defensas y jammers, bandos ficticios como siempre. 22 chinchetas ya.
 
+## 22-ago (3ª tanda): pulido con auditoría · 41 defectos hallados, 14 cerrados
+
+Una revisión adversaria de cinco lentes (escala, código nuevo, ciclo de vida,
+honestidad, jugabilidad) con verificación independiente encontró **41 defectos
+reales**. Se cerraron los 14 más graves, todos **medidos antes y después**:
+
+**Los cinco que este archivo ya daba por pendientes** (sección «Lo que queda
+sin arreglar»), ahora cerrados:
+- **El UGV flotaba 2,6 m al desplegar.** El `+0.5` iba en unidades y el origen
+  del modelo está en las orugas. Medido: 2,61 m → 0,10 m (lo que queda es la
+  suspensión).
+- **La tecla F dejaba un dron zombi Y daba batería infinita.** Volver al tanque
+  no lo recogía: seguía `active`, congelado (updateDrone solo corre en modo
+  dron) y la recarga «en tierra» lo llenaba al 100 % en 25 s. Ahora REGRESA al
+  blindado y la recarga exige `!drone.active`. Verificado: `state().dPos` pasa
+  a null.
+- **El techo del dron colgaba de la cumbre del mapa**, así que el número del
+  garaje era mentira sobre el valle. Ahora se mide desde el suelo que tienes
+  debajo y BAJA como mucho a 12 m/s, que era la razón por la que se puso la
+  cumbre (cruzar de un pico a un valle no te arrastra). Verificado: 150 u de
+  techo = 150 u sobre el suelo, exacto.
+- **El telémetro barría 420 u FIJAS** (no crecía con el campo) con paso de
+  10,4 m. Ahora el alcance sigue al enlace y afina a 1 m con los mismos pasos.
+  Verificado contra un muro real: el terreno salta a los 12 m y lo clava; el
+  viejo habría dicho 10,4.
+- **La mancha térmica sobrevivía entre misiones.** `heatSprites.length=0`
+  soltaba el registro y las mallas que SOBREVIVEN (el dron se reusa si es del
+  mismo aparato) se quedaban con la mancha encendida y fuera del alcance de
+  setSensor. Verificado con `DRONES.manchas()`: con IR 10 encendidas, en la
+  misión siguiente 0.
+
+**Los tres graves que encontró la auditoría:**
+- **El mapamundi se quedaba EN BLANCO desde la segunda vez que se abría 🌍** —
+  o sea, la campaña sin mapa. `cv.width=PX` borra el bitmap aunque el valor no
+  cambie, y estaba ANTES del `if(mundoPintado) return`. Verificado: 72,9 de
+  medio y 3.562 colores en la 1ª, 2ª y 3ª visita (antes: 0,0 y 1 color).
+- **El dron del jugador NO tenía caja de impacto.** Como toda misión arranca EN
+  el dron, se jugaba entero siendo inmortal: el auditor midió 227 proyectiles
+  enemigos y CERO daño. `drone.hp=60` no lo restaba nadie. Ahora hay
+  `damageDrone()` y derribarlo te devuelve al blindado. Verificado: 60 → 48 →
+  36 → 24 → 12 → derribado.
+- **La lancha y el submarino se aceleraban solos marcha atrás hasta NaN.** La
+  resistencia usaba el MÓDULO de la velocidad, así que yendo de culo empujaba
+  más hacia atrás (du/dt = +k·u²). Ahora va con signo sobre la proa.
+
+**Escala, otra vez** (la causa raíz que ya mordió veinte veces el 18-ago):
+- **El viento entraba crudo**: en lluvia soplaba a 44,3 m/s = 160 km/h en vez
+  de 9. De ahí salían 4,5 g laterales en ACRO y 24 m/s² de empuje sobre una
+  lancha cuya punta son 20. La línea de al lado (la caída de la gota) sí se
+  había corregido: esta se saltó por un pelo.
+- **Los drones enemigos volaban a 244 km/h** y los compañeros a **319**, contra
+  los 108 km/h del cuadricóptero que pilotas — el mismo aparato. En el enjambre
+  no se podía ni huir ni interceptar.
+
+**Y tres de interfaz:** la tecla **P** estaba atada a DOS funciones a la vez
+(modo foto y el panel ¿POR QUÉ?, que se muda a **U**); al perder el foco de la
+ventana las teclas y el ratón se quedaban PEGADOS (nadie manda el keyup fuera
+de la ventana); y `duelo.saludado` no se reiniciaba nunca, así que el segundo
+duelo de la sesión se colgaba en «Conectando…» para siempre.
+
+### Herramientas nuevas (con `?dbg`)
+- `DRONES.boca()` — la BOCA del cañón, de donde sale el telémetro, con
+  `bajoTierra`. Faltaba: `barrelY` suena a esto pero mide un BARRIL explosivo,
+  y depurando el telémetro mandó la investigación por el camino falso una hora.
+- `DRONES.manchas()` — prueba de regresión del borrón térmico: con el sensor en
+  EO, `encendidas` tiene que dar 0 SIEMPRE.
+- `droneInfo()` añade `hp` y `activo`; `sys().gunRange` ya no redondea a entero
+  (escondía la precisión de 1 m que acaba de ganar el telémetro).
+
+### ⚠ Un defecto que NO se arregló, a propósito
+La auditoría tiene razón en que `resetPlay` saca las mallas de la escena y
+**nunca las libera**: hay fuga de GPU misión tras misión. Pero el arreglo obvio
+—`disposeGroup()` sobre enemigos y aliados— **rompe el juego**: `buildVehicle`,
+`buildDrone` y `buildPerro` arman sus mallas con `geo()`, que es una CACHÉ
+COMPARTIDA por nombre (`GEO[clave] ||= hacer()`). Liberar la malla de UN enemigo
+libera la geometría de TODOS —incluida la del jugador— y deja la entrada muerta
+en la caché para siempre. Se llegó a escribir y se revirtió tras comprobarlo.
+El arreglo bueno pasa por distinguir lo cacheado de lo propio.
+
+### Los 27 defectos que quedan en la lista
+Confirmados y sin tocar, por si la siguiente sesión quiere seguir: el garaje
+pasado de presupuesto tras una misión de época (y con el aparato de otra
+época); «▶ Siguiente» tras una misión de época mete en la misión 1 de la
+campaña; una misión de época conquista la zona saltándose su guarnición; la
+puerta «solo computador» se abre entera con el botón del mando; el rendimiento
+del tren se aplica DOS veces en la punta (29 km/h cuando la reductora da 45);
+el puesto de mando es un mástil de 36,5 m (y el enlace mide la línea de vista
+desde ahí); la copia de seguridad no lleva la campaña y aun así dice «Progreso
+restaurado»; el presupuesto del garaje no impide nada; el menú de pausa deja
+motores y rotores sonando congelados; la Guerra promete que las victorias
+previas «contarán» y se pierden; el cañón de riel avisa de un castigo que nunca
+se aplica; el blindaje compuesto promete 2× y da 1,62×; la firma térmica de la
+ficha es adorno; la pestaña de Controles sigue enseñando a jugar en el móvil
+después de bloquearlo; el Duelo se queda en «Conectando…» sin error; el aviso
+de kamikaze lista 3 de 5 aparatos; la cámara del UGV se mete en la montaña; en
+el dron el ratón no controla nada pero el cartel promete que sí; pierdes la
+misión porque matan a un UGV aparcado que no ves ni oyes; `docuPrueba()` da por
+estático un beat que sí anima; el polvo de las orugas exige 56 km/h que ningún
+vehículo alcanza; la designación láser agarra a 157 m; `maxAlt` está en metros
+en el catálogo pero se suma en unidades; y el alcance de la campaña solo se
+respeta en las chinchetas, no en la lista de zonas.
+
 ## Trampas que ya costaron tiempo
 
 - **La rama de este repo es `main`, no `master`.** Otros proyectos de Joan usan

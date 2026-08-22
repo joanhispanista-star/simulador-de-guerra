@@ -781,6 +781,7 @@
           <span><kbd>F1</kbd> depuración IA: conos de visión y estado</span>
           <span><kbd>N</kbd> sonido: silencio / bajo / normal / alto</span>
           <span><kbd>P</kbd> <b>modo foto</b>: congela la escena, esconde el HUD y suelta la cámara</span>
+          <span><kbd>U</kbd> <b>¿por qué?</b>: qué está pasando ahora mismo, con los números</span>
           <span><kbd>Esc</kbd> pausa · soltar ratón</span>
         </div>
         <div class="h-sec">Dron aéreo · munición merodeadora</div>
@@ -1911,7 +1912,14 @@ function applyEnvironment(){
   scene.fog=new THREE.FogExp2(fogCol, worldBase.fogN*(t.fogMul||1)*(w.fogMul||1));
   NIGHT=(TOD==='noche'); visRange=w.vis;
   // viento del clima (empuja al dron y arrastra las partículas)
-  const wv=w.wind||0; windVec.set(wv*0.8, 0, -wv*0.5);
+  /* WEATHER.wind va en METROS POR SEGUNDO (lluvia 9, polvo 7, nieve 4, niebla 3
+     — los MISMOS números que la caída de la gota, que sí lleva su *M). Entraba
+     crudo en unidades: en lluvia el viento soplaba a 44,3 m/s = 160 km/h, y de
+     ahí salían 4,5 g laterales en ACRO, 24 m/s² de empuje sobre una lancha cuya
+     punta son 20 m/s, y las rampas de `min(1, |viento|*0,35)` saturadas a tope
+     con CUALQUIER clima. Es el mismo reescalado a medias del 18-ago: esta línea
+     se saltó por un pelo (la de al lado, la lluvia, sí se corrigió). */
+  const wv=(w.wind||0)*M; windVec.set(wv*0.8, 0, -wv*0.5);
   setWeatherParticles(w.part);
   aplicarLucesCiudad();
 }
@@ -4382,6 +4390,14 @@ function updateProjectiles(dt){
       for(const e of enemies){ if(!e.alive) continue; if(dSeg(e.pos)<e.radius){ hit={p:hp.clone(), target:e}; break; } }
     } else {
       if(player.alive && dSeg(player.pos)<1.8*M){ hit={p:hp.clone(), player:true}; }
+      /* EL DRON DEL JUGADOR TAMBIÉN SE PUEDE DERRIBAR. No tenía caja de
+         impacto: aquí solo se miraban el UGV y los compañeros, y como TODA
+         misión arranca EN el dron, el jugador la pasaba entera siendo inmortal
+         mientras le vaciaban el cargador (medido: 227 proyectiles, cero daño).
+         Sin riesgo no había motivo para usar cobertura, altura ni el ave
+         sigilosa. El mismo radio que un compañero aéreo, que es el mismo
+         aparato. */
+      else if(drone.active && dSeg(drone.pos)<1.0*M){ hit={p:hp.clone(), dron:true}; }
       else { for(const a of allies){ if(a.alive && dSeg(a.pos)<1.0*M){ hit={p:hp.clone(), ally:a}; break; } } }
     }
     /* Y el terreno también se recorre a lo largo del tramo, no solo en el punto
@@ -4416,6 +4432,7 @@ function updateProjectiles(dt){
         else if(hit.player){ const r=penetration(p, player.pos);
           if(r.rico){ spawnSpark(hit.p, p.vel); player.detected=true; player.detTimer=3; feed('◇ Rebote en el blindaje','good'); }
           else damagePlayer(r.dmg); }
+        else if(hit.dron){ damageDrone(p.dmg); }
         else if(hit.ally){ damageAlly(hit.ally, p.dmg); }
         // splash (HE)
         if(p.splash>0){
@@ -5022,7 +5039,11 @@ function moverUnidad(e, orden, dt){
     let vx=0, vz=0;
     if(orden.ir){
       const dx=orden.ir.x-e.pos.x, dz=orden.ir.z-e.pos.z, L=Math.hypot(dx,dz)||1;
-      const sp=13*(orden.prisa||1);
+      /* 22 m/s = 79 km/h. Estaba en 13 UNIDADES/s = 244 km/h: el dron enemigo es
+       el MISMO cuadricóptero que pilotas tú (buildDrone), que va a 108 km/h,
+       así que era 2,3 veces más rápido y en el enjambre no se podía ni huir ni
+       interceptar. La rama de tierra de aquí abajo sí llevaba su conversión. */
+    const sp=22*M*(orden.prisa||1);
       if(L>4){ vx=dx/L*sp; vz=dz/L*sp; }
       if(e.ia && e.ia.estado==='ATACAR'){ vx+=-dz/L*sp*0.55; vz+=dx/L*sp*0.55; }   // orbita al blanco
     }
@@ -5164,6 +5185,23 @@ function damageAlly(a, dmg){
   if(!a.alive) return; a.hp-=dmg;
   if(a.hp<=0){ a.alive=false; a.mesh.visible=false; spawnExplosion(a.pos, 6, 0x8be0ff); feed('Compañero derribado','bad'); }
 }
+/* Derribar el dron NO es perder la misión: te devuelve al blindado, que sigue
+   siendo el que aguanta la partida. `drone.hp` existía desde siempre y no lo
+   restaba nadie; ahora vale de algo. Se recupera al desplegar otro (deployDrone
+   lo repone a 60), como una batería más del cargador. */
+function damageDrone(dmg){
+  if(!drone.active) return;
+  drone.hp-=dmg;
+  player.detected=true; player.detTimer=3; hudFlash();
+  if(drone.hp<=0){
+    spawnExplosion(drone.pos, 5, 0xffb030); spawnSmoke(drone.pos);
+    drone.active=false; drone.kamikaze=false; drone.diving=false;
+    if(drone.mesh) drone.mesh.visible=false;
+    feed('💥 Dron derribado · vuelves al blindado','bad');
+    mode='tank'; updateChips();
+    $('btnUp').style.display='none'; $('btnDown').style.display='none';
+  } else feed('¡Impacto en el dron! · '+Math.max(0,Math.round(drone.hp))+' de vida','bad');
+}
 const _al=new THREE.Vector3();
 /* Los compañeros usan la MISMA máquina de estados que el enemigo.
    Para ellos, PATRULLA = mantener formación con el jugador. */
@@ -5222,7 +5260,7 @@ function moverAliado(a, orden, dt){
   }
   const alt = enFormacion ? jefe.y+16 : terrainHeight(goal.x,goal.z)+15;
   const dx=goal.x-a.pos.x, dz=goal.z-a.pos.z, L=Math.hypot(dx,dz)||1;
-  const sp=17*(orden.prisa||1);
+  const sp=26*M*(orden.prisa||1);   // 26 m/s = 94 km/h; estaba en 17 u/s = 319 km/h
   _al.set(L>3?dx/L*sp:0, (alt-a.pos.y)*1.6, L>3?dz/L*sp:0);
   a.vel.lerp(_al, clamp(3*dt,0,1));
   a.pos.addScaledVector(a.vel, dt);
@@ -5359,7 +5397,10 @@ addEventListener('keydown',e=>{ keys[e.code]=true;
     feed('🔎 Depuración IA '+(CONFIG_IA.debug?'ON — conos, estado y blancos':'OFF')); }
   if(e.code==='KeyM'){ toggleGaze(); }
   if(e.code==='KeyT' && playing){ toggleTecnico(); }
-  if(e.code==='KeyP' && playing){ if(!cerrarPorQue()) mostrarPorQue(); }
+  /* U, no P: la P ya era del MODO FOTO (y así lo dice la pestaña de Controles).
+     Estaban las dos atadas al mismo keydown, así que una sola pulsación abría
+     el panel Y congelaba la escena a la vez. */
+  if(e.code==='KeyU' && playing){ if(!cerrarPorQue()) mostrarPorQue(); }
   if(e.code==='KeyG' && gaze.ready){ calibrateGaze(); }
   if(e.code==='KeyH' && gaze.ready){ gaze.invertYaw=!gaze.invertYaw; feed('Mirada '+(gaze.invertYaw?'normal':'invertida')); }
   if(e.code==='KeyB' && playing && mode==='drone'){ drone.acro=!drone.acro;
@@ -5376,6 +5417,8 @@ addEventListener('wheel', e=>{
 
 /* ratón: pointer lock para apuntar */
 let pointerLocked=false, mouseFire=false, mouseSec=false;
+// suelta TODO lo que esté pulsado; la usan blur y visibilitychange
+function soltarEntradas(){ for(const k in keys) delete keys[k]; mouseFire=false; mouseSec=false; }
 const cvs=$('c');
 document.addEventListener('pointerlockchange',()=>{ pointerLocked=(document.pointerLockElement===cvs); avisoRaton(); });
 addEventListener('mousemove',e=>{ if(!pointerLocked) return; const s=0.0024;
@@ -5687,7 +5730,7 @@ function toggleVoice(){
    no explicar nada.
      · TÉCNICO (tecla T): el HUD cambia de números de juego a instrumentos —
        potencia entregada, consumo, carga, temperatura del motor.
-     · ¿POR QUÉ? (tecla P): explica lo que está pasando AHORA, con los números
+     · ¿POR QUÉ? (tecla U): explica lo que está pasando AHORA, con los números
        de ahora. Elige el tema por urgencia: primero lo que te va a matar.
    ===================================================================== */
 let MODO_TECNICO=false;
@@ -6094,6 +6137,7 @@ function deployDrone(){
   drone.pos.copy(player.pos).add(new THREE.Vector3(0,8*M,0));
   drone.vel.set(0,0,0); drone.yaw=player.yaw; drone.pitch=0; drone.roll=0; drone.yawVel=0;
   drone.gimbal=0; drone.gimbalManual=false;   // cámara al frente, en automático
+  drone.techo=null;                           // el techo se recalcula desde el suelo de aquí
 }
 /* ---------------------------------------------------------------------
    GIMBAL: la cámara colgante del dron, que se inclina hacia abajo.
@@ -6140,7 +6184,17 @@ function toggleDrone(){
     if(!drone.active) deployDrone();
     mode='drone'; feed('Dron aéreo · W/S adelante-atrás · A/D girar · Espacio sube · Mayús baja','good');
   } else {
-    mode='tank'; feed('Control · UGV terrestre');
+    /* El dron REGRESA al blindado, no se queda colgado en el aire. Antes
+       seguía `active` con la malla visible, y como updateDrone solo corre en
+       modo dron quedaba congelado a media misión; encima la recarga de tierra
+       lo llenaba al 100 % en 25 s, así que ir y volver con F era batería
+       infinita. Recogerlo cierra el zombi y el atajo de una vez. */
+    if(drone.active){
+      drone.active=false; drone.kamikaze=false; drone.diving=false;
+      if(drone.mesh) drone.mesh.visible=false;
+      feed('Dron de regreso al blindado · control del UGV terrestre');
+    } else feed('Control · UGV terrestre');
+    mode='tank';
     $('btnUp').style.display='none'; $('btnDown').style.display='none';
   }
   updateChips();
@@ -6309,10 +6363,17 @@ function updateDrone(dt, inp){
     // resistencia cuadrática ajustada para que T=D justo en VMAX
     const A_EMP=3.2*M*(esSub?0.35:1);                        // aceleración de la hélice
     const kDrag=A_EMP/(VMAX*VMAX);
-    const v=Math.hypot(drone.vel.x, drone.vel.z);
-    const empuje=A_EMP*gas*power - kDrag*v*v*Math.sign(gas>=0?1:1);
+    const v=Math.hypot(drone.vel.x, drone.vel.z);   // módulo: solo para el timón
+    /* ⚠ LA RESISTENCIA VA CON SIGNO, sobre la componente a lo largo de la PROA.
+       Antes se le pasaba el MÓDULO (`kDrag*v*v`), que no sabe hacia dónde va el
+       casco: yendo marcha atrás la resistencia se restaba hacia proa, o sea
+       EMPUJABA más hacia atrás — du/dt = +k·u², que se dispara en tiempo
+       finito. Medido: con la palanca al CENTRO la lancha se aceleraba sola de
+       culo hasta 72 km/h (más que su punta a todo gas) y acababa en NaN, con
+       el aparato desaparecido del mapa. */
+    const vProa=drone.vel.x*sy + drone.vel.z*cy;
     // marcha atrás: la hélice rinde la mitad y el casco va sucio
-    const acel=(gas<0? A_EMP*gas*0.45*power : A_EMP*gas*power) - kDrag*v*v;
+    const acel=(gas<0? A_EMP*gas*0.45*power : A_EMP*gas*power) - kDrag*vProa*Math.abs(vProa);
     /* TIMÓN. La autoridad crece con la arrancada y se satura: por debajo de un
        nudo y medio no gobierna, y a partir de media máquina ya no gana más. */
     const arrancada=clamp(v/(VMAX*0.35), 0, 1);
@@ -6432,7 +6493,19 @@ function updateDrone(dt, inp){
      Se mide desde la cumbre del mapa y no desde el suelo que tiene debajo, para
      que al cruzar de un pico a un valle el techo no se desplome de golpe y te
      arrastre hacia abajo. */
-  const techo=Math.max(minY+1, MUNDO_ALTO + (stats.drone.maxAlt||130));
+  /* 22-ago: ahora se mide desde EL SUELO QUE TIENES DEBAJO (altura sobre el
+     terreno, como la norma real), no desde la cumbre. Con la cumbre el número
+     del garaje era mentira: en un mapa con montaña, sobre el valle se volaba
+     cientos de metros por encima del techo del aparato. Se conserva la razón
+     por la que se puso la cumbre —cruzar de un pico a un valle no debe
+     ARRASTRARTE hacia abajo— con un freno: el techo sube al instante (nunca
+     te deja enterrado, que era el fallo del Nevado del Ruiz) pero BAJA como
+     mucho a 12 m/s, la velocidad a la que el propio dron desciende. Así te
+     acompaña en vez de tirar de ti. */
+  const techoSuelo=gy+(stats.drone.maxAlt||130);
+  if(drone.techo==null || drone.techo<techoSuelo) drone.techo=techoSuelo;
+  else drone.techo=Math.max(techoSuelo, drone.techo-12*M*dt);
+  const techo=Math.max(minY+1, drone.techo);
   drone.pos.y=clamp(drone.pos.y, minY, techo);
   /* El zumbido sigue al ESFUERZO, no a la velocidad: un dron parado en el aire
      también trabaja, y uno cayendo casi no. Por eso el gas mezcla la inclinación
@@ -6602,6 +6675,14 @@ function cycleCam(){
 let currentReal=null;
 function resetPlay(){
   stats=derivedStats(currentLoadout());
+  /* ⚠ NO llamar aquí a disposeGroup(): buildVehicle, buildDrone y buildPerro
+     arman sus mallas con geo(), que es una CACHÉ COMPARTIDA por nombre
+     (`GEO[clave] ||= hacer()`). Liberar la malla de UN enemigo libera la
+     geometría de TODOS los tanques, perros y torretas —y la del jugador— y
+     deja la entrada muerta dentro de la caché para siempre. Sí hay una fuga
+     real de GPU aquí (las geometrías propias, no cacheadas, no bajan nunca),
+     pero el arreglo pasa por distinguir lo cacheado de lo propio, no por
+     soltar la escopeta. Anotado en ESTADO.md. */
   enemies.forEach(e=>{ scene.remove(e.mesh); }); enemies=[];
   allies.forEach(a=>{ scene.remove(a.mesh); }); allies=[];
   projectiles.forEach(p=>scene.remove(p.mesh)); projectiles=[];
@@ -6614,7 +6695,20 @@ function resetPlay(){
   player.speed=0; player.yawRate=0; player.susPitch=0; player.susRoll=0; player.dustT=0;
   mode='tank'; camMode=0; droneCam=0; drone.active=false; drone.batt=1; drone.kamikaze=false; if(drone.mesh)drone.mesh.visible=false;
   drone.orbita=null; drone.vAire=null; drone.aleteo=0;   // estado del ala fija y del ave
-  heatSprites.length=0; signal=1; linkAuth=1; linkLost=false; jammed=false; designatedTarget=null;
+  /* MANCHAS TÉRMICAS: apagarlas todas, y conservar en el registro solo las que
+     siguen colgando de algo que está en la escena. Antes se vaciaba el
+     registro a secas (`heatSprites.length=0`) y las mallas que SOBREVIVEN a la
+     misión —el dron, que se reusa cuando es del mismo aparato, y el rival del
+     duelo— se quedaban con su mancha ENCENDIDA y fuera del registro: setSensor
+     ya no podía apagarla. Ése era el borrón blanco pegado al dron en cámara
+     normal, misión tras misión. */
+  for(const s of heatSprites) if(s) s.visible=false;
+  for(let i=heatSprites.length-1;i>=0;i--){
+    let o=heatSprites[i], enEscena=false;
+    while(o){ if(o===scene){ enEscena=true; break; } o=o.parent; }
+    if(!enEscena) heatSprites.splice(i,1);
+  }
+  signal=1; linkAuth=1; linkLost=false; jammed=false; designatedTarget=null;
   dmg.movilidad=dmg.optica=dmg.comms=0;
   if(cmdMesh){ scene.remove(cmdMesh); cmdMesh=null; }
   clearPhysics();
@@ -6662,8 +6756,18 @@ function deployMission(m){
       feed('⚓ Despliegue sobre '+m+' m de agua'+(m<12?' · somera: la lancha (USV) manda aquí':' · el submarino puede bajar'),'good'); }
     else feed('⚠ No se encontró agua navegable en este campo','bad');
   }
-  player.pos.y=terrainHeight(player.pos.x,player.pos.z)+0.5;
-  if(player.mesh){ scene.remove(player.mesh); disposeGroup(player.mesh); }
+  /* A RAS DE SUELO, sin sumar nada: el origen del modelo del UGV está en sus
+     orugas, y al conducir updatePlayer lleva pos.y al promedio de las cuatro
+     esquinas SIN offset. Ese `+0.5` eran UNIDADES (2,6 m), así que el blindado
+     arrancaba flotando dos metros y medio y caía solo al primer cuadro. */
+  player.pos.y=terrainHeight(player.pos.x,player.pos.z);
+  if(player.mesh){
+    scene.remove(player.mesh); disposeGroup(player.mesh);
+    /* Su mancha térmica se va con él: si no, el registro se quedaba con una
+       huérfana por misión, para siempre (lo delató DRONES.manchas()). */
+    for(let i=heatSprites.length-1;i>=0;i--){ let o=heatSprites[i];
+      while(o){ if(o===player.mesh){ heatSprites.splice(i,1); break; } o=o.parent; } }
+  }
   player.mesh=buildVehicle({color:stats.color, accent:0x2a3038, led:0x3ff0c0}); scene.add(player.mesh);
   player.mesh.position.copy(player.pos);
   addHeat(player.mesh, 2.2, 3.2);
@@ -7017,12 +7121,23 @@ function computeGunnery(){
   if(mode!=='tank'||!player.mesh){ return; }
   const from=turretMuzzle(), dir=aimDir();
   // telémetro: primer choque de la línea de puntería con terreno/enemigo
-  let range=SIG_RANGE*1.4;
-  { const step=2; const p=from.clone();
-    for(let d=step; d<420; d+=step){ p.copy(from).addScaledVector(dir,d);
-      if(p.y<=terrainHeight(p.x,p.z)){ range=d; break; }
-      let hitE=false; for(const e of enemies){ if(e.alive && e.pos.distanceTo(p)<e.radius){ range=d; hitE=true; break; } }
-      if(hitE) break;
+  /* Barrido GRUESO para encontrar el tramo y FINO dentro de él. Antes barría
+     420 u FIJAS (2.192 m) con paso de 2 u (10,4 m): en el campo grande el
+     telémetro se quedaba corto mucho antes que el enlace —el alcance no crecía
+     con el mundo— y la lectura saltaba de diez en diez metros. Ahora el
+     alcance sigue al enlace y afina a 1 m con los mismos pasos gruesos. */
+  const lejos=SIG_RANGE*1.4;
+  let range=lejos;
+  { const grueso=10*M, fino=1*M, p=from.clone();
+    const choca=(d)=>{ p.copy(from).addScaledVector(dir,d);
+      if(p.y<=terrainHeight(p.x,p.z)) return true;
+      for(const e of enemies){ if(e.alive && e.pos.distanceTo(p)<e.radius) return true; }
+      return false; };
+    for(let d=grueso; d<lejos; d+=grueso){
+      if(!choca(d)) continue;
+      range=d;
+      for(let f=d-grueso+fino; f<d; f+=fino){ if(choca(f)){ range=f; break; } }
+      break;
     } }
   gunAim.range=range;
   // impacto real: simula el proyectil con gravedad
@@ -7256,7 +7371,9 @@ function simulate(dt){
   F('inicio');
   missionTime+=dt;
   computeSignal(dt); updateDmg(dt);
-  if(mode!=='drone' && drone.batt<1) drone.batt=Math.min(1, drone.batt+dt*0.04);  // recarga en tierra
+  // Recarga solo con el dron RECOGIDO en el blindado, nunca en el aire: sin el
+  // `!drone.active` bastaba con dejarlo volando y volver con F para llenarlo.
+  if(mode!=='drone' && !drone.active && drone.batt<1) drone.batt=Math.min(1, drone.batt+dt*0.04);
   F('entrada'); const inp=readInput(dt);
   F('jugador');  updatePlayer(dt, inp);
   F('ia.tick');  IA.tick(dt);            // capa de IA: refresca los blancos percibibles de cada bando
@@ -7573,7 +7690,7 @@ async function dueloArrancar(cfg){
 function dueloEsquina(){ const s=duelo.role==='host'?-1:1; return {x:s*HALF*0.35, z:s*HALF*0.35}; }
 function dueloColocar(){
   const e=dueloEsquina();
-  player.pos.x=e.x; player.pos.z=e.z; player.pos.y=terrainHeight(e.x,e.z)+0.5;
+  player.pos.x=e.x; player.pos.z=e.z; player.pos.y=terrainHeight(e.x,e.z);   // a ras, como en deployMission
   /* La MALLA del blindado también, no solo su posición lógica: deployMission ya
      la había colocado en el centro del mapa, y como en modo dron updatePlayer
      no la vuelve a mover, el chasis se quedaba dibujado en mitad de la ciudad
@@ -7645,6 +7762,11 @@ function dueloCerrar(){
   try{ if(duelo.sb && duelo.sb.removeAllChannels) duelo.sb.removeAllChannels(); }catch(e){}
   duelo.active=false; duelo.fin=false; duelo.ch=null; duelo.role=null; duelo.code=null;
   duelo.score=[0,0]; duelo.hp=DUELO_HP; duelo.respawnT=0; duelo.cfg=null;
+  /* `saludado` es la bandera que deja al INVITADO mandar el 'hola' que despierta
+     al anfitrión. No se reiniciaba, así que el segundo duelo de la sesión no
+     saludaba nunca: el anfitrión se quedaba en «Esperando al rival…» y el
+     invitado en «Conectando…», sin error y para siempre. */
+  duelo.saludado=false;
   const r=duelo.rival;
   if(r.mesh){ scene.remove(r.mesh); disposeGroup(r.mesh); r.mesh=null; }
   r.alHay=false; r.mudo=0;
@@ -8456,10 +8578,16 @@ async function pintarMapamundi(){
   const g=cv.getContext('2d');
   const PX=1024, Y0=mercY(MUNDO_LAT_TOPE,PX), Y1=mercY(-MUNDO_LAT_TOPE,PX);
   const ALTO=Math.round(Y1-Y0);
-  cv.width=PX; cv.height=ALTO;
   // las chinchetas primero: no dependen de la imagen y así funcionan igual
   colocarChinchetas(PX, Y0, ALTO);
   if(mundoPintado) return;
+  /* ⚠ EL TAMAÑO SE FIJA AQUÍ, DESPUÉS DEL CORTE. Asignar `canvas.width` BORRA
+     el bitmap aunque el valor no cambie, así que hacerlo antes del
+     `if(mundoPintado) return` dejaba el mapamundi EN BLANCO desde la segunda
+     vez que se abría la pestaña 🌍 — y sin aviso, porque el cartel de estado
+     ya se había ocultado en el primer pase: un rectángulo azul vacío con las
+     chinchetas flotando, y la campaña sin mapa donde elegir. */
+  cv.width=PX; cv.height=ALTO;
   // retícula de fondo, que es también el respaldo si no hay red
   g.fillStyle='#06121f'; g.fillRect(0,0,PX,ALTO);
   g.strokeStyle='rgba(63,240,192,.16)'; g.lineWidth=1;
@@ -8765,8 +8893,11 @@ function wireUI(){
   padHold('padUp','throttleUp'); padHold('padDown','throttleDown'); padHold('padFire','fire');
   $('padTilt').addEventListener('click',()=>enableGyro());
   // pausa al perder foco
-  addEventListener('blur',()=>{ if(playing&&!paused) doPause(); });
-  document.addEventListener('visibilitychange',()=>{ if(document.hidden&&playing&&!paused)doPause(); });
+  /* Al perder el foco NADIE manda el keyup (se produce fuera de la ventana):
+     las teclas y los botones del ratón se quedaban PEGADOS, y al volver el
+     blindado seguía acelerando o disparando solo. Se sueltan a mano. */
+  addEventListener('blur',()=>{ soltarEntradas(); if(playing&&!paused) doPause(); });
+  document.addEventListener('visibilitychange',()=>{ if(document.hidden){ soltarEntradas(); if(playing&&!paused)doPause(); } });
 }
 
 /* =====================================================================
@@ -9168,6 +9299,8 @@ if(location.search.indexOf('dbg')>=0) window.DRONES={
     pos:allies.map(a=>({t:a.tierra?'perro':'dron', vivo:a.alive, x:+a.pos.x.toFixed(1), y:+a.pos.y.toFixed(1), z:+a.pos.z.toFixed(1), estado:a.ia&&a.ia.estado,
       mesh:{visible:a.mesh.visible, enEscena:!!a.mesh.parent, my:+a.mesh.position.y.toFixed(2), escala:+a.mesh.scale.x.toFixed(2)}}))}),
   droneInfo:()=>({type:stats&&stats.drone.id, fiber:!!(stats&&stats.drone.fiber), maxAlt:stats&&stats.drone.maxAlt, domain:stats&&stats.drone.domain, cam:DRONECAM_NAMES[droneCam], y:+drone.pos.y.toFixed(1),
+    // hp y activo: el dron ya se puede derribar, y sin estos dos no hay forma de comprobarlo
+    hp:+(drone.hp||0).toFixed(1), activo:!!drone.active,
     gimbal:Math.round((drone.gimbal||0)*180/Math.PI), gimbalManual:!!drone.gimbalManual}),
   setGimbal:(grados)=>{ ajustarGimbal(grados*Math.PI/180-(drone.gimbal||0)); return Math.round((drone.gimbal||0)*180/Math.PI); },
   gimbalAuto:()=>{ drone.gimbalManual=false; return 'vuelve al automático'; },
@@ -9272,11 +9405,29 @@ if(location.search.indexOf('dbg')>=0) window.DRONES={
   phys:()=>({ready:physReady, bodies:physBodies.length, barrels:physBodies.filter(p=>p.explosive).length}),
   barrelY:()=>{ const b=physBodies.find(p=>p.explosive); return b?{x:+b.body.position.x.toFixed(1),y:+b.body.position.y.toFixed(2),z:+b.body.position.z.toFixed(1),terr:+terrainHeight(b.body.position.x,b.body.position.z).toFixed(2)}:null; },
   blastBarrel:()=>{ const b=physBodies.find(p=>p.explosive&&!p.exploding); if(!b)return 'none'; b.exploding=true; barrelQueue.push(b); return 'queued'; },
+  /* La BOCA del cañón, de donde sale el telémetro. Faltaba y se echó de menos:
+     `barrelY` suena a esto pero mide un BARRIL explosivo, así que al depurar un
+     telémetro que leía siempre lo mismo daba coordenadas de otro sitio y mandaba
+     la investigación por el camino falso. `bajoTierra` es la comprobación que
+     importa: si la boca nace bajo el suelo, el telémetro choca al primer paso. */
+  /* Prueba de regresión del BORRÓN BLANCO que sobrevivía entre misiones: con
+     el sensor en EO (0) `encendidas` tiene que dar 0 SIEMPRE. `huerfanas` son
+     las manchas que ya no cuelgan de la escena y que el registro no debería
+     seguir guardando. */
+  manchas:()=>({ registro:heatSprites.length, sensor:SENSOR_NAMES[sensor],
+    encendidas:heatSprites.filter(s=>s&&s.visible).length,
+    huerfanas:heatSprites.filter(s=>{ let o=s; while(o){ if(o===scene) return false; o=o.parent; } return true; }).length }),
+  boca:()=>{ if(!player.mesh) return null;
+    const m=turretMuzzle(), d=aimDir(), t=terrainHeight(m.x,m.z);
+    return { x:+m.x.toFixed(2), y:+m.y.toFixed(2), z:+m.z.toFixed(2), terr:+t.toFixed(2),
+             sobreSuelo_m:+((m.y-t)*MPU).toFixed(2), bajoTierra:m.y<=t,
+             dir:[+d.x.toFixed(3),+d.y.toFixed(3),+d.z.toFixed(3)] }; },
   designate:()=>{ const e=enemies.find(x=>x.alive); if(e){designatedTarget=e; return e.kind;} return 'none'; },
   sys:()=>({sensor:SENSOR_NAMES[sensor], signal:+signal.toFixed(2), linkAuth:+linkAuth.toFixed(2), linkLost, jammed, designated:!!designatedTarget,
     batt:+drone.batt.toFixed(2), kamikaze:drone.kamikaze, diving:!!drone.diving, acro:!!drone.acro, dPitch:+drone.pitch.toFixed(3),
     dmg:{mov:+dmg.movilidad.toFixed(2),opt:+dmg.optica.toFixed(2),com:+dmg.comms.toFixed(2)},
-    gunRange:+gunAim.range.toFixed(0), gunHit:gunAim.hit, TOD, WX, NIGHT, heat:heatSprites.length,
+    // con un decimal: el telémetro afina a 1 m (0,19 u) y redondear a entero lo escondía
+    gunRange:+gunAim.range.toFixed(2), gunHit:gunAim.hit, TOD, WX, NIGHT, heat:heatSprites.length,
     speed:+player.speed.toFixed(2), susP:+player.susPitch.toFixed(3), susR:+player.susRoll.toFixed(3), yawRate:+player.yawRate.toFixed(3)}),
   state:()=>({playing,paused,mode,camMode,hp:+player.hp.toFixed(1),hpMax:player.hpMax,
     enemies:enemies.filter(e=>e.alive).length,proj:projectiles.length,fx:effects.length,
