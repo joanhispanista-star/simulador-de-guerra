@@ -371,6 +371,29 @@
   #condBar .seg button{min-width:48px;font-size:12px;padding:7px 6px}
   .cz-in{flex:1;min-width:0;background:var(--panel-2);border:1.5px solid var(--linea);color:#fff;border-radius:10px;padding:12px;font-size:14px;font-weight:600;font-family:inherit}
   .cz-in:focus{outline:none;border-color:var(--hud)}
+  /* La línea pequeña que dice DE DÓNDE sale cada número de la ficha. Es la
+     diferencia entre un dato y una explicación. */
+  /* El panel de ¿POR QUÉ?: ocupa el centro, pausa el juego y se cierra tocando.
+     Pausa a propósito — leer una explicación mientras te disparan no es leer. */
+  #porqueBox{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:40;display:none;
+    width:min(560px,92vw);max-height:80vh;overflow:auto;padding:18px 20px;cursor:pointer;
+    background:rgba(10,13,19,.97);border:1px solid var(--linea);border-radius:16px;
+    box-shadow:0 24px 70px rgba(0,0,0,.7)}
+  #porqueBox.on{display:block}
+  #porqueBox h4{margin:0 0 10px;font-size:13px;letter-spacing:.09em;text-transform:uppercase;color:var(--hud)}
+  #porqueBox h4.mal{color:var(--ambar)}
+  #porqueBox p{margin:0 0 10px;font-size:12.5px;line-height:1.62;color:var(--hueso);white-space:pre-wrap}
+  #porqueBox .cerrar{margin-top:6px;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--gris-2)}
+  /* Aviso de que el vehículo tal como está no funciona. Rojo y con el porqué,
+     nunca un "no válido" a secas. */
+  .ob-error{font-size:11px;line-height:1.5;color:var(--rojo-2);padding:8px 10px;
+    border:1px solid rgba(255,59,70,.35);background:rgba(255,59,70,.08);border-radius:9px}
+  .ob-error b{color:#ff8a91}
+  .sub2{font-size:10px;line-height:1.45;color:var(--gris);margin-top:3px;letter-spacing:.01em}
+  /* Ficha técnica de la pieza elegida, debajo de sus botones. */
+  .pnota{font-size:10.5px;line-height:1.5;color:var(--gris);margin-top:6px;padding:7px 9px;
+    border-left:2px solid var(--linea);background:rgba(255,255,255,.025);border-radius:0 7px 7px 0}
+  .pnota b{color:var(--hud)}
   /* MAPAMUNDI: el planeta como selector de misión. La imagen es satélite de
      verdad (las mismas teselas que usa el terreno), y encima van las chinchetas
      de cada zona colocadas por su latitud y longitud reales. */
@@ -447,6 +470,8 @@
     <div id="linkWarn">⚠ ENLACE DÉBIL</div>
     <div id="mouseHint">🖱️ Haz <b>clic</b> para apuntar con el ratón · luego <b>clic = disparo</b></div>
 
+    <!-- La explicación de lo que está pasando, con los números de ese momento -->
+    <div id="porqueBox"></div>
     <div id="feed"></div>
     <div id="centerMsg"></div>
 
@@ -484,6 +509,8 @@
     <button class="tbtn util" id="btnCam"><span class="ic">🎥</span>CÁM</button>
     <button class="tbtn util" id="btnSensor"><span class="ic">🌡️</span>SENSOR</button>
     <button class="tbtn util" id="btnGaze"><span class="ic">👁️</span>MIRADA</button>
+    <button class="tbtn util" id="btnTec"><span class="ic">🔧</span>TÉCNICO</button>
+    <button class="tbtn util" id="btnPorQue"><span class="ic">?</span>POR QUÉ</button>
     <button class="tbtn util" id="btnVoice"><span class="ic">🎤</span>VOZ</button>
     <button class="tbtn util" id="btnVol"><span class="ic">🔊</span>SONIDO</button>
     <button class="tbtn util sec" id="btnUp" style="display:none"><span class="ic">▲</span>SUBIR</button>
@@ -1062,30 +1089,62 @@ function biomeHeight(b, wx, wz){
    CATÁLOGO DE PIEZAS (garaje)
    ===================================================================== */
 const CATALOG={
+  /* ⚠ CADA PIEZA LLEVA SUS UNIDADES REALES: kg de masa, kW de potencia, kWh o
+     litros de energía, CdA de área frontal equivalente, dB a diez metros. De
+     ahí salen la punta, el arranque, la autonomía y a qué distancia te oyen —
+     ver ficha() más arriba. Los `cost` en puntos siguen existiendo solo para
+     que el presupuesto siga limitando qué te puedes permitir; lo que decide
+     cómo se comporta el vehículo son los kilos y los kilovatios. */
   chasis:{ label:'Chasís', pick:[
-    {id:'ligero', name:'Explorador', cost:10, hp:80, speed:1.25, turn:1.3, note:'Rápido y ágil', color:0x8a9bb0},
-    {id:'medio', name:'Vanguardia', cost:20, hp:120, speed:1.0, turn:1.0, note:'Equilibrado', color:0x6f7d66},
-    {id:'pesado', name:'Fortaleza', cost:34, hp:180, speed:0.78, turn:0.8, note:'Mucho blindaje', color:0x5f5a4e},
+    {id:'ligero', name:'Explorador', cost:10, hp:80,  turn:1.3, color:0x8a9bb0,
+      kg:240, CdA:1.6, topeMec:60/3.6, note:'240 kg · reductora hasta 60 km/h. Poco que arrastrar'},
+    {id:'medio',  name:'Vanguardia', cost:20, hp:120, turn:1.0, color:0x6f7d66,
+      kg:380, CdA:1.9, topeMec:45/3.6, note:'380 kg · reductora hasta 45 km/h. El equilibrado'},
+    {id:'pesado', name:'Fortaleza',  cost:34, hp:180, turn:0.8, color:0x5f5a4e,
+      kg:620, CdA:2.3, topeMec:32/3.6, note:'620 kg · reductora hasta 32 km/h. Aguanta, pero pesa'},
   ]},
   canon:{ label:'Cañón principal', pick:[
-    {id:'rapido', name:'Autocañón', cost:14, dmg:16, reload:0.55, pspeed:170, splash:2.5, note:'Cadencia alta'},
-    {id:'estandar', name:'Cañón 90mm', cost:20, dmg:36, reload:1.25, pspeed:200, splash:5, note:'Versátil'},
-    {id:'riel', name:'Cañón de riel', cost:32, dmg:80, reload:2.4, pspeed:360, splash:6, note:'Golpe demoledor'},
+    {id:'rapido',   name:'Autocañón',     cost:14, dmg:16, reload:0.55, pspeed:170, splash:2.5, kg:84,  dB:0, note:'84 kg · cadencia alta'},
+    {id:'estandar', name:'Cañón 90mm',    cost:20, dmg:36, reload:1.25, pspeed:200, splash:5,   kg:210, dB:0, note:'210 kg · versátil'},
+    /* El cañón de riel necesita un pulso de corriente que un tren pequeño no
+       puede dar. No es un capricho: es la razón por la que hoy no hay railguns
+       en vehículos ligeros. */
+    {id:'riel',     name:'Cañón de riel', cost:32, dmg:80, reload:2.4,  pspeed:360, splash:6,   kg:300, dB:0, kWmin:28,
+      note:'300 kg · demoledor, pero pide un tren de 28 kW o más para cargar'},
   ]},
   secundaria:{ label:'Arma secundaria', pick:[
-    {id:'ninguna', name:'Ninguna', cost:0, kind:'none', note:'—'},
-    {id:'mg', name:'Ametralladora', cost:12, kind:'mg', dps:26, range:70, note:'Fuego sostenido'},
-    {id:'misil', name:'Misiles guiados', cost:26, kind:'missile', dmg:55, reload:2.2, note:'Persiguen al blanco'},
+    {id:'ninguna', name:'Ninguna', cost:0, kind:'none', kg:0, note:'0 kg'},
+    {id:'mg',      name:'Ametralladora',   cost:12, kind:'mg', dps:26, range:70, kg:32, note:'32 kg · fuego sostenido'},
+    {id:'misil',   name:'Misiles guiados', cost:26, kind:'missile', dmg:55, reload:2.2, kg:70, note:'70 kg · persiguen al blanco'},
   ]},
-  blindaje:{ label:'Blindaje reactivo', pick:[
-    {id:'ninguno', name:'Ligero', cost:0, hp:0, speed:0, note:'—'},
-    {id:'placas', name:'Placas', cost:12, hp:50, speed:-0.06, note:'+50 blindaje'},
-    {id:'compuesto', name:'Compuesto', cost:24, hp:110, speed:-0.14, note:'+110 blindaje'},
+  blindaje:{ label:'Blindaje', pick:[
+    {id:'ninguno',   name:'Sin blindaje', cost:0,  hp:0,   kg:0,   CdA:0,    note:'0 kg · todo lo que no pesa es autonomía'},
+    {id:'placas',    name:'Placas de acero', cost:12, hp:50,  kg:140, CdA:0.1, note:'140 kg · barato y pesado'},
+    /* Cerámica sobre polietileno: para la misma protección pesa la mitad que
+       el acero. Por eso cuesta el doble en puntos y sigue mereciendo la pena. */
+    {id:'compuesto', name:'Compuesto cerámico', cost:24, hp:110, kg:190, CdA:0.15, note:'190 kg · el doble de protección por kilo que el acero'},
   ]},
-  motor:{ label:'Motor', pick:[
-    {id:'std', name:'Estándar', cost:0, speed:0, boost:1, note:'—'},
-    {id:'turbo', name:'Turbo', cost:14, speed:0.12, boost:1.5, note:'+velocidad e impulso'},
-    {id:'silen', name:'Silencioso', cost:16, speed:0.02, boost:1.1, stealth:0.6, note:'Te detectan más tarde'},
+  /* ---------------- TREN MOTRIZ ---------------- */
+  tren:{ label:'Tren motriz', pick:[
+    {id:'e15', name:'Motor eléctrico 15 kW', cost:10, tipo:'electrico', kW:15, kg:8,  dB:58, ir:'baja',
+      note:'8 kg · silencioso y con par desde parado. Necesita batería'},
+    {id:'e30', name:'Motor eléctrico 30 kW', cost:22, tipo:'electrico', kW:30, kg:15, dB:62, ir:'baja',
+      note:'15 kg · el doble de potencia y sigue pesando nada. Necesita batería'},
+    {id:'d22', name:'Diésel 22 kW',          cost:12, tipo:'combustion', kW:22, kg:48, dB:78, ir:'alta',
+      note:'48 kg · seis veces el peso del eléctrico, pero come de un depósito'},
+    {id:'d45', name:'Diésel 45 kW',          cost:26, tipo:'combustion', kW:45, kg:92, dB:82, ir:'muy alta',
+      note:'92 kg · mucha potencia y mucha autonomía. Se oye a un kilómetro'},
+  ]},
+  /* ---------------- ENERGÍA ---------------- */
+  energia:{ label:'Fuente de energía', pick:[
+    {id:'lipo', name:'Batería LiPo 4,2 kWh',      cost:10, tipo:'electrico', kWh:4.2, kg:24, note:'24 kg · ligera y de descarga rápida'},
+    {id:'lfp',  name:'Batería LiFePO4 8 kWh',     cost:20, tipo:'electrico', kWh:8.0, kg:62, note:'62 kg · casi el doble de energía y aguanta más ciclos'},
+    /* Un litro de gasóleo guarda 9,7 kWh. Aunque el motor solo aproveche un
+       tercio, 18 litros siguen dando muchas más horas que cualquier batería
+       que quepa: es la razón por la que casi todo lo que trabaja de verdad
+       sigue quemando algo. */
+    {id:'d18',  name:'Depósito 18 L de gasóleo',  cost:8,  tipo:'combustion', litros:18, kg:15, note:'15 kg vacío + 15 de gasóleo · 175 kWh de energía bruta'},
+    {id:'d40',  name:'Depósito 40 L de gasóleo',  cost:16, tipo:'combustion', litros:40, kg:22, note:'22 kg vacío + 34 de gasóleo · para salidas largas'},
   ]},
   dron:{ label:'Dron aéreo', pick:[
     {id:'recon', name:'Reconocimiento', cost:10, armed:false, cam:1.3, maxAlt:130, note:'Marca blancos, ligero'},
@@ -1128,22 +1187,148 @@ const AI_LVL={
   vet:{name:'Veterano', det:125, reload:1.6, disp:0.05, lead:0.5, hp:45},
   eli:{name:'Élite',    det:160, reload:1.1, disp:0.02, lead:1.0, hp:55},
 };
-const DEFAULT_LOADOUT={chasis:'medio',canon:'estandar',secundaria:'mg',blindaje:'placas',motor:'std',dron:'recon',aliados:'duo'};
+const DEFAULT_LOADOUT={chasis:'medio',canon:'estandar',secundaria:'mg',blindaje:'placas',tren:'e15',energia:'lipo',dron:'recon',aliados:'duo'};
 const BUDGET=120;
 function partOf(slot,id){ return CATALOG[slot].pick.find(p=>p.id===id)||CATALOG[slot].pick[0]; }
 function loadoutCost(l){ let c=0; for(const s in CATALOG) c+=partOf(s,l[s]).cost; return c; }
 function currentLoadout(){ const l=Object.assign({}, DEFAULT_LOADOUT, store.loadout||{});
   // valida ids
   for(const s in CATALOG){ if(!CATALOG[s].pick.some(p=>p.id===l[s])) l[s]=DEFAULT_LOADOUT[s]; } return l; }
+/* =====================================================================
+   INGENIERÍA · el vehículo, en unidades del mundo real
+   ---------------------------------------------------------------------
+   Hasta aquí el garaje era un presupuesto de puntos y cada pieza sumaba
+   modificadores inventados. Ahora cada pieza tiene MASA en kg, POTENCIA en kW
+   y ENERGÍA en kWh o en litros, y todo lo que se siente al conducir —la punta,
+   lo que tarda en arrancar, cuánto aguanta, a qué distancia te oyen— SALE de
+   esos números en vez de estar escrito a mano.
+
+   Por qué importa y no es adorno: obliga a que las decisiones tengan el mismo
+   coste que en la realidad. Más blindaje es más masa, y más masa es menos
+   punta y menos autonomía con la misma batería. Un motor de combustión pesa
+   seis veces más que uno eléctrico de la misma potencia, pero un depósito de
+   18 litros guarda catorce veces más energía que una batería de 24 kg. Esa es
+   LA decisión de ingeniería de cualquier vehículo no tripulado de hoy, y ahora
+   el jugador la toma de verdad.
+
+   Las ecuaciones son las de siempre, sin trucos:
+     · Punta:      P_rueda = ½·ρ·CdA·v³ + Crr·m·g·v      (se resuelve para v)
+     · Arranque:   a = mín( P/(m·v) , μ·g )               (potencia o agarre)
+     · Autonomía:  energía útil / consumo medio
+     · Ruido:      dB se suman en potencia, no en aritmética
+   ===================================================================== */
+const ING={
+  RHO:1.225,          // kg/m³, densidad del aire a nivel del mar
+  G:9.81,
+  CRR:0.09,           // rodadura de orugas sobre tierra batida
+  MU:0.70,            // agarre de oruga: lo que limita el arranque
+  /* Rendimiento del tren: del combustible o la batería a la oruga. Un motor
+     eléctrico entrega el 90% de lo que le entra; un diésel pequeño, el 32%.
+     Esta diferencia es la razón de que la comparación no se pueda hacer con
+     los kWh en bruto. */
+  RENDI:{electrico:0.90, combustion:0.32},
+  KWH_POR_LITRO:9.7,  // gasóleo
+  KG_POR_LITRO:0.84,
+  USO_MEDIO:0.35,     // fracción de la potencia máxima en uso real de patrulla
+  /* Resuelve P = ½ρ·CdA·v³ + Crr·m·g·v por bisección. Se resuelve en vez de
+     despejarse porque es una cúbica y la bisección son seis líneas honestas. */
+  punta(kW, masa, CdA, topeMec){
+    const P=kW*1000; let lo=0, hi=120;
+    for(let i=0;i<40;i++){ const v=(lo+hi)/2;
+      const need=0.5*this.RHO*CdA*v*v*v + this.CRR*masa*this.G*v;
+      if(need>P) hi=v; else lo=v; }
+    return Math.min(lo, topeMec||1e9);   // y nunca más de lo que da la reductora
+  },
+  /* Tiempo de 0 a una velocidad, integrando. Al principio manda el agarre
+     (a = μ·g) y en cuanto hay algo de marcha manda la potencia (a = P/(m·v)):
+     por eso un vehículo eléctrico sale disparado y luego se aplana. */
+  acelera(kW, masa, CdA, vObjetivo){
+    const P=kW*1000; let v=0, t=0; const h=0.01;
+    for(let i=0;i<6000 && v<vObjetivo;i++){
+      const aPot = v<0.5 ? this.MU*this.G : P/(masa*v);
+      const resist = (0.5*this.RHO*CdA*v*v + this.CRR*masa*this.G)/masa;
+      const a=Math.min(aPot, this.MU*this.G)-resist;
+      if(a<=0.01) return null;            // no llega nunca a esa velocidad
+      v+=a*h; t+=h;
+    }
+    return v>=vObjetivo? t : null;
+  },
+  // dos fuentes de ruido no suman 60+60=120: suman 63. Se suman en potencia.
+  sumaDB(a,b){ if(!a) return b; if(!b) return a; return 10*Math.log10(Math.pow(10,a/10)+Math.pow(10,b/10)); },
+};
+
+/* Todo el vehículo, calculado. Un solo sitio: si algún día cambia una ecuación
+   cambia aquí y cambian a la vez el garaje, el HUD técnico y las explicaciones,
+   que es justo lo que hay que evitar que se desincronice. */
+function ficha(l){
+  const ch=partOf('chasis',l.chasis), ca=partOf('canon',l.canon), se=partOf('secundaria',l.secundaria),
+        bl=partOf('blindaje',l.blindaje), tr=partOf('tren',l.tren), en=partOf('energia',l.energia);
+  const kgCombustible = en.litros ? en.litros*ING.KG_POR_LITRO : 0;
+  const masa = ch.kg + (bl.kg||0) + (ca.kg||0) + (se.kg||0) + (tr.kg||0) + (en.kg||0) + kgCombustible;
+  const CdA = ch.CdA + (bl.CdA||0);
+  const compatible = (tr.tipo==='electrico') === (en.tipo==='electrico');
+  /* Si el tren y la fuente no casan, el vehículo no anda. No es un castigo del
+     juego: un motor eléctrico no quema gasóleo y un diésel no se enchufa. */
+  const kW = compatible ? tr.kW : 0;
+  const rend = ING.RENDI[tr.tipo] || 0.9;
+  const kWrueda = kW*rend;
+  const vPunta = compatible ? ING.punta(kWrueda, masa, CdA, ch.topeMec) : 0;
+  const vPuntaPrev = vPunta;
+  /* Si la punta no llega a 32, medir "0 a 30" no dice nada: se acerca
+     asintóticamente y sale "no llega", que es verdad y a la vez inútil. En esos
+     casos se mide hasta el 90% de su propia punta y se informa de a cuánto. */
+  const vRef = vPuntaPrev>32/3.6 ? 30/3.6 : vPuntaPrev*0.9;
+  const t30 = compatible ? ING.acelera(kWrueda, masa, CdA, vRef) : null;
+  // energía útil que llega al eje
+  const kWhBruto = en.kWh || (en.litros||0)*ING.KWH_POR_LITRO;
+  const kWhEje = kWhBruto * rend * (en.tipo==='electrico'?0.90:1);   // a la batería no se la vacía del todo
+  /* ⚠ EL RENDIMIENTO SE APLICA UNA VEZ, NO DOS. kWhEje ya es energía EN EL EJE
+     (el combustible por el rendimiento), y `kW` es la potencia nominal del
+     motor, que también es en el eje. Multiplicar el consumo otra vez por el
+     rendimiento daba 50 HORAS de autonomía a un diésel con 40 litros. Con la
+     cuenta bien: 124 kWh al eje entre 7,7 kW de consumo medio = 16 h, que es lo
+     que da de verdad un diésel de 22 kW quemando 2,4 L/h. */
+  const consumoMedio = Math.max(0.2, kW*ING.USO_MEDIO);
+  const horas = compatible ? kWhEje/Math.max(consumoMedio,0.01) : 0;
+  const dB = ING.sumaDB(tr.dB||0, (ca.dB||0));
+  return {
+    masa:Math.round(masa), CdA:+CdA.toFixed(2), kW, kWrueda:+kWrueda.toFixed(1), rend,
+    compatible, tipoTren:tr.tipo,
+    puntaKmh:Math.round(vPunta*3.6), t30:t30?+t30.toFixed(1):null, vRefKmh:Math.round(vRef*3.6),
+    kWh:+kWhBruto.toFixed(1), kWhEje:+kWhEje.toFixed(1), litros:en.litros||0,
+    consumoKW:+consumoMedio.toFixed(1),
+    autonomiaMin:Math.round(horas*60),
+    dB:Math.round(dB), firmaIR:tr.ir||'media',
+    piezas:{ch,ca,se,bl,tr,en},
+    kgPorPieza:{ 'chasís':ch.kg, blindaje:bl.kg||0, cañón:ca.kg||0, 'arma 2ª':se.kg||0,
+                 tren:tr.kg||0, energía:(en.kg||0)+Math.round(kgCombustible) },
+  };
+}
+
 function derivedStats(l){
   const ch=partOf('chasis',l.chasis), ca=partOf('canon',l.canon), se=partOf('secundaria',l.secundaria),
-        bl=partOf('blindaje',l.blindaje), mo=partOf('motor',l.motor), dr=partOf('dron',l.dron), al=partOf('aliados',l.aliados);
+        bl=partOf('blindaje',l.blindaje), dr=partOf('dron',l.dron), al=partOf('aliados',l.aliados);
+  const f=ficha(l);
   const hp=ch.hp+ (bl.hp||0);
-  const speed=(ch.speed + (bl.speed||0) + (mo.speed||0));
+  /* ⚠ LA VELOCIDAD YA NO ES UN MODIFICADOR: SALE DE LA FÍSICA. Antes era
+     `2.8 * (chasis + blindaje + motor)`, tres números sin unidades sumados.
+     Ahora es la punta que resulta de resolver potencia contra resistencia con
+     la masa y el área frontal de las piezas que montaste, convertida a
+     unidades del mundo. Poner blindaje pesa, y pesar se paga en punta y en
+     autonomía — que es exactamente lo que pasa al blindar algo de verdad. */
+  const speed=(f.puntaKmh/3.6)*M;
+  /* Y el sigilo sale de los decibelios. Un tren eléctrico a 58 dB te deja
+     acercarte; un diésel a 82 se oye a un kilómetro. La curva es logarítmica
+     porque los dB lo son: cada 6 dB dobla la distancia a la que te detectan. */
+  const stealth=clamp(Math.pow(10,(f.dB-72)/40), 0.5, 1.4);
+  /* El impulso ya no es un número del motor: es el margen de potencia que
+     queda por encima de lo que pide rodar. Un tren sobrado empuja; uno justo,
+     no tiene de dónde sacarlo. */
+  const boost=clamp(1+ (f.kWrueda/Math.max(f.masa,1))*22, 1, 1.7);
   return {
-    hpMax:hp, hp, speed:2.8*speed, turn:2.1*ch.turn, boost:(mo.boost||1),
-    stealth:(mo.stealth||1),
-    cannon:ca, secondary:se, drone:dr, allies:al, color:ch.color, l:l
+    hpMax:hp, hp, speed, turn:2.1*ch.turn, boost, stealth,
+    cannon:ca, secondary:se, drone:dr, allies:al, color:ch.color, l:l,
+    ficha:f          // la ingeniería viaja con el vehículo: la usan el HUD y las explicaciones
   };
 }
 
@@ -5061,6 +5246,8 @@ addEventListener('keydown',e=>{ keys[e.code]=true;
     CONFIG_IA.debug=!CONFIG_IA.debug; if(!CONFIG_IA.debug) IA.dbgOff();
     feed('🔎 Depuración IA '+(CONFIG_IA.debug?'ON — conos, estado y blancos':'OFF')); }
   if(e.code==='KeyM'){ toggleGaze(); }
+  if(e.code==='KeyT' && playing){ toggleTecnico(); }
+  if(e.code==='KeyP' && playing){ if(!cerrarPorQue()) mostrarPorQue(); }
   if(e.code==='KeyG' && gaze.ready){ calibrateGaze(); }
   if(e.code==='KeyH' && gaze.ready){ gaze.invertYaw=!gaze.invertYaw; feed('Mirada '+(gaze.invertYaw?'normal':'invertida')); }
   if(e.code==='KeyB' && playing && mode==='drone'){ drone.acro=!drone.acro;
@@ -5378,6 +5565,100 @@ function toggleVoice(){
   catch(e){ alert('No se pudo activar la voz: '+(e.message||e)); }
 }
 
+/* =====================================================================
+   MODO TÉCNICO Y EXPLICACIONES
+   ---------------------------------------------------------------------
+   Dos cosas para quien quiere aprender, y una regla que las une: **nunca se
+   inventa un número**. Todo lo que sale aquí se lee del estado real del
+   vehículo en ese instante o de la ficha de ingeniería, y se dice de dónde
+   sale. Una explicación con un número falso enseña algo falso, que es peor que
+   no explicar nada.
+     · TÉCNICO (tecla T): el HUD cambia de números de juego a instrumentos —
+       potencia entregada, consumo, carga, temperatura del motor.
+     · ¿POR QUÉ? (tecla P): explica lo que está pasando AHORA, con los números
+       de ahora. Elige el tema por urgencia: primero lo que te va a matar.
+   ===================================================================== */
+let MODO_TECNICO=false;
+function toggleTecnico(){
+  MODO_TECNICO=!MODO_TECNICO;
+  feed(MODO_TECNICO?'🔧 Modo técnico: instrumentos reales':'Modo técnico apagado');
+  const b=$('btnTec'); if(b) b.classList.toggle('press', MODO_TECNICO);
+}
+
+/* ¿Qué le pasa al jugador ahora mismo? Se devuelve el asunto MÁS urgente, con
+   sus números. El orden importa: de nada sirve explicar la autonomía a alguien
+   que está entrando en pérdida. */
+function porQue(){
+  const f=stats.ficha;
+  const enDron = mode==='drone' && drone.active;
+  const dr=stats.drone;
+  // 1) PÉRDIDA en el ala fija: es lo único que te tira al suelo en segundos
+  if(enDron && dr.ala){
+    const VP=(dr.vPerdida||16), va=(drone.vAire||0)*MPU, gr=(drone.pitch||0)*180/Math.PI;
+    if(va < VP*1.18){
+      return {t:'⚠ CERCA DE LA PÉRDIDA', c:'bad', d:
+        'Vas a '+Math.round(va*3.6)+' km/h y el ala deja de sostener por debajo de '+Math.round(VP*3.6)+'.\n\n'+
+        'Llevas el morro '+gr.toFixed(0)+'° '+(gr>0?'arriba':'abajo')+'. Trepar cuesta velocidad: el empuje da '+
+        (3.5).toFixed(1)+' m/s² y subir a ese ángulo se come '+(9.81*Math.sin(Math.abs(drone.pitch||0))).toFixed(1)+'.\n\n'+
+        'Qué hacer: baja el morro y deja que coja velocidad antes de volver a subir. Un ala fija cambia altura POR velocidad, siempre.'};
+    }
+  }
+  // 2) Casco sin arrancada: la queja número uno de quien viene de pilotar drones
+  if(enDron && (dr.domain==='surface'||dr.domain==='sub')){
+    const v=Math.hypot(drone.vel.x,drone.vel.z)*MPU, VM=(dr.vMax||20);
+    if(v < VM*0.35){
+      return {t:'EL TIMÓN NO MUERDE', c:'', d:
+        'Vas a '+v.toFixed(1)+' m/s y el timón no empieza a gobernar de verdad hasta '+(VM*0.35).toFixed(1)+'.\n\n'+
+        'Un timón no gira el barco: desvía el agua que pasa por él. Si no pasa agua, no hay nada que desviar. '+
+        'Por eso un casco parado no obedece por mucho que muevas el mando — y por eso las maniobras de puerto se hacen con motor, no con timón.\n\n'+
+        'Qué hacer: da máquina primero y gira después.'};
+    }
+  }
+  // 3) Energía
+  if(!enDron && player.boost<0.25){
+    return {t:'ENERGÍA BAJA', c:'bad', d:
+      'Llevas el '+Math.round(player.boost*100)+'% de la reserva.\n\n'+
+      'Tu vehículo monta '+f.piezas.tr.name.toLowerCase()+' con '+f.piezas.en.name.toLowerCase()+': '+
+      f.kWhEje+' kWh útiles al eje, y en patrulla gastas unos '+f.consumoKW+' kW. Eso son '+f.autonomiaMin+' minutos en total.\n\n'+
+      (f.tipoTren==='electrico'
+        ? 'Con un depósito de gasóleo tendrías muchas más horas por el mismo peso, a cambio de que te oigan desde lejos.'
+        : 'Con batería tendrías menos horas pero te oirían a la mitad de distancia.')};
+  }
+  // 4) Enlace
+  if(jammed || linkLost || signal<0.45){
+    return {t:'ENLACE COMPROMETIDO', c:'bad', d:
+      'Señal al '+Math.round(signal*100)+'%'+(jammed?' y hay un jammer activo':'')+'.\n\n'+
+      'El enlace se corta por LÍNEA DE VISTA: si hay relieve o un edificio entre tú y el aparato, la radio no atraviesa. '+
+      'Por eso el enlace mejora subiendo, no acercándose.\n\n'+
+      (dr.fiber?'Tu dron es de fibra óptica: no se puede interferir, pero el hilo tiene largo.'
+               :'Un dron de fibra óptica sería inmune a esto.')};
+  }
+  // 5) Por defecto: por qué la máquina va como va
+  if(enDron){
+    return {t:'TU APARATO', c:'', d:
+      dr.name+'.\n\n'+
+      (dr.ala ? 'Ala fija: se sustenta con la velocidad, así que no puede parar en el aire. Vira inclinándose, y el radio del viraje crece con la velocidad: ω = g·tan(φ)/V.'
+       : dr.domain==='sub' ? 'Sumergible: '+(dr.vMax)+' m/s, empuje por el eje y lastres para la profundidad. Lento a propósito — el agua es 800 veces más densa que el aire.'
+       : dr.domain==='surface' ? 'Lancha: '+(dr.vMax)+' m/s. Empuje por el eje y gobierno por timón, que solo muerde con arrancada.'
+       : dr.ave ? 'Ornitóptero: te detectan a un tercio de la distancia. Es todo lo que tiene, y a cambio va desarmado.'
+       : 'Multirrotor: los cuatro rotores lo sostienen, así que puede quedarse quieto. Acelera y frena inclinándose, hasta 35°, que son 0,7 g.')};
+  }
+  return {t:'TU VEHÍCULO', c:'', d:
+    f.masa+' kg moviéndose con '+f.kWrueda+' kW en la oruga.\n\n'+
+    'Punta '+f.puntaKmh+' km/h: sale de igualar la potencia a la resistencia (aire ½·ρ·CdA·v³ más rodadura Crr·m·g·v)'+
+    (f.puntaKmh*1.001>=Math.round(f.piezas.ch.topeMec*3.6)?', aunque aquí manda la reductora del chasís.':'.')+'\n\n'+
+    'De 0 a 30 en '+(f.t30||'—')+' s. Cada 100 kg que le añades le quitan punta y minutos: '+
+    'ahora mismo el desglose es '+Object.entries(f.kgPorPieza).filter(([,v])=>v>0).map(([k,v])=>k+' '+v+' kg').join(', ')+'.'};
+}
+function mostrarPorQue(){
+  if(!playing) return;
+  const q=porQue(); const el=$('porqueBox');
+  el.innerHTML='<h4'+(q.c==='bad'?' class="mal"':'')+'>'+q.t+'</h4><p>'+q.d.replace(/\n\n/g,'</p><p>')+'</p>'+
+    '<div class="cerrar">toca aquí o pulsa P para cerrar</div>';
+  el.classList.add('on'); paused=true;
+}
+function cerrarPorQue(){ const el=$('porqueBox'); if(el&&el.classList.contains('on')){ el.classList.remove('on'); paused=false; return true; } return false; }
+
 /* lee la intención del jugador (unificado) */
 let PALANCA_DBG=null;   // la pone DRONES.palanca(); null = mandan los controles reales
 function readInput(dt){
@@ -5507,7 +5788,19 @@ function updatePlayer(dt, inp){
     player.pos.x=clamp(player.pos.x,-HALF+6,HALF-6); player.pos.z=clamp(player.pos.z,-HALF+6,HALF-6);
     resolveColliders(player.pos, 1.3*M);
     // impulso: consume/recupera
-    if(inp.boost&&Math.abs(inp.moveF)>0.05) player.boost=clamp(player.boost-dt*0.4,0,1); else player.boost=clamp(player.boost+dt*0.18,0,1);
+    /* ⚠ LA RESERVA SE GASTA POR POTENCIA, NO POR UN RELOJ. Antes bajaba solo al
+       usar el impulso y se rellenaba sola: eso es una barra de videojuego. Ahora
+       se descuenta la energía que de verdad pide moverse —proporcional a la
+       velocidad y al esfuerzo— contra los kWh que monta el vehículo, así que la
+       autonomía que promete el garaje es la que se cumple en el campo. Un
+       depósito de gasóleo no se rellena solo, y una batería tampoco. */
+    const fEner=stats.ficha;
+    if(fEner.kWhEje>0){
+      const frac=clamp(Math.abs(player.speed)/Math.max(stats.speed,0.01),0,1);
+      const kWahora=fEner.kWrueda*(0.10 + 0.75*frac*frac + (inp.boost?0.25:0));
+      player.boost=clamp(player.boost - (kWahora/3600)*dt/fEner.kWhEje, 0, 1);
+      player.kWahora=kWahora;
+    }
     // SUSPENSIÓN: muestrea las 4 esquinas del casco -> cabeceo y balanceo reales
     /* Semi-distancias del casco: 1,2 × 0,62 m, o sea una huella de 2,40 × 1,24 m,
        que es el UGV. Estuvieron en 2,1 y 1,4 UNIDADES = 22 × 15 m, la mitad de
@@ -6708,7 +7001,8 @@ function updateHUD(dt){
   const hpp=clamp(player.hp/player.hpMax,0,1); $('hpBar').style.width=(hpp*100)+'%'; $('hpTxt').textContent=Math.max(0,Math.round(player.hp));
   // barra secundaria: batería del dron (en el aire) o energía de impulso (en tierra)
   if(mode==='drone'){ $('boostBar').style.width=(drone.batt*100)+'%'; $('vitals').querySelector('.boost .lbl').textContent='BATERÍA DRON'; }
-  else { $('boostBar').style.width=(player.boost*100)+'%'; $('vitals').querySelector('.boost .lbl').textContent='ENERGÍA'; }
+  else { $('boostBar').style.width=(player.boost*100)+'%';
+    $('vitals').querySelector('.boost .lbl').textContent = stats.ficha.tipoTren==='combustion'?'GASÓLEO':'BATERÍA'; }
   $('ammoTxt').textContent = mode==='drone'? (drone.kamikaze?'KMKZ':'DRON '+Math.round(drone.batt*100)+'%') : (player.reload>0?'⟳':'LISTO');
   // telemetría
   /* ⚠ drone.vel y player.vel están en UNIDADES/s, y una unidad son 5,22 m.
@@ -6741,6 +7035,33 @@ function updateHUD(dt){
     }
   }
   telem+=' · RUMBO <b>'+String(Math.round(((mode==='drone'?drone.yaw:player.yaw)*180/Math.PI+360))%360).padStart(3,'0')+'°</b>';
+  /* MODO TÉCNICO. Los mismos datos que ve un operador de verdad delante de su
+     estación: lo que entrega el tren, lo que consume ahora, lo que queda y a
+     qué temperatura va. Todo leído del estado real, ninguno decorativo. */
+  if(MODO_TECNICO){
+    const f=stats.ficha;
+    if(mode==='drone' && drone.active){
+      const dr=stats.drone;
+      telem+='<br><span style="color:var(--hud)">'+
+        (dr.ala? 'IAS <b>'+Math.round((drone.vAire||0)*MPU*3.6)+'</b> km/h · ' : '')+
+        'BAT <b>'+Math.round(drone.batt*100)+'%</b> · '+
+        'RESTAN <b>'+Math.round(drone.batt*20)+'</b> min · '+
+        'ENLACE <b>'+Math.round(signal*100)+'%</b>'+(jammed?' <b style="color:var(--rojo-2)">INTERFERIDO</b>':'')+
+        '</span>';
+    } else {
+      const kW=player.kWahora||0, min=Math.round(player.boost*f.autonomiaMin);
+      // temperatura: sube con la potencia entregada y baja sola. Un diésel
+      // trabaja mucho más caliente que un eléctrico, y eso es su firma térmica.
+      const base=f.tipoTren==='combustion'?86:34, pico=f.tipoTren==='combustion'?38:22;
+      player.tMotor=damp(player.tMotor==null?base:player.tMotor, base+pico*(kW/Math.max(f.kWrueda,0.1)), 0.25, dt||0.016);
+      telem+='<br><span style="color:var(--hud)">'+
+        'POT <b>'+kW.toFixed(1)+'</b>/'+f.kWrueda+' kW · '+
+        'MASA <b>'+f.masa+'</b> kg · '+
+        (f.litros? 'GASÓLEO <b>'+Math.round(player.boost*f.litros)+'</b> L' : 'BAT <b>'+Math.round(player.boost*100)+'%</b>')+
+        ' · RESTAN <b>'+min+'</b> min · T.MOTOR <b>'+Math.round(player.tMotor)+'</b> °C'+
+        '</span>';
+    }
+  }
   $('telem').innerHTML=telem;
   // SEÑAL real (enlace por línea de vista)
   const bars=clamp(Math.round(signal*5+0.15),0,5);
@@ -7438,7 +7759,7 @@ function renderGarage(){
   /* D0 — el garaje abre POR el dron: es la máquina principal del juego. El
      orden del objeto CATALOG no se toca (lo usan otros); solo cambia el orden
      de pintado. */
-  const orden=['dron','aliados','chasis','canon','secundaria','blindaje','motor'];
+  const orden=['dron','aliados','chasis','tren','energia','canon','secundaria','blindaje'];
   for(const slot of orden.concat(Object.keys(CATALOG).filter(k=>!orden.includes(k)))){
     const cat=CATALOG[slot]; if(!cat) continue;
     const box=document.createElement('div'); box.className='part';
@@ -7447,21 +7768,70 @@ function renderGarage(){
     cat.pick.forEach(p=>{
       const b=document.createElement('button'); b.className='optb'+(l[slot]===p.id?' on':'');
       b.innerHTML=p.name+'<small>'+(p.cost?p.cost+' pts':'base')+'</small>';
+      b.title=p.note||'';
       b.onclick=()=>{ l[slot]=p.id; store.loadout=l; save(); renderGarage(); };
       opts.appendChild(b);
     });
-    box.appendChild(opts); wrap.appendChild(box);
+    box.appendChild(opts);
+    /* FICHA TÉCNICA DE LA PIEZA ELEGIDA. Los números de la pieza y, cuando hay
+       algo que entender detrás, qué significan. Un kWh no le dice nada a nadie
+       hasta que se dice a cuántos minutos equivale con TU consumo. */
+    const el=partOf(slot, l[slot]);
+    if(el && el.note){
+      const nd=document.createElement('div'); nd.className='pnota';
+      let txt='<b>'+el.name+'</b> — '+el.note;
+      if(slot==='energia'){
+        const fx=ficha(l);
+        txt += el.kWh
+          ? '<br>Guarda <b>'+el.kWh+' kWh</b>. Con tu consumo medio de '+fx.consumoKW+' kW eso son <b>'+fx.autonomiaMin+' min</b>.'
+          : '<br>'+el.litros+' L × 9,7 kWh/L = <b>'+Math.round(el.litros*9.7)+' kWh</b> de energía bruta, pero el diésel solo aprovecha un tercio: <b>'+fx.kWhEje+' kWh</b> útiles.';
+      }
+      if(slot==='tren'){
+        const fx=ficha(l);
+        txt += '<br>Rendimiento <b>'+Math.round((ING.RENDI[el.tipo]||0.9)*100)+'%</b>: de los '+el.kW+' kW llegan <b>'+fx.kWrueda+' kW</b> a la oruga.';
+      }
+      nd.innerHTML=txt; box.appendChild(nd);
+    }
+    wrap.appendChild(box);
   }
-  // spec sheet
-  const s=derivedStats(l);
+  /* FICHA DE INGENIERÍA. Ya no son barras de colores sin unidades: son los
+     números que salen de la masa y la potencia de las piezas que hay puestas.
+     Cada uno lleva de dónde sale, porque un número sin su origen no enseña
+     nada — y este garaje existe para que se entienda por qué una decisión
+     cuesta lo que cuesta. */
+  const s=derivedStats(l), f=s.ficha;
   const bar=(v,max)=>'<div class="track"><i style="width:'+clamp(v/max*100,4,100)+'%"></i></div>';
-  $('specSheet').innerHTML='<h4>Ficha de la máquina</h4>'+
+  const hm=m=>m>=60? Math.floor(m/60)+' h '+(m%60)+' min' : m+' min';
+  const desglose=Object.entries(f.kgPorPieza).filter(([,v])=>v>0)
+    .map(([k,v])=>k+' '+v).join(' · ');
+  let html='<h4>Ficha de ingeniería</h4>';
+  if(!f.compatible){
+    html+='<div class="ob-error" style="margin:0 0 8px">⚠ <b>El tren y la fuente no casan.</b> '+
+      (f.tipoTren==='electrico'
+        ? 'Un motor eléctrico no quema gasóleo: ponle una batería.'
+        : 'Un diésel no se enchufa: ponle un depósito.')+
+      ' Tal como está, el vehículo no anda.</div>';
+  }
+  if(f.piezas.ca.kWmin && f.kW < f.piezas.ca.kWmin){
+    html+='<div class="ob-error" style="margin:0 0 8px">⚠ <b>El '+f.piezas.ca.name+' pide '+f.piezas.ca.kWmin+' kW</b> '+
+      'para cargar entre disparo y disparo, y el tren da '+f.kW+'. Dispararía a media cadencia.</div>';
+  }
+  html+=
+    '<div class="stat"><div class="sl">Masa total <b>'+f.masa+' kg</b></div>'+bar(f.masa,1100)+
+      '<div class="sub2">'+desglose+'</div></div>'+
+    '<div class="stat"><div class="sl">Velocidad punta <b>'+f.puntaKmh+' km/h</b></div>'+bar(f.puntaKmh,65)+
+      '<div class="sub2">'+f.kWrueda+' kW en la oruga contra '+f.masa+' kg y CdA '+f.CdA+
+      (f.puntaKmh*1.001>=Math.round(f.piezas.ch.topeMec*3.6)?' — topada por la reductora':'')+'</div></div>'+
+    '<div class="stat"><div class="sl">0 a '+f.vRefKmh+' km/h <b>'+(f.t30?f.t30+' s':'—')+'</b></div>'+bar(f.t30?8-f.t30:0,8)+
+      '<div class="sub2">al principio manda el agarre, luego la potencia</div></div>'+
+    '<div class="stat"><div class="sl">Autonomía <b>'+hm(f.autonomiaMin)+'</b></div>'+bar(f.autonomiaMin,260)+
+      '<div class="sub2">'+f.kWhEje+' kWh al eje ÷ '+f.consumoKW+' kW de consumo medio'+
+      (f.litros?' · '+f.litros+' L al '+Math.round(f.rend*100)+'% de rendimiento':' · batería al '+Math.round(f.rend*100)+'%')+'</div></div>'+
+    '<div class="stat"><div class="sl">Ruido <b>'+f.dB+' dB</b> a 10 m</div>'+bar(f.dB-50,40)+
+      '<div class="sub2">te detectan a ×'+s.stealth.toFixed(2)+' de la distancia normal · firma térmica '+f.firmaIR+'</div></div>'+
     '<div class="stat"><div class="sl">Blindaje <b>'+s.hpMax+'</b></div>'+bar(s.hpMax,290)+'</div>'+
-    '<div class="stat"><div class="sl">Velocidad <b>'+s.speed.toFixed(0)+'</b></div>'+bar(s.speed,26)+'</div>'+
-    '<div class="stat"><div class="sl">Daño cañón <b>'+s.cannon.dmg+'</b></div>'+bar(s.cannon.dmg,80)+'</div>'+
-    '<div class="stat"><div class="sl">Cadencia <b>'+(1/s.cannon.reload).toFixed(1)+'/s</b></div>'+bar(1/s.cannon.reload,1.9)+'</div>'+
-    '<div class="stat"><div class="sl">2ª arma <b>'+partOf('secundaria',l.secundaria).name+'</b></div></div>'+
-    '<div class="stat"><div class="sl">Dron <b>'+partOf('dron',l.dron).name+'</b></div></div>';
+    '<div class="stat"><div class="sl">Cañón <b>'+s.cannon.dmg+'</b> · '+(1/s.cannon.reload).toFixed(1)+'/s</div>'+bar(s.cannon.dmg,80)+'</div>';
+  $('specSheet').innerHTML=html;
   const cost=loadoutCost(l), over=cost>BUDGET;
   const bd=$('budget'); bd.className='budget'+(over?' over':''); bd.innerHTML='Presupuesto: <b>'+cost+' / '+BUDGET+' pts</b>'+(over?' — te pasaste, ajusta piezas':' ✔');
 }
@@ -7655,6 +8025,9 @@ function wireUI(){
   $('gazeInv').onclick=(e)=>{ e.stopPropagation(); gaze.invertYaw=!gaze.invertYaw; feed('Mirada '+(gaze.invertYaw?'invertida':'normal')); };
   // gaze.rate escala el TOPE de giro: se enseña en °/s, que es lo que se siente
   const dime=()=>Math.round(clamp(gaze.rate*0.175,0.35,2.1)*180/Math.PI)+' °/s';
+  $('btnTec').onclick=(e)=>{ e.stopPropagation(); toggleTecnico(); };
+  $('btnPorQue').onclick=(e)=>{ e.stopPropagation(); if(!cerrarPorQue()) mostrarPorQue(); };
+  $('porqueBox').onclick=()=>cerrarPorQue();
   $('gazeMas').onclick=(e)=>{ e.stopPropagation(); gaze.rate=Math.min(12,gaze.rate*1.3); feed('Mirada más rápida · tope '+dime()); };
   $('gazeMenos').onclick=(e)=>{ e.stopPropagation(); gaze.rate=Math.max(2,gaze.rate/1.3); feed('Mirada más lenta · tope '+dime()); };
   // botón KAMIKAZE (un toque = picado y detonación)

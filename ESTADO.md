@@ -1,4 +1,4 @@
-# Estado de Drones de Combate · 18 de agosto de 2026
+# Estado de Drones de Combate · 21 de agosto de 2026
 
 **Vive en `Desktop\drones`** (antes `Desktop\maquinas`; se renombró el 15-ago
 porque ya no comparte carpeta con ningún otro juego).
@@ -357,6 +357,57 @@ Tres cosas que costaron una hora de diagnóstico falso y conviene no repetir:
   metros largos y la culpa parecía del motor.
 - **La torreta seguía girando al disparar.** Con 0,75 s de espera, un blanco a
   la espalda daba la escalera 246 → 238 → 224 → … → 1 m. Ahora espera 3 s.
+
+
+## 21-ago: el garaje pasa a ingeniería, y el juego explica
+
+**El vehículo ya no son puntos: son kilos y kilovatios.** Cada pieza tiene masa
+en kg, potencia en kW y energía en kWh o litros, y la punta, el arranque, la
+autonomía y a qué distancia te oyen SALEN de ahí en vez de estar escritos a
+mano. Las ecuaciones están en `ING` y el cálculo entero en `ficha(l)`, un solo
+sitio del que beben el garaje, el HUD técnico y las explicaciones.
+
+    P_rueda = ½·ρ·CdA·v³ + Crr·m·g·v        (punta, resuelta por bisección)
+    a = mín( P/(m·v) , μ·g )                (arranque: potencia o agarre)
+    autonomía = energía al eje / consumo medio
+
+Lo que sale de montar cosas distintas, medido en el propio juego:
+
+| | masa | punta | 0→X | autonomía | ruido |
+|---|---|---|---|---|---|
+| Eléctrico ligero | 356 kg | 60 km/h | 1,6 s | 39 min | 58 dB |
+| Eléctrico blindado | 1.129 kg | 32 km/h | 2,0 s | 37 min | 62 dB |
+| Diésel de patrulla | 866 kg | 30 km/h | 10,7 s | **16 h 7 min** | 78 dB |
+
+Esa tabla ES el juego técnico: el eléctrico corre y no se oye pero dura una
+mañana corta; el diésel es lento y ruidoso y dura el día entero. Y si el tren y
+la fuente no casan (motor eléctrico con depósito de gasóleo) el vehículo no
+anda y se dice por qué.
+
+**Tres formas de explicar**, y una regla que las une: *nunca se inventa un
+número*. Todo se lee del estado real o de la ficha.
+- **¿POR QUÉ?** (tecla P o botón): explica lo que pasa AHORA, eligiendo el tema
+  por urgencia. Pausa a propósito — leer mientras te disparan no es leer.
+- **Ficha técnica por pieza** en el garaje: qué es un kWh traducido a *tus*
+  minutos con *tu* consumo.
+- **Modo técnico** (tecla T): el HUD pasa a instrumentos —
+  `POT 0.7/7 kW · MASA 866 kg · GASÓLEO 40 L · RESTAN 967 min · T.MOTOR 90 °C`.
+
+**Y dos modelos de movimiento nuevos**, porque lo que había era el del
+cuadricóptero aplicado a cosas que no lo son:
+- **Cascos** (lancha y submarino): empuje solo por el eje, y **sin arrancada no
+  hay gobierno** — medido, 0 °/s con la máquina parada. Resistencia cuadrática,
+  así que la punta sale sola: 72 km/h la lancha y 10,7 el sumergible. Y no
+  frenan: 110 m de parada.
+- **Ala fija**: el gas da EMPUJE, no velocidad. `dV/dt = (T−D)/m − g·sen γ`.
+  Medido: 193 km/h a todo gas, 57 trepando y 165 picando.
+
+### Trampas nuevas
+- **El rendimiento se aplica UNA vez.** Multiplicarlo también en el consumo dio
+  50 horas de autonomía a un diésel de 40 litros. `kWhEje` ya es energía al eje
+  y `kW` es potencia al eje: el consumo NO se vuelve a multiplicar.
+- **"0 a 30" no sirve si la punta es 30**: se acerca asintóticamente y sale «no
+  llega», que es cierto e inútil. Se mide contra el 90% de su propia punta.
 
 ## Trampas que ya costaron tiempo
 
