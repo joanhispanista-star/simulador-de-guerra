@@ -373,6 +373,25 @@
   .cz-in:focus{outline:none;border-color:var(--hud)}
   /* La línea pequeña que dice DE DÓNDE sale cada número de la ficha. Es la
      diferencia entre un dato y una explicación. */
+  /* El reproductor de documentales: pantalla de sala de mando, canvas 16:9. */
+  #docuBox{position:fixed;inset:0;z-index:150;display:none;background:rgba(4,6,10,.96);
+    flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:18px}
+  #docuBox.on{display:flex}
+  #docuTitulo{font-size:12px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--hud)}
+  #docuCv{max-width:min(96vw,960px);width:100%;height:auto;border:1px solid var(--linea);border-radius:12px}
+  .docuBtns{display:flex;gap:10px}
+  .docuBtns button{background:rgba(8,10,14,.7);border:1px solid var(--linea);color:var(--hueso);
+    font:inherit;font-size:12px;font-weight:700;padding:9px 18px;border-radius:9px;cursor:pointer}
+  .docuBtns button:hover{border-color:var(--hud);color:var(--hud)}
+  /* La puerta de "solo computador". Pantalla completa, honesta con el porqué,
+     y con la única salida móvil que tiene sentido: ser el mando. */
+  #soloPC{position:fixed;inset:0;z-index:200;display:none;background:var(--negro);
+    padding:28px 22px;overflow:auto;text-align:center}
+  #soloPC.on{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px}
+  #soloPC .ic{font-size:44px}
+  #soloPC h2{margin:0;font-size:20px;color:var(--hueso);letter-spacing:.04em}
+  #soloPC p{margin:0;max-width:420px;font-size:13px;line-height:1.6;color:var(--gris)}
+  #soloPC .play{width:auto;padding:12px 22px}
   /* La línea de tiempo de la Historia: una época por tarjeta, con su año como
      lomo. Sobria a propósito — el contenido es documental, no de menú. */
   .era{position:relative;padding:12px 14px 12px 18px;margin-bottom:12px;border-left:2px solid var(--hud-2);
@@ -490,6 +509,28 @@
     <div id="linkWarn">⚠ ENLACE DÉBIL</div>
     <div id="mouseHint">🖱️ Haz <b>clic</b> para apuntar con el ratón · luego <b>clic = disparo</b></div>
 
+    <!-- El reproductor de documentales animados de la Historia -->
+    <div id="docuBox">
+      <div id="docuTitulo"></div>
+      <canvas id="docuCv" width="960" height="540"></canvas>
+      <div class="docuBtns">
+        <button id="docuSalta">Siguiente ▸</button>
+        <button id="docuCierra">✕ Cerrar</button>
+      </div>
+    </div>
+    <!-- Solo computador: el simulador pesa demasiado para un celular -->
+    <div id="soloPC">
+      <div class="ic">🖥️</div>
+      <h2>Este simulador es para computador</h2>
+      <p>Descarga terreno real del planeta, mueve cientos de miles de triángulos y simula
+         física, sensores y guerra electrónica a la vez. En un celular se arrastra y se
+         calienta, y no queremos venderte una experiencia mala.</p>
+      <p><b style="color:var(--hueso)">Tu celular sí tiene un papel:</b> ser el mando del dron
+         mientras el juego corre en el computador.</p>
+      <button class="play" id="soloPCmando">📱 Usar este celular como MANDO</button>
+      <p style="font-size:11px;color:var(--gris-2)">Abre <b>el mismo enlace</b> en tu computador, crea el código en
+         «Duelo 1v1 → Mando a distancia», y escríbelo aquí.</p>
+    </div>
     <!-- La explicación de lo que está pasando, con los números de ese momento -->
     <div id="porqueBox"></div>
     <div id="feed"></div>
@@ -2169,6 +2210,10 @@ const REAL_MAPS=[
     desc:'La primera guerra urbana de drones (2016-17, ver 📜 Historia). Llano junto al Tigris: la cobertura son las calles.',
     enemies:[{t:'tank',n:5},{t:'turret',n:4},{t:'perro',n:5},{t:'airdrone',n:5}],
     objs:[{type:'destroy',tag:'enemy',n:19,text:'Limpia el sector (19)'}] },
+  { id:'alborz', name:'Montes Alborz', pais:'Irán 🇮🇷', lat:35.850, lon:51.420, zoom:12, tiles:3, vexag:0.95,
+    desc:'La muralla de montaña sobre Teherán (ver 📜 Historia: 2025, los doce días). Medido: 917 m de desnivel dentro del campo.',
+    enemies:[{t:'turret',n:6},{t:'jammer',n:2},{t:'tank',n:5}],
+    objs:[{type:'destroy',tag:'enemy',n:13,text:'Domina el paso de montaña (13)'}] },
   { id:'taipei', name:'Taipéi', pais:'Taiwán 🇹🇼', lat:25.033, lon:121.565, zoom:12, tiles:3, vexag:1.0,
     desc:'La capital entre montañas. Medido: 159 m de desnivel dentro del campo, y el 101 si OpenStreetMap responde.',
     enemies:[{t:'airdrone',n:8},{t:'tank',n:5},{t:'turret',n:4}],
@@ -7957,6 +8002,283 @@ function renderGarage(){
    el garaje se equipa solo al lanzarla, porque volar un FPV kamikaze en la
    era en que solo existía el reconocimiento sería mentir con las manos.
    ===================================================================== */
+/* =====================================================================
+   🎬 DOCUMENTALES ANIMADOS
+   ---------------------------------------------------------------------
+   Cada época de la Historia lleva un documental de un minuto, dibujado por
+   el propio juego. La decisión de fondo, tomada a conciencia: NO se incrusta
+   metraje real de guerra. Primero porque meter muertes reales de YouTube en
+   un juego es convertir a personas en contenido; segundo porque un enlace
+   externo se pudre o cambia y nadie se entera; y tercero porque este juego
+   abre sin internet y un iframe no. Así que los "videos" son animaciones
+   PROPIAS: siluetas, radares y rótulos con los hechos documentados — el
+   lenguaje de una sala de mando, no el de un noticiero.
+
+   El motor es deliberadamente simple: una escena es una lista de BEATS, cada
+   beat dura unos segundos, pinta con t∈[0,1] y lleva su rótulo. Todo lo que
+   se dibuja sale de una docena de primitivas (terreno, aparato, radar,
+   destello) para que añadir la época del año que viene sea escribir datos,
+   no código nuevo.
+   ===================================================================== */
+const DOCU={
+  activo:false, era:null, beat:0, t0:0, raf:0,
+  abrir(era){
+    const esc=DOCU_ESCENAS[era.id]; if(!esc){ feed('Esta época aún no tiene documental'); return; }
+    this.activo=true; this.era=era; this.esc=esc; this.beat=0; this.t0=performance.now();
+    $('docuBox').classList.add('on'); $('docuTitulo').textContent=era.años+' — '+era.titulo;
+    paused=true;
+    this.paso();
+  },
+  cerrar(){ this.activo=false; cancelAnimationFrame(this.raf); $('docuBox').classList.remove('on'); paused=false; },
+  siguiente(){ if(this.beat<this.esc.length-1){ this.beat++; this.t0=performance.now(); } else this.cerrar(); },
+  paso(){
+    if(!this.activo) return;
+    const cv=$('docuCv'), g=cv.getContext('2d');
+    const W=cv.width, H=cv.height;
+    const b=this.esc[this.beat];
+    let t=(performance.now()-this.t0)/(b.dur*1000);
+    if(t>=1){ this.siguiente(); if(!this.activo) return; return this.paso(); }
+    // fondo: cielo nocturno de sala de mando, con rejilla tenue
+    g.fillStyle='#060a10'; g.fillRect(0,0,W,H);
+    g.strokeStyle='rgba(63,240,192,.05)'; g.lineWidth=1;
+    for(let x=0;x<W;x+=48){ g.beginPath(); g.moveTo(x,0); g.lineTo(x,H); g.stroke(); }
+    for(let y=0;y<H;y+=48){ g.beginPath(); g.moveTo(0,y); g.lineTo(W,y); g.stroke(); }
+    b.draw(g,t,W,H);
+    // rótulo
+    g.fillStyle='rgba(6,9,14,.85)'; g.fillRect(0,H-64,W,64);
+    g.fillStyle='#eef1f6'; g.font='600 15px system-ui'; g.textAlign='center';
+    DOCU.lineas(g, b.cap, W/2, H-40, W-80, 19);
+    // progreso
+    g.fillStyle='rgba(63,240,192,.25)'; g.fillRect(0,H-3,W,3);
+    g.fillStyle='#3ff0c0'; g.fillRect(0,H-3, W*((this.beat+t)/this.esc.length),3);
+    this.raf=requestAnimationFrame(()=>this.paso());
+  },
+  lineas(g,txt,x,y,maxW,lh){
+    const palabras=txt.split(' '); let linea='', fila=0;
+    for(const p of palabras){ const prueba=linea?linea+' '+p:p;
+      if(g.measureText(prueba).width>maxW){ g.fillText(linea,x,y+fila*lh); linea=p; fila++; }
+      else linea=prueba; }
+    g.fillText(linea,x,y+fila*lh);
+  },
+};
+/* ---------- primitivas de dibujo (todas reciben el contexto) ---------- */
+const DZ={
+  ease:t=>t<0.5?2*t*t:1-Math.pow(-2*t+2,2)/2,
+  terreno(g,W,H,y,rug){ g.strokeStyle='#2a4a44'; g.fillStyle='#0b1512'; g.lineWidth=2; g.beginPath();
+    g.moveTo(0,y); for(let x=0;x<=W;x+=24) g.lineTo(x, y+Math.sin(x*0.013)*rug+Math.sin(x*0.037+2)*rug*0.5);
+    g.lineTo(W,H); g.lineTo(0,H); g.closePath(); g.fill(); g.stroke(); },
+  ciudad(g,W,H,y){ g.fillStyle='#0e1a22'; g.strokeStyle='#274652';
+    let x=20; while(x<W-40){ const w=24+((x*7)%38), h=30+((x*13)%90);
+      g.fillRect(x,y-h,w,h); g.strokeRect(x,y-h,w,h); x+=w+14; } },
+  globo(g,x,y,s){ g.strokeStyle='#d8b46a'; g.fillStyle='rgba(216,180,106,.15)'; g.lineWidth=2;
+    g.beginPath(); g.arc(x,y,s,0,TAU); g.fill(); g.stroke();
+    g.beginPath(); g.moveTo(x,y+s); g.lineTo(x,y+s*1.7); g.stroke(); g.strokeRect(x-s*0.2,y+s*1.7,s*0.4,s*0.3); },
+  biplano(g,x,y,s,c){ g.strokeStyle=c||'#9fd8c8'; g.lineWidth=2;
+    g.beginPath(); g.moveTo(x-s,y); g.lineTo(x+s,y); g.stroke();               // fuselaje
+    g.beginPath(); g.moveTo(x-s*0.3,y-s*0.45); g.lineTo(x+s*0.5,y-s*0.45); g.moveTo(x-s*0.3,y+ s*0.1); g.lineTo(x+s*0.5,y+s*0.1); g.stroke();  // dos alas
+    g.beginPath(); g.moveTo(x-s,y); g.lineTo(x-s,y-s*0.35); g.stroke(); },     // cola
+  alaFija(g,x,y,s,c){ g.strokeStyle=c||'#9fd8c8'; g.lineWidth=2;
+    g.beginPath(); g.moveTo(x-s,y); g.lineTo(x+s,y); g.stroke();
+    g.beginPath(); g.moveTo(x-s*0.1,y); g.lineTo(x-s*0.55,y-s*0.5); g.moveTo(x-s*0.1,y); g.lineTo(x-s*0.55,y+s*0.5); g.stroke();
+    g.beginPath(); g.moveTo(x-s,y); g.lineTo(x-s*1.2,y-s*0.22); g.stroke(); },
+  cuadri(g,x,y,s,c){ g.strokeStyle=c||'#9fd8c8'; g.lineWidth=2;
+    g.beginPath(); g.moveTo(x-s,y-s*0.5); g.lineTo(x+s,y+s*0.5); g.moveTo(x-s,y+s*0.5); g.lineTo(x+s,y-s*0.5); g.stroke();
+    for(const [dx,dy] of [[-s,-s*0.5],[s,-s*0.5],[-s,s*0.5],[s,s*0.5]]){ g.beginPath(); g.ellipse(x+dx,y+dy,s*0.42,s*0.13,0,0,TAU); g.stroke(); } },
+  tanque(g,x,y,s,c){ g.strokeStyle=c||'#d87c6a'; g.fillStyle='rgba(216,124,106,.12)'; g.lineWidth=2;
+    g.beginPath(); g.ellipse(x,y,s,s*0.42,0,0,Math.PI,true); g.fill(); g.stroke();
+    g.strokeRect(x-s*1.15,y,s*2.3,s*0.4);
+    g.beginPath(); g.moveTo(x,y-s*0.3); g.lineTo(x+s*1.5,y-s*0.42); g.stroke(); },
+  lancha(g,x,y,s,c){ g.strokeStyle=c||'#8ad4ff'; g.lineWidth=2;
+    g.beginPath(); g.moveTo(x-s,y); g.lineTo(x+s,y); g.lineTo(x+s*0.6,y+s*0.35); g.lineTo(x-s*0.8,y+s*0.35); g.closePath(); g.stroke();
+    g.beginPath(); g.moveTo(x+s*0.2,y); g.lineTo(x+s*0.2,y-s*0.4); g.stroke(); },
+  barcoGrande(g,x,y,s,c){ g.strokeStyle=c||'#d87c6a'; g.lineWidth=2;
+    g.beginPath(); g.moveTo(x-s,y); g.lineTo(x+s,y); g.lineTo(x+s*0.75,y+s*0.3); g.lineTo(x-s*0.75,y+s*0.3); g.closePath(); g.stroke();
+    g.strokeRect(x-s*0.45,y-s*0.35,s*0.9,s*0.35); g.strokeRect(x-s*0.1,y-s*0.6,s*0.3,s*0.25); },
+  radar(g,x,y,r,t,c){ g.strokeStyle=c||'rgba(255,120,90,.8)'; g.lineWidth=1.5;
+    for(let i=1;i<=3;i++){ g.beginPath(); g.arc(x,y,r*i/3,0,TAU); g.globalAlpha=0.25; g.stroke(); }
+    g.globalAlpha=1; const a=t*TAU*2;
+    g.beginPath(); g.moveTo(x,y); g.arc(x,y,r,a,a+0.5); g.closePath();
+    g.fillStyle='rgba(255,120,90,.18)'; g.fill(); g.stroke(); },
+  destello(g,x,y,t,c){ if(t<0||t>1) return; const r=6+t*26; g.globalAlpha=1-t;
+    g.strokeStyle=c||'#ffd080'; g.lineWidth=3; g.beginPath(); g.arc(x,y,r,0,TAU); g.stroke();
+    g.beginPath(); g.arc(x,y,r*0.45,0,TAU); g.stroke(); g.globalAlpha=1; },
+  linea(g,x1,y1,x2,y2,c,disc){ g.strokeStyle=c||'rgba(138,212,255,.6)'; g.lineWidth=1.5;
+    if(disc) g.setLineDash([5,5]); g.beginPath(); g.moveTo(x1,y1); g.lineTo(x2,y2); g.stroke(); g.setLineDash([]); },
+  precio(g,x,y,txt,c){ g.fillStyle=c||'#f5b301'; g.font='800 17px system-ui'; g.textAlign='center'; g.fillText(txt,x,y); },
+};
+
+/* Las escenas. Cada una cuenta EL hecho de su época, no un resumen: el globo
+   que cruza, el radar que se enciende y muere, el precio de un FPV contra el
+   de un tanque. Los rótulos repiten los datos documentados de la ficha. */
+const DOCU_ESCENAS={
+  origen:[
+    { dur:7, cap:'Venecia, 1849. Austria suelta globos con bombas: el primer ataque aéreo sin piloto.',
+      draw(g,t,W,H){ DZ.ciudad(g,W,H,H*0.78); DZ.terreno(g,W,H,H*0.78,4);
+        for(let i=0;i<4;i++){ const x=W*0.1+((W*0.9)*((t*0.7+i*0.18)%1)), y=H*0.28+i*26;
+          DZ.globo(g,x,y,16); }
+        DZ.destello(g,W*0.55,H*0.72,(t-0.7)*3.3); } },
+    { dur:7, cap:'1918: el Kettering Bug, un torpedo aéreo de madera que volaba solo hacia su blanco.',
+      draw(g,t,W,H){ DZ.terreno(g,W,H,H*0.8,10);
+        const x=W*0.08+W*0.75*DZ.ease(t), y=H*0.42-Math.sin(t*Math.PI)*30;
+        DZ.biplano(g,x,y,34,'#d8b46a'); DZ.linea(g,x,y+6,x-70*(0.4+t),y+6,'rgba(216,180,106,.25)');
+        DZ.destello(g,W*0.86,H*0.74,(t-0.85)*6); } },
+    { dur:7, cap:'1935: al biplano radiocontrolado Queen Bee ("abeja reina") le disparaban los artilleros. De su zumbido viene la palabra DRON.',
+      draw(g,t,W,H){ DZ.terreno(g,W,H,H*0.82,6);
+        const x=W*0.15+W*0.6*t, y=H*0.35+Math.sin(t*9)*14;
+        DZ.biplano(g,x,y,30);
+        for(let i=0;i<3;i++){ const tt=(t*2+i*0.33)%1; DZ.destello(g, x-40+i*45, y+60-tt*40, tt, '#7f8b99'); } } },
+  ],
+  ojos:[
+    { dur:7, cap:'Vietnam, 1964-1975: los Ryan Firebee vuelan donde caían demasiados pilotos.',
+      draw(g,t,W,H){ DZ.terreno(g,W,H,H*0.75,26);
+        const x=W*0.05+W*0.9*t; DZ.alaFija(g,x,H*0.3,30);
+        g.strokeStyle='rgba(159,216,200,.3)'; g.strokeRect(x-14,H*0.3+18,28,20);   // la cámara mira
+        DZ.linea(g,x-14,H*0.3+38,x-40,H*0.72,'rgba(159,216,200,.25)',true);
+        DZ.linea(g,x+14,H*0.3+38,x+40,H*0.72,'rgba(159,216,200,.25)',true); } },
+    { dur:7, cap:'Más de 3.400 salidas de reconocimiento fotográfico. Muchos no volvieron — y era el plan.',
+      draw(g,t,W,H){ DZ.terreno(g,W,H,H*0.75,26);
+        for(let i=0;i<5;i++){ const tt=(t+i*0.2)%1, x=W*0.05+W*0.9*tt;
+          if(i===3 && tt>0.6){ DZ.destello(g,x,H*0.3+((tt-0.6)*180),(tt-0.6)*2.5); continue; }
+          DZ.alaFija(g,x,H*0.22+i*22,20,'rgba(159,216,200,'+(0.9-i*0.15)+')'); } } },
+  ],
+  beka:[
+    { dur:7, cap:'Valle de la Becá, 9 de junio de 1982. Abajo, 30 baterías antiaéreas sirias con sus radares.',
+      draw(g,t,W,H){ DZ.terreno(g,W,H,H*0.7,34);
+        for(let i=0;i<5;i++) DZ.radar(g, W*0.12+i*W*0.19, H*0.78, 34, t*0.3, 'rgba(255,120,90,.5)'); } },
+    { dur:8, cap:'Entran drones SEÑUELO. Los radares se encienden para derribarlos… y al encenderse se delatan.',
+      draw(g,t,W,H){ DZ.terreno(g,W,H,H*0.7,34);
+        for(let i=0;i<4;i++){ const x=W*0.1+W*0.8*Math.min(1,t*1.4+i*0.08); DZ.alaFija(g,x,H*0.26+i*18,16,'#f5b301'); }
+        for(let i=0;i<5;i++) DZ.radar(g, W*0.12+i*W*0.19, H*0.78, 40, t*2.2); } },
+    { dur:8, cap:'En dos días, 29 de 30 baterías destruidas sin perder un avión. Operación Mole Cricket 19: la primera batalla que decidieron los drones.',
+      draw(g,t,W,H){ DZ.terreno(g,W,H,H*0.7,34);
+        for(let i=0;i<5;i++){ const x=W*0.12+i*W*0.19, tt=t*2.4-i*0.28;
+          if(tt<1 && tt>0){ DZ.linea(g,x+120,0,x,H*0.78,'rgba(255,208,128,.5)'); }
+          DZ.destello(g,x,H*0.78,tt);
+          if(tt<0.2) DZ.radar(g,x,H*0.78,34,t*2); } } },
+  ],
+  predator:[
+    { dur:7, cap:'1995: el Predator vuela 24 horas sobre el mismo punto. Ojos que no parpadean.',
+      draw(g,t,W,H){ DZ.terreno(g,W,H,H*0.78,18);
+        const a=t*TAU, x=W/2+Math.cos(a)*W*0.3, y=H*0.3+Math.sin(a)*26;
+        DZ.alaFija(g,x,y,30);
+        DZ.linea(g,x,y+8,W/2,H*0.78,'rgba(159,216,200,.2)',true);
+        g.strokeStyle='rgba(159,216,200,.4)'; g.strokeRect(W/2-26,H*0.74,52,20); } },
+    { dur:8, cap:'Octubre de 2001: dispara por primera vez. El piloto está en Nevada; el aparato, en Afganistán. Nace el combate por pantalla — y su debate ético, que sigue abierto.',
+      draw(g,t,W,H){ DZ.terreno(g,W,H,H*0.78,18);
+        g.strokeStyle='#274652'; g.strokeRect(W*0.06,H*0.18,W*0.24,H*0.3);       // la pantalla en Nevada
+        g.fillStyle='rgba(63,240,192,.08)'; g.fillRect(W*0.06,H*0.18,W*0.24,H*0.3);
+        DZ.alaFija(g,W*0.66,H*0.3,30);
+        DZ.linea(g,W*0.3,H*0.33,W*0.6,H*0.3,'rgba(138,212,255,.5)',true);        // el enlace cruza el mundo
+        const tt=(t-0.5)*2.4; if(tt>0){ DZ.linea(g,W*0.66,H*0.3,W*0.66+40,H*0.76,'rgba(255,208,128,.6)'); DZ.destello(g,W*0.66+40,H*0.76,tt); } } },
+  ],
+  comercial:[
+    { dur:7, cap:'2006: nace DJI en Shenzhen. Con el Phantom (2013), volar una cámara cuesta unos cientos de dólares.',
+      draw(g,t,W,H){ DZ.ciudad(g,W,H,H*0.8); DZ.terreno(g,W,H,H*0.8,3);
+        const y=H*0.5-Math.sin(t*Math.PI)*40;
+        DZ.cuadri(g,W*0.5,y,26,'#9fd8c8'); DZ.precio(g,W*0.5,y-40,'~500 US$'); } },
+    { dur:7, cap:'Y los aficionados al FPV construyen cuadricópteros de 150 km/h por hobby. Nadie lo planeó como arma. Cuando algo es barato y está en todas partes, la guerra siguiente lo usa.',
+      draw(g,t,W,H){ DZ.terreno(g,W,H,H*0.8,10);
+        for(let i=0;i<3;i++){ const x=W*((t*1.3+i*0.3)%1.1)-30, y=H*0.4+i*44+Math.sin(t*12+i)*10;
+          DZ.cuadri(g,x,y,18,'#8ad4ff'); DZ.linea(g,x-20,y,x-70,y,'rgba(138,212,255,.2)'); } } },
+  ],
+  mosulera:[
+    { dur:8, cap:'Mosul, 2016-17: la primera guerra urbana de drones. Cuadricópteros DE TIENDA soltando granadas por un tubo, de los dos bandos.',
+      draw(g,t,W,H){ DZ.ciudad(g,W,H,H*0.8); DZ.terreno(g,W,H,H*0.8,3);
+        const x=W*0.3+W*0.35*t; DZ.cuadri(g,x,H*0.3,24);
+        const tt=(t-0.4)*2.5; if(tt>0&&tt<1){ g.fillStyle='#ffd080'; g.beginPath(); g.arc(x,H*0.3+tt*(H*0.46),3,0,TAU); g.fill(); DZ.destello(g,x,H*0.77,tt-0.8); } } },
+    { dur:7, cap:'La respuesta: los primeros jammers portátiles de infantería. Ya no hacía falta un ejército rico para tener fuerza aérea — bastaba una tarjeta de crédito.',
+      draw(g,t,W,H){ DZ.ciudad(g,W,H,H*0.8); DZ.terreno(g,W,H,H*0.8,3);
+        const x=W*0.62, y=H*0.32+t*30; DZ.cuadri(g,x,y,22);
+        DZ.radar(g,W*0.25,H*0.76,60,t,'rgba(138,212,255,.6)');
+        g.strokeStyle='rgba(138,212,255,.35)'; g.setLineDash([3,7]);
+        for(let i=1;i<4;i++){ g.beginPath(); g.arc(W*0.25,H*0.76,60+i*30*t,0,TAU); g.stroke(); } g.setLineDash([]); } },
+  ],
+  karabaj:[
+    { dur:8, cap:'Alto Karabaj, 2020: 44 días. Los TB2 y las municiones merodeadoras destruyen cientos de blindados — con video publicado cada día.',
+      draw(g,t,W,H){ DZ.terreno(g,W,H,H*0.72,30);
+        DZ.alaFija(g,W*0.25+W*0.4*t,H*0.2,32);
+        for(let i=0;i<4;i++){ const x=W*0.15+i*W*0.23, tt=t*2.6-i*0.4;
+          DZ.tanque(g,x,H*0.78,20); DZ.destello(g,x,H*0.78,tt); } } },
+    { dur:7, cap:'La demostración: un dron de precio medio anula a un ejército blindado clásico. Dos años después, medio mundo quería uno.',
+      draw(g,t,W,H){ DZ.terreno(g,W,H,H*0.78,14);
+        DZ.alaFija(g,W*0.3,H*0.32,34,'#f5b301'); DZ.precio(g,W*0.3,H*0.32-42,'~5 M US$');
+        DZ.tanque(g,W*0.72,H*0.72,26); DZ.precio(g,W*0.72,H*0.72-48,'~9 M US$','#d87c6a');
+        g.fillStyle='#eef1f6'; g.font='800 30px system-ui'; g.textAlign='center'; g.fillText('>',W*0.51,H*0.5); } },
+  ],
+  ucrania:[
+    { dur:8, cap:'Ucrania, 2022–hoy: el FPV de 500 dólares contra el tanque de millones. Ambos bandos fabrican MILLONES al año.',
+      draw(g,t,W,H){ DZ.terreno(g,W,H,H*0.75,16);
+        DZ.tanque(g,W*0.7,H*0.72,26);
+        const x=W*0.1+ (W*0.6)*DZ.ease(Math.min(1,t*1.3)), y=H*0.35+DZ.ease(Math.min(1,t*1.3))*(H*0.3);
+        DZ.cuadri(g,x,y,18,'#f5b301'); DZ.precio(g,W*0.16,H*0.28,'500 US$');
+        DZ.precio(g,W*0.7,H*0.72-46,'millones','#d87c6a');
+        DZ.destello(g,W*0.7,H*0.7,(t-0.8)*5); } },
+    { dur:8, cap:'Cuando el jamming saturó el espectro, llegó el FPV de FIBRA ÓPTICA: un hilo de vidrio de kilómetros que no se puede interferir.',
+      draw(g,t,W,H){ DZ.terreno(g,W,H,H*0.75,16);
+        DZ.radar(g,W*0.5,H*0.4,70,t,'rgba(138,212,255,.4)');
+        const x=W*0.12+W*0.66*t;
+        DZ.cuadri(g,x,H*0.62,18,'#f5b301');
+        g.strokeStyle='rgba(245,179,1,.5)'; g.beginPath(); g.moveTo(W*0.06,H*0.66);
+        for(let px=W*0.06;px<x;px+=14) g.lineTo(px, H*0.66+Math.sin(px*0.05)*5); g.stroke(); } },
+    { dur:8, cap:'Y sin casi marina, las lanchas Magura y Sea Baby expulsaron a una flota del oeste del mar Negro. El barato satura al caro.',
+      draw(g,t,W,H){ g.strokeStyle='#12324a'; g.fillStyle='#081824'; g.fillRect(0,H*0.6,W,H*0.4);
+        g.beginPath(); g.moveTo(0,H*0.6); g.lineTo(W,H*0.6); g.stroke();
+        DZ.barcoGrande(g,W*0.72,H*0.56,44);
+        for(let i=0;i<3;i++){ const x=W*0.06+(W*0.6)*Math.min(1,t*1.5)+i*-60;
+          if(x>0) DZ.lancha(g,x,H*0.62+i*16,20); }
+        DZ.destello(g,W*0.72,H*0.58,(t-0.75)*4.5); } },
+  ],
+  marrojo:[
+    { dur:8, cap:'Mar Rojo, 2023–hoy: el primer lugar donde drones y lanchas atacan de forma SOSTENIDA el tráfico mercante.',
+      draw(g,t,W,H){ g.strokeStyle='#12324a'; g.fillStyle='#081824'; g.fillRect(0,H*0.55,W,H*0.45);
+        g.beginPath(); g.moveTo(0,H*0.55); g.lineTo(W,H*0.55); g.stroke();
+        DZ.barcoGrande(g,W*0.35+W*0.2*t,H*0.5,40,'#8ad4ff');
+        DZ.alaFija(g,W*0.85-W*0.5*t,H*0.2,22,'#d87c6a');
+        DZ.lancha(g,W*0.1+W*0.5*t,H*0.62,18,'#d87c6a'); } },
+    { dur:8, cap:'La lección que las armadas estudian hoy: misiles de dos millones contra aparatos de dos mil. El barato satura al caro.',
+      draw(g,t,W,H){ g.fillStyle='#081824'; g.fillRect(0,H*0.55,W,H*0.45);
+        DZ.barcoGrande(g,W*0.5,H*0.5,44,'#8ad4ff');
+        for(let i=0;i<6;i++){ const a=i/6*Math.PI, tt=Math.min(1,t*1.6);
+          const x=W*0.5+Math.cos(a+Math.PI)*W*0.42*(1-tt), y=H*0.18+Math.sin(a)*H*0.2*(1-tt)+H*0.2*tt;
+          DZ.alaFija(g,x,y,13,'#d87c6a'); }
+        DZ.precio(g,W*0.5,H*0.86,'2.000 US$ el dron · 2.000.000 US$ el misil que lo derriba'); } },
+  ],
+  iran:[
+    { dur:8, cap:'Junio de 2025, los doce días: aviones golpean el programa nuclear iraní y las defensas responden con oleadas de misiles y drones.',
+      draw(g,t,W,H){ DZ.terreno(g,W,H,H*0.7,40);
+        for(let i=0;i<3;i++) DZ.radar(g,W*0.2+i*W*0.3,H*0.8,36,t);
+        for(let i=0;i<4;i++){ const tt=(t*1.6+i*0.22)%1;
+          DZ.linea(g,W*(0.15+i*0.2),H*0.06,W*(0.15+i*0.2)+30,H*0.06+tt*H*0.6,'rgba(255,208,128,.35)',true); } } },
+    { dur:8, cap:'El capítulo dron, documentado: FPV introducidos de contrabando desactivan defensas antiaéreas desde DENTRO — la táctica de la Telaraña ucraniana, repetida.',
+      draw(g,t,W,H){ DZ.terreno(g,W,H,H*0.7,40);
+        g.strokeStyle='#4a4436'; g.strokeRect(W*0.1,H*0.62,70,26);              // el camión
+        g.beginPath(); g.arc(W*0.12+12,H*0.62+28,7,0,TAU); g.arc(W*0.16+30,H*0.62+28,7,0,TAU); g.stroke();
+        const abierto=Math.min(1,t*2);
+        for(let i=0;i<3;i++){ const tt=Math.max(0,(t-0.3)*1.8-i*0.2);
+          if(tt>0) DZ.cuadri(g, W*0.14+ tt*(W*0.5+i*40), H*0.6- tt*(H*0.25-i*14), 14,'#f5b301'); }
+        DZ.radar(g,W*0.78,H*0.78,40,t);
+        DZ.destello(g,W*0.78,H*0.78,(t-0.75)*4.2); } },
+    { dur:7, cap:'Este juego documenta hasta inicios de 2026 y no afirma qué pasa hoy. Lo jugable, como siempre aquí, es con bandos ficticios.',
+      draw(g,t,W,H){ DZ.terreno(g,W,H,H*0.75,30);
+        g.fillStyle='rgba(63,240,192,.9)'; g.font='800 15px system-ui'; g.textAlign='center';
+        g.fillText('DOCUMENTADO · NO ACTUALIDAD', W/2, H*0.4);
+        g.fillStyle='#8c93a3'; g.font='600 12px system-ui';
+        g.fillText('La historia se cuenta con hechos. El combate se juega con ficción.', W/2, H*0.47); } },
+  ],
+  taiwan:[
+    { dur:7, cap:'HIPOTÉTICO — años 2030. Escenario especulativo del tipo que publican los estudios de defensa. Esto NO ha pasado.',
+      draw(g,t,W,H){ DZ.terreno(g,W,H,H*0.68,44);
+        g.fillStyle='rgba(245,179,1,.9)'; g.font='800 22px system-ui'; g.textAlign='center';
+        g.globalAlpha=0.6+Math.sin(t*10)*0.4; g.fillText('FICCIÓN',W/2,H*0.25); g.globalAlpha=1; } },
+    { dur:9, cap:'La apuesta teórica: enjambres de cientos de aparatos autónomos coordinados, saturando desde todas las direcciones a la vez.',
+      draw(g,t,W,H){ DZ.terreno(g,W,H,H*0.68,44);
+        for(let i=0;i<26;i++){ const a=(i/26)*TAU, tt=Math.min(1,t*1.4);
+          const x=W*0.5+Math.cos(a)*(W*0.55)*(1-tt), y=H*0.4+Math.sin(a)*(H*0.5)*(1-tt);
+          DZ.cuadri(g,x,y,8,'#d87c6a'); }
+        DZ.radar(g,W*0.5,H*0.74,44,t,'rgba(63,240,192,.6)'); } },
+  ],
+};
+
 const ERAS=[
   { id:'origen', años:'1849 · 1918 · 1935', titulo:'Los precursores',
     texto:'En 1849 Austria soltó globos con bombas sobre Venecia: el primer ataque aéreo sin piloto de la historia. '+
@@ -8026,6 +8348,18 @@ const ERAS=[
       'atacan de forma sostenida el tráfico mercante: cientos de ataques, buques hundidos, y marinas de guerra gastando misiles de dos millones '+
       'contra aparatos de dos mil. La lección incómoda que las armadas del mundo estudian hoy: el barato satura al caro.',
     sinMapa:'Se sondeó Bab el-Mandeb para darle mapa: el archivo de elevación no tiene datos de fondo marino ahí (medido con DRONES.sonda). Esta época se cuenta; no se vuela.' },
+  { id:'iran', años:'2025 · los doce días', titulo:'Los drones entran por dentro',
+    texto:'DOCUMENTADO (junio de 2025): doce días de guerra abierta entre Israel e Irán — ataques aéreos al programa nuclear iraní, '+
+      'oleadas de misiles balísticos de respuesta, y un alto el fuego el día doce. El capítulo que le toca a este juego: '+
+      'drones FPV introducidos de contrabando y lanzados desde DENTRO del país desactivaron defensas antiaéreas en las primeras horas — '+
+      'la táctica de la operación Telaraña ucraniana, repetida a las semanas. La lección: la frontera ya no protege del dron, porque el dron ya está adentro. '+
+      'Este juego documenta hasta inicios de 2026 y NO afirma qué pasa hoy; el combate jugable, como siempre aquí, va con bandos ficticios.',
+    zona:'alborz',
+    mision:{ nombre:'Volar esta época · desde dentro', equipo:{dron:'fibra'},
+      enemies:[{t:'turret',n:6},{t:'jammer',n:2},{t:'tank',n:4}],
+      objs:[{type:'destroy',tag:'turret',n:6,text:'Desactiva las defensas antiaéreas (6)'},
+            {type:'destroy',tag:'jammer',n:2,text:'Y los jammers (2)'}],
+      nota:'Ya estás dentro: sin cruzar frontera, con fibra que no se puede interferir, en los montes Alborz de verdad (917 m de desnivel medidos).' } },
   { id:'taiwan', años:'HIPOTÉTICO · años 2030 · Taiwán', titulo:'El enjambre (ficción)',
     texto:'ESTO NO HA PASADO: es un escenario especulativo, del tipo que los estudios de defensa publican sobre el estrecho de Taiwán. '+
       'La apuesta teórica: enjambres de cientos de aparatos autónomos coordinados, saturando defensas desde todas las direcciones a la vez, '+
@@ -8204,9 +8538,16 @@ function renderHistoria(){
     let html='<div class="eaños">'+era.años+'</div><h4>'+era.titulo+'</h4><p>'+era.texto+'</p>';
     if(era.sinMapa) html+='<p class="enota">'+era.sinMapa+'</p>';
     d.innerHTML=html;
+    if(DOCU_ESCENAS[era.id]){
+      const v=document.createElement('button'); v.className='play ghost eplay';
+      v.textContent='🎬 Ver el documental animado';
+      v.onclick=()=>DOCU.abrir(era);
+      d.appendChild(v);
+    }
     if(era.mision){
       const b=document.createElement('button'); b.className='play eplay';
       b.textContent='▶ '+era.mision.nombre;
+      b.style.marginLeft='8px';
       b.onclick=()=>startEra(era);
       d.appendChild(b);
       if(era.mision.nota){ const nn=document.createElement('div'); nn.className='enota';
@@ -8363,6 +8704,8 @@ function wireUI(){
   $('gazeInv').onclick=(e)=>{ e.stopPropagation(); gaze.invertYaw=!gaze.invertYaw; feed('Mirada '+(gaze.invertYaw?'invertida':'normal')); };
   // gaze.rate escala el TOPE de giro: se enseña en °/s, que es lo que se siente
   const dime=()=>Math.round(clamp(gaze.rate*0.175,0.35,2.1)*180/Math.PI)+' °/s';
+  $('docuSalta').onclick=()=>DOCU.siguiente();
+  $('docuCierra').onclick=()=>DOCU.cerrar();
   $('cmLibre').onclick=()=>CAMPANA.abandonar();
   $('cmMundo').onclick=()=>CAMPANA.empezar('mundo');
   $('cmGuerr').onclick=()=>CAMPANA.empezar('guerrilla');
@@ -8430,6 +8773,29 @@ function wireUI(){
    ARRANQUE
    ===================================================================== */
 function boot(){
+  /* ⚠ SOLO COMPUTADOR (decisión de Joan, 22-ago-2026). El simulador descarga
+     terreno real, mueve cientos de miles de triángulos y corre física, IA y
+     guerra electrónica a la vez: en un celular se arrastra, y una experiencia
+     mala cobra más caro que no darla. La detección es puntero grueso + pantalla
+     angosta, no el user agent, porque una tablet con teclado o un portátil
+     táctil SÍ pueden jugar y el user agent miente.
+     La única salida móvil que tiene sentido queda abierta: ser el MANDO del
+     dron. El botón lleva directo al flujo de unirse con código, que era la
+     única razón legítima de abrir esto en un teléfono. */
+  const esMovil = matchMedia('(pointer: coarse)').matches && Math.min(innerWidth,innerHeight)<620 && !matchMedia('(pointer: fine)').matches;
+  if(esMovil){
+    $('soloPC').classList.add('on');
+    $('soloPCmando').onclick=()=>{
+      $('soloPC').classList.remove('on');
+      switchTab('pair');
+      $('joinBox').style.display='block'; $('hostBox').style.display='none';
+      feed('📱 Escribe el código que salga en el computador');
+    };
+  }
+  /* El arranque SIGUE aunque la puerta esté puesta: los botones del mando se
+     conectan durante el arranque, y cortarlo aquí dejaría el celular sin su
+     única función. El menú sin misión apenas dibuja nada, así que el costo de
+     tener el motor ocioso detrás de la puerta es despreciable. */
   // WebGL disponible?
   try{ const t=document.createElement('canvas'); if(!(t.getContext('webgl2')||t.getContext('webgl'))) throw new Error('WebGL no disponible'); }
   catch(e){ window.__fatal('Tu navegador no soporta 3D (WebGL). Prueba en Chrome/Safari actualizado.', e.message); return; }
@@ -8820,6 +9186,22 @@ if(location.search.indexOf('dbg')>=0) window.DRONES={
      con números en vez de a ojo. Salta el filtro a propósito: aquí se mide la
      respuesta del mando, no la del filtro. Deja la histéresis y la orden
      suavizada como estén — así se puede medir también el arranque. */
+  /* Los documentales, para poder probarlos en frío: dibuja cada beat a dos
+     tiempos y compara. Con rAF no se puede medir en un panel oculto (no corre
+     en pestañas ocultas — trampa conocida), y esto sí. */
+  docuPrueba:()=>{ const cv=document.createElement('canvas'); cv.width=480; cv.height=270;
+    const g=cv.getContext('2d',{willReadFrequently:true});
+    let beats=0, animan=0; const fallan=[];
+    for(const id in DOCU_ESCENAS){ DOCU_ESCENAS[id].forEach((b,i)=>{ beats++;
+      try{
+        g.fillStyle='#000'; g.fillRect(0,0,480,270); b.draw(g,0.25,480,270);
+        const a1=g.getImageData(0,0,480,270).data.slice();
+        g.fillStyle='#000'; g.fillRect(0,0,480,270); b.draw(g,0.75,480,270);
+        const c=g.getImageData(0,0,480,270).data;
+        let dif=0; for(let k=0;k<c.length;k+=400){ if(Math.abs(c[k]-a1[k])>8) dif++; }
+        if(dif>6) animan++; else fallan.push(id+'#'+i+' dif='+dif);
+      }catch(e){ fallan.push(id+'#'+i+' ERROR '+e.message); } }); }
+    return {beats, animan, fallan}; },
   simGaze:(headYaw,headPitch,limpio)=>{ gaze.active=true; gaze.detected=true; gaze.ready=true; gaze.hasEye=false;
     gaze.baseYaw=0; gaze.basePitch=0; gaze.yaw=headYaw||0; gaze.pitch=headPitch||0;
     gaze.fYaw={x:gaze.yaw,dx:0}; gaze.fPitch={x:gaze.pitch,dx:0};

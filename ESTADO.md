@@ -439,6 +439,35 @@ mar Rojo se cuenta, no se vuela, y la ficha lo dice.
   resultado antes**, y no romper el bucle de espera en `playing===true` si la
   misión ANTERIOR sigue viva — dos lecturas falsas vinieron de ahí.
 
+
+## 22-ago (2ª tanda): solo computador, documentales animados, Irán
+
+**Solo computador** (decisión de Joan): puerta a pantalla completa en móvil
+(puntero grueso + pantalla angosta + sin puntero fino — NO user agent, que
+miente con tablets y portátiles táctiles). El arranque SIGUE debajo de la
+puerta porque los botones del mando-celular se conectan durante el arranque:
+cortarlo mataría la única función móvil legítima, ser el MANDO. El botón de la
+puerta lleva directo al flujo de unirse con código. Verificado emulando móvil.
+
+**🎬 Documentales animados** en las 11 épocas de la Historia. Decisión de
+fondo: NO se incrusta metraje real de guerra (muertes reales como contenido de
+juego, no; enlaces externos se pudren; el juego abre sin internet). Son
+animaciones PROPIAS de sala de mando — siluetas, radares, rótulos con los
+hechos documentados — sobre un motor mínimo: escena = lista de beats, beat =
+{dur, cap, draw(g,t,W,H)}, y una docena de primitivas (DZ.*) para que añadir
+la época del año que viene sea escribir datos. `DRONES.docuPrueba()` dibuja
+cada beat a dos tiempos y compara: 26 beats, 22 animan, 4 estáticos a
+propósito (tarjetas de precio y cierres).
+⚠ Trampa: rAF NO corre en paneles ocultos — el reproductor parece congelado si
+se mide así; docuPrueba() existe para eso.
+
+**Irán**: época «2025 · los doce días» — documentada (guerra de junio 2025,
+FPV de contrabando desactivando defensas desde dentro, alto el fuego el día
+doce), con la nota explícita de que el juego documenta hasta inicios de 2026 y
+NO afirma qué pasa hoy. Zona nueva: **Montes Alborz** (917 m de desnivel
+medidos, sondeado con DRONES.sonda). Misión de época: fibra óptica contra
+defensas y jammers, bandos ficticios como siempre. 22 chinchetas ya.
+
 ## Trampas que ya costaron tiempo
 
 - **La rama de este repo es `main`, no `master`.** Otros proyectos de Joan usan
