@@ -407,6 +407,17 @@
   .pin.mar{background:#37b6ff;box-shadow:0 0 0 2px rgba(0,0,0,.55), 0 0 10px rgba(55,182,255,.8)}
   .pin.hecho{background:var(--ambar)}
   .pin:hover,.pin:focus{transform:translate(-50%,-50%) scale(1.5);z-index:3;outline:none}
+  /* Campaña: la tomada lleva tu bandera; la que no toca en este modo, se apaga */
+  .pin.tomada{background:var(--ambar);box-shadow:0 0 0 2px rgba(0,0,0,.55), 0 0 12px rgba(245,179,1,.9)}
+  .pin.tomada::after{content:'⚑';position:absolute;left:50%;top:50%;transform:translate(-50%,-54%);font-size:9px;color:#1a1405}
+  .pin.fuera{opacity:.22;pointer-events:none}
+  #campBar{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px}
+  #campBar button{background:rgba(8,10,14,.6);border:1px solid var(--linea);color:var(--hueso);
+    font:inherit;font-size:11px;font-weight:700;letter-spacing:.04em;padding:7px 11px;border-radius:9px;cursor:pointer}
+  #campBar button.on{border-color:var(--ambar);color:var(--ambar);background:rgba(245,179,1,.08)}
+  #campBar select{background:rgba(8,10,14,.8);border:1px solid var(--linea);color:var(--hueso);
+    font:inherit;font-size:11px;padding:7px 9px;border-radius:9px}
+  #campProg{font-size:11px;font-weight:700;letter-spacing:.05em;color:var(--ambar);margin:0 0 8px}
   .pin b{position:absolute;left:50%;top:-6px;transform:translate(-50%,-100%);white-space:nowrap;
     font-size:10px;font-weight:800;letter-spacing:.04em;padding:3px 7px;border-radius:6px;
     background:rgba(6,10,16,.92);border:1px solid var(--linea);color:var(--hud);opacity:0;transition:opacity .12s}
@@ -577,6 +588,14 @@
       <div id="tab-real" style="display:none">
         <div class="h-sec">🌐 Mapamundi · toca una zona del planeta</div>
         <div class="subtitle" style="margin-bottom:10px">Cada chincheta es un lugar real. <b style="color:var(--hud)">Verdes</b>: tierra, montaña y ciudad. <b style="color:#37b6ff">Azules</b>: <b>mar</b> — arrecifes, estrechos y fosas, con el fondo submarino de verdad. Para los azules necesitas un dron <b>Marítimo</b>, <b>Submarino</b> o <b>Híbrido</b> del Garaje.</div>
+        <div id="campBar">
+          <button id="cmLibre">🌍 Libre</button>
+          <button id="cmMundo">👑 Conquistar el mundo</button>
+          <button id="cmNacion">🏳️ Una nación</button>
+          <select id="cmNacionSel" style="display:none"></select>
+          <button id="cmGuerr">🥷 Guerrillas</button>
+        </div>
+        <div id="campProg"></div>
         <div id="mundoWrap">
           <canvas id="mundoCv" width="1024" height="601"></canvas>
           <div id="mundoPins"></div>
@@ -901,6 +920,7 @@ function load(){ try{ const s=JSON.parse(localStorage.getItem(SKEY)||'{}');
   store.prog=s.prog||{}; store.loadout=s.loadout||null; store.best=s.best||{};
   store.vol=(typeof s.vol==='number')?s.vol:0.7;
   store.faccion=(s.faccion==='azul'||s.faccion==='rojo')?s.faccion:null;   // guerra
+  store.campana=s.campana&&typeof s.campana==='object'?s.campana:{modo:null,nacion:null,ganadas:{}};
   store.env=Object.assign({tod:'dia',wx:'despejado'}, s.env||{}); }catch(e){} }
 function save(){ try{ localStorage.setItem(SKEY, JSON.stringify(store)); }catch(e){} }
 load();
@@ -2183,8 +2203,17 @@ const CIUDADES=[
 ];
 function lon2tileX(lon,z){ return (lon+180)/360*Math.pow(2,z); }
 function lat2tileY(lat,z){ const r=lat*Math.PI/180; return (1-Math.log(Math.tan(r)+1/Math.cos(r))/Math.PI)/2*Math.pow(2,z); }
+/* ⚠ CON TIEMPO LÍMITE. Una tesela que no responde (servidor limitando, red
+   móvil mala) dejaba a loadImg esperando PARA SIEMPRE: la pantalla de carga se
+   quedaba puesta sin error y el juego parecía muerto — pasó de verdad, con AWS
+   limitando tras muchas descargas seguidas. 20 s y se rechaza: el flujo de
+   arriba ya sabe seguir con las teselas que sí llegaron, y si no llegó ninguna
+   avisa al jugador en vez de colgarse. */
 function loadImg(url){ return new Promise((res,rej)=>{ const im=new Image(); im.crossOrigin='anonymous';
-  im.onload=()=>res(im); im.onerror=()=>rej(new Error('tesela')); im.src=url; }); }
+  const t=setTimeout(()=>{ im.src=''; rej(new Error('tesela: sin respuesta en 20 s')); }, 20000);
+  im.onload=()=>{ clearTimeout(t); res(im); };
+  im.onerror=()=>{ clearTimeout(t); rej(new Error('tesela')); };
+  im.src=url; }); }
 function realHeightAt(x,z){
   const G=REAL.G, h=REAL.heights;
   let u=(x+HALF)/WORLD, v=(z+HALF)/WORLD;
@@ -2275,6 +2304,7 @@ async function buildRealWorld(map){
   const G=512;
   showLoading('Paso 1 de 2 · relieve del terreno', map.name);
   const E=await fetchTiles(ZE, (z,x,y)=>'https://s3.amazonaws.com/elevation-tiles-prod/terrarium/'+z+'/'+x+'/'+y+'.png', bbE, G, false);
+  if(E.ok===0) throw new Error('el servidor de elevación no respondió (suele ser temporal: reintenta en un minuto)');
   if(!E.ok) throw new Error('sin datos de elevación');
   const nitidez=+(spanM/lienzoDeZoom(ZT)).toFixed(2);
   showLoading('Paso 2 de 2 · imagen satelital',
@@ -6641,7 +6671,7 @@ En el Garaje tienes el Marítimo (USV), el Submarino (UUV) y el Híbrido.
   catch(e){ hideLoading(); $('menu').classList.add('on');
     alert('No se pudo descargar el terreno real.\n'+(e&&e.message||e)+'\n\nRevisa tu conexión e inténtalo de nuevo.'); return false; }
   hideLoading();
-  deployMission(realMissionFor(map));
+  deployMission(CAMPANA.modo() ? CAMPANA.mision(map) : realMissionFor(map));
   return true;   // "logré arrancar": el duelo lo necesita para no quedarse encendido en falso
 }
 function makeZoneMarker(color){
@@ -6680,6 +6710,11 @@ function endMission(win, reason){
     // guerra: ganar una misión en una ciudad real suma 1 punto a tu bando ahí
     if(currentReal && currentReal.lat!==undefined && !duelo.active)
       guerraParte(1, currentReal.lat, currentReal.lon);
+    // campaña local: la zona queda tomada y el mapa lo pinta
+    if(currentReal && !duelo.active){
+      const parte=CAMPANA.victoria(currentReal);
+      if(parte) setTimeout(()=>feed(parte, 'good'), 600);
+    }
   }
   setTimeout(()=>{
     $('hud').classList.remove('on'); $('touch').classList.remove('on'); $('utiles').classList.remove('on'); $('rotate').classList.remove('on');
@@ -7849,6 +7884,101 @@ function renderGarage(){
    y paralelos y las chinchetas siguen funcionando. El mapa es un selector, y
    un selector tiene que servir aunque el adorno no cargue.
    ===================================================================== */
+/* =====================================================================
+   CAMPAÑA SOBRE EL MAPAMUNDI
+   ---------------------------------------------------------------------
+   El mapamundi deja de ser solo un selector: es el tablero de una campaña
+   LOCAL (vive en este navegador, como el resto del progreso — no confundir
+   con la pestaña ⚔️ Guerra, que es online y entre jugadores).
+
+   Tres maneras de jugarla, que son tres maneras de probar los aparatos:
+     · CONQUISTA DEL MUNDO — las 18 zonas. Cada victoria pinta su chincheta, y
+       la guarnición crece con cada zona tomada: la primera es un paseo, la
+       última es un asalto. Terminarla es haber volado en estepa, montaña,
+       ciudad y mar — que es exactamente "probar los drones en los diferentes
+       campos de batalla".
+     · CONQUISTAR UNA NACIÓN — lo mismo, acotado a un país del catálogo. Corta
+       y con identidad: Colombia son 4 zonas con mar, Taiwán 2 de montaña.
+     · GUERRILLAS — no se conquista nada: golpear y salir. La guarnición es
+       GRANDE (no hay que destruirla toda), el objetivo es pequeño y hay que
+       llegar a la extracción. Premia el sigilo y castiga el ruido, así que el
+       ave espía y el tren eléctrico por fin tienen su misión.
+   El enemigo sigue siendo el Pacto ROJO ficticio de siempre: la campaña usa
+   la geografía real, no los países como bandos.
+   ===================================================================== */
+const CAMPANA={
+  modo(){ return (store.campana&&store.campana.modo)||null; },
+  datos(){ return store.campana||(store.campana={modo:null,nacion:null,ganadas:{}}); },
+  /* Las naciones salen del catálogo, no de una lista aparte: si mañana se añade
+     una zona de Ecuador, Ecuador crece solo. */
+  naciones(){ const m=new Map();
+    REAL_MAPS.forEach(z=>{ const p=z.pais.split('·')[0].trim();
+      (m.get(p)||m.set(p,[]).get(p)).push(z); });
+    return [...m.entries()].filter(([,zs])=>zs.length>=2); },
+  alcance(){ const d=this.datos();
+    if(d.modo==='nacion'&&d.nacion) return REAL_MAPS.filter(z=>z.pais.split('·')[0].trim()===d.nacion);
+    return REAL_MAPS; },
+  conquistada(id){ return !!this.datos().ganadas[id]; },
+  nConq(){ const a=this.alcance(); return a.filter(z=>this.conquistada(z.id)).length; },
+  /* ⚠ CAMBIAR DE MODO NO BORRA LAS CONQUISTAS. La primera versión reiniciaba
+     `ganadas` en cada clic, así que pasar por Guerrillas para una salida rápida
+     te borraba media campaña de conquista — se descubrió probándolo. Ahora el
+     mapa de zonas tomadas persiste; para empezar de cero se vuelve a pulsar el
+     modo que ya está activo, y se pide confirmación. */
+  empezar(modo,nacion){
+    const d=this.datos();
+    if(d.modo===modo && (modo!=='nacion' || d.nacion===nacion)){
+      if(confirm('¿Reiniciar la campaña desde cero? Se pierden las zonas tomadas.')){
+        store.campana={modo,nacion:nacion||null,ganadas:{}}; save();
+        feed('Campaña reiniciada','good');
+      }
+      renderReal(); return;
+    }
+    store.campana={modo,nacion:nacion||null,ganadas:d.ganadas||{}}; save();
+    feed(modo==='guerrilla'?'🥷 Guerrillas: golpea y sal. El sigilo es el arma.'
+        :'⚔️ Campaña: toma zonas en el mapamundi. Las ya tomadas se conservan.','good');
+    renderReal(); },
+  abandonar(){ const d=this.datos(); store.campana={modo:null,nacion:null,ganadas:d.ganadas||{}}; save(); renderReal(); },
+  /* La misión que toca en esta zona, según el modo. Parte de la ficha de la
+     zona y la transforma — así el arrecife sigue siendo naval y la garganta
+     sigue siendo vertical, que es la gracia de conquistar sitios distintos. */
+  mision(map){
+    const d=this.datos(), base=realMissionFor(map);
+    if(d.modo==='guerrilla'){
+      /* Guarnición grande, objetivo pequeño, extracción obligatoria. El total
+         de enemigos sube un 60% pero solo hay que tumbar un tercio: entrar a
+         pecho descubierto es perder. */
+      const en=(map.enemies||base.enemies).map(e=>({t:e.t, n:Math.ceil(e.n*1.6)}));
+      const total=en.reduce((a,e)=>a+e.n,0), blanco=Math.max(3,Math.round(total/3));
+      return Object.assign(base,{ enemies:en, guerrilla:true,
+        objs:[{type:'destroy',tag:'enemy',n:blanco,text:'Golpea: destruye '+blanco+' y no te quedes'},
+              {type:'reach',text:'Sal por la zona de extracción'}] });
+    }
+    if(d.modo==='mundo'||d.modo==='nacion'){
+      /* La guarnición crece un 12% por zona ya tomada: el frente se endurece.
+         Math.ceil para que crecer nunca sea gratis. */
+      const k=1+this.nConq()*0.12;
+      return Object.assign(base,{ conquista:true,
+        enemies:(map.enemies||base.enemies).map(e=>({t:e.t, n:Math.ceil(e.n*k)})) });
+    }
+    return base;
+  },
+  /* Al ganar. Devuelve el texto del parte de victoria, o null si no aplica. */
+  victoria(map){
+    const d=this.datos(); if(!d.modo||!map) return null;
+    if(d.modo==='guerrilla') return '🥷 Golpe dado. La guerrilla no conquista: desgasta.';
+    if(this.conquistada(map.id)) return null;
+    d.ganadas[map.id]=true; save();
+    const a=this.alcance(), n=this.nConq();
+    if(n>=a.length){
+      const t=d.modo==='nacion'?d.nacion:'el mundo';
+      return '👑 CAMPAÑA COMPLETA: '+t+' es tuyo. '+a.length+' zonas, todas con tu bandera.';
+    }
+    return '⚑ '+map.name+' tomada · '+n+'/'+a.length+
+      (n===a.length-1?' — queda UNA':' · la guarnición de la siguiente será mayor');
+  },
+};
+
 const MUNDO_LAT_TOPE=72;
 function mercY(lat, px){            // latitud -> píxel vertical, Mercator
   const r=lat*Math.PI/180;
@@ -7896,7 +8026,10 @@ function colocarChinchetas(PX, Y0, ALTO){
     if(y<0||y>ALTO) return;                      // fuera del recorte de ±72°
     const b=document.createElement('button');
     const hecho=!!store.best['real_'+m.id];
-    b.className='pin'+(m.naval?' mar':'')+(hecho?' hecho':'');
+    const modo=CAMPANA.modo();
+    const enAlcance=!modo || CAMPANA.alcance().some(z=>z.id===m.id);
+    const tomada=modo && CAMPANA.conquistada(m.id);
+    b.className='pin'+(m.naval?' mar':'')+(hecho?' hecho':'')+(tomada?' tomada':'')+(enAlcance?'':' fuera');
     b.style.left=(x/PX*100)+'%'; b.style.top=(y/ALTO*100)+'%';
     b.title=m.name+' · '+m.pais;
     b.setAttribute('aria-label', m.name+', '+m.pais+(m.naval?', mapa de mar':''));
@@ -7905,7 +8038,34 @@ function colocarChinchetas(PX, Y0, ALTO){
     cap.appendChild(b);
   });
 }
+/* La barra de campaña: el modo activo, el avance, y las naciones del catálogo. */
+function renderCampana(){
+  const d=CAMPANA.datos(), modo=d.modo;
+  const marca=(id,on)=>{ const e=$(id); if(e) e.classList.toggle('on',!!on); };
+  marca('cmLibre',!modo); marca('cmMundo',modo==='mundo');
+  marca('cmNacion',modo==='nacion'); marca('cmGuerr',modo==='guerrilla');
+  const sel=$('cmNacionSel');
+  if(sel){
+    if(!sel.options.length){
+      CAMPANA.naciones().forEach(([pais,zs])=>{ const o=document.createElement('option');
+        o.value=pais; o.textContent=pais+' ('+zs.length+' zonas)'; sel.appendChild(o); });
+    }
+    sel.style.display = modo==='nacion' ? '' : 'none';
+    if(modo==='nacion'&&d.nacion) sel.value=d.nacion;
+  }
+  const pr=$('campProg');
+  if(pr){
+    if(modo==='mundo'||modo==='nacion'){
+      const a=CAMPANA.alcance(), nc=CAMPANA.nConq();
+      pr.textContent='⚑ '+nc+' de '+a.length+' zonas tomadas'
+        +(nc>=a.length?' — CAMPAÑA COMPLETA 👑':' · la guarnición crece un 12% por zona tomada');
+    } else if(modo==='guerrilla'){
+      pr.textContent='🥷 Golpea y sal: destruye solo el objetivo y llega a la extracción. La guarnición siempre te supera.';
+    } else pr.textContent='';
+  }
+}
 function renderReal(){
+  renderCampana();
   pintarMapamundi();
   const list=$('realList'); list.innerHTML='';
   REAL_MAPS.forEach(m=>{
@@ -8025,6 +8185,13 @@ function wireUI(){
   $('gazeInv').onclick=(e)=>{ e.stopPropagation(); gaze.invertYaw=!gaze.invertYaw; feed('Mirada '+(gaze.invertYaw?'invertida':'normal')); };
   // gaze.rate escala el TOPE de giro: se enseña en °/s, que es lo que se siente
   const dime=()=>Math.round(clamp(gaze.rate*0.175,0.35,2.1)*180/Math.PI)+' °/s';
+  $('cmLibre').onclick=()=>CAMPANA.abandonar();
+  $('cmMundo').onclick=()=>CAMPANA.empezar('mundo');
+  $('cmGuerr').onclick=()=>CAMPANA.empezar('guerrilla');
+  $('cmNacion').onclick=()=>{ const sel=$('cmNacionSel');
+    const pais=sel.value||(CAMPANA.naciones()[0]||[])[0];
+    if(pais) CAMPANA.empezar('nacion', pais); };
+  $('cmNacionSel').onchange=(e)=>CAMPANA.empezar('nacion', e.target.value);
   $('btnTec').onclick=(e)=>{ e.stopPropagation(); toggleTecnico(); };
   $('btnPorQue').onclick=(e)=>{ e.stopPropagation(); if(!cerrarPorQue()) mostrarPorQue(); };
   $('porqueBox').onclick=()=>cerrarPorQue();
