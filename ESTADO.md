@@ -1,4 +1,4 @@
-# Estado de Drones de Combate · 22 de agosto de 2026
+# Estado de Drones de Combate · 23 de agosto de 2026
 
 **Vive en `Desktop\drones`** (antes `Desktop\maquinas`; se renombró el 15-ago
 porque ya no comparte carpeta con ningún otro juego).
@@ -569,6 +569,44 @@ estático un beat que sí anima; el polvo de las orugas exige 56 km/h que ningú
 vehículo alcanza; la designación láser agarra a 157 m; `maxAlt` está en metros
 en el catálogo pero se suma en unidades; y el alcance de la campaña solo se
 respeta en las chinchetas, no en la lista de zonas.
+
+
+## 23-ago: el acro de verdad, y la Escuela de vuelo
+
+**El vuelo llegó a nivel de simulador serio.** El análisis encontró que lo que
+se llamaba ACRO era MODO ÁNGULO (palanca pide inclinación, tope 60°) — eso en
+un simulador serio se llama sport. El acro real es **MODO RATE** y ahora lo es:
+
+- la palanca pide **grados por segundo** (540 °/s con expo 0,65, medido exacto)
+- la actitud vive en un **cuaternión** y se integra libre: flips, loops y vuelo
+  invertido (Euler tiene bloqueo de cardán justo donde el acro vive)
+- el gas empuja **por el eje del aparato**: invertido y con gas te clavas —
+  medido: invertido sin gas cae 8,4 m/s; CON gas, 27 m. La lección uno.
+- motor lag τ≈55 ms, resistencia cuadrática (punta ~150 km/h emerge, no se
+  escribe), y al soltar la palanca el GIRO para pero el ángulo se queda
+- la cámara FPV en acro sale entera del cuaternión (invertido se ve invertido)
+
+Y tres físicas que faltaban, en TODOS los modos:
+- **sag de batería**: curva 100%→1,00 · 50%→0,93 · 15%→0,74 (era un escalón
+  100%→30% al 4%); gestionar batería ya es parte de pilotar
+- **viento racheado** (`vientoAhora()`): rachas 1,0→2,2 sobre media 1,6 medido
+  con lluvia; dos senos de frecuencias sin múltiplos comunes + deriva de rumbo
+- **efecto suelo** bajo 1,5 m: el colchón que hace flotar el aterrizaje
+
+**🎓 Escuela de vuelo** (pestaña nueva): 6 misiones de pilotaje puro, sin
+enemigos — estacionario con viento, puertas, aterrizaje de precisión (<1,5
+m/s, con rebote pedagógico si llegas duro), primer rate, circuito FPV con
+viento, y puertas grandes de ala fija. Con **horizonte artificial** y **visor
+de palancas** en pantalla (también en modo técnico). Las 4 primeras verificadas
+jugando hasta MISIÓN CUMPLIDA.
+
+### Trampas nuevas
+- El modo rate se ENTRA nivelado (quat desde el yaw actual) y se SALE poniendo
+  pitch/roll a cero: heredar actitud entre modos aparece de espaldas.
+- La cámara en acro fija `camera.up` desde el cuaternión y lo RESTAURA a
+  (0,1,0) después: las demás cámaras cuentan con el arriba del mundo.
+- En las pruebas del estacionario el dron de prueba SE VA con el viento (es la
+  gracia de la misión): sujetarlo re-teletransportando, no esperar quieto.
 
 ## Trampas que ya costaron tiempo
 

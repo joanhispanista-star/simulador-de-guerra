@@ -383,6 +383,12 @@
   .docuBtns button{background:rgba(8,10,14,.7);border:1px solid var(--linea);color:var(--hueso);
     font:inherit;font-size:12px;font-weight:700;padding:9px 18px;border-radius:9px;cursor:pointer}
   .docuBtns button:hover{border-color:var(--hud);color:var(--hud)}
+  /* Instrumentos de entrenamiento (escuela y modo técnico). */
+  #adiCv{position:fixed;left:calc(var(--sa-l) + 8px);bottom:calc(var(--sa-b) + 118px);z-index:8;display:none;
+    width:96px;height:96px;border-radius:50%;border:1px solid var(--linea);background:rgba(6,10,16,.55)}
+  #stkCv{position:fixed;left:calc(var(--sa-l) + 8px);bottom:calc(var(--sa-b) + 8px);z-index:8;display:none;
+    width:152px;height:76px;border-radius:10px;border:1px solid var(--linea);background:rgba(6,10,16,.55)}
+  #adiCv.on,#stkCv.on{display:block}
   /* La puerta de "solo computador". Pantalla completa, honesta con el porqué,
      y con la única salida móvil que tiene sentido: ser el mando. */
   #soloPC{position:fixed;inset:0;z-index:200;display:none;background:var(--negro);
@@ -533,6 +539,10 @@
     </div>
     <!-- La explicación de lo que está pasando, con los números de ese momento -->
     <div id="porqueBox"></div>
+    <!-- Instrumentos de entrenamiento: horizonte artificial y visor de palancas.
+         Salen en la escuela y en modo técnico. -->
+    <canvas id="adiCv" width="120" height="120"></canvas>
+    <canvas id="stkCv" width="190" height="95"></canvas>
     <div id="feed"></div>
     <div id="centerMsg"></div>
 
@@ -620,6 +630,7 @@
         <button data-tab="garage">🔧 Garaje</button>
         <button data-tab="pair">⚔️ Duelo 1v1</button>
         <button data-tab="guerra">⚔️ Guerra</button>
+        <button data-tab="escuela">🎓 Escuela</button>
         <button data-tab="historia">📜 Historia</button>
         <button data-tab="help">? Controles</button>
       </div>
@@ -744,6 +755,12 @@
       </div>
 
       <!-- AYUDA -->
+      <!-- ESCUELA DE VUELO -->
+      <div id="tab-escuela" style="display:none">
+        <div class="h-sec">🎓 Escuela de vuelo · pilotaje puro</div>
+        <div class="subtitle" style="margin-bottom:10px">Sin enemigos y sin armas: <b>el adversario es la física</b>. La progresión de una escuela FPV real — estacionario, puertas, aterrizaje, y de ahí al <b>ACRO real</b> (la palanca pide grados por segundo, sin ayudas, con flips) y al ala fija. Con <b>horizonte artificial</b> y <b>visor de palancas</b> en pantalla, como un simulador de verdad.</div>
+        <div class="missions" id="escuelaList"></div>
+      </div>
       <!-- HISTORIA DOCUMENTADA -->
       <div id="tab-historia" style="display:none">
         <div class="h-sec">📜 La historia del dron, documentada</div>
@@ -5404,7 +5421,18 @@ addEventListener('keydown',e=>{ keys[e.code]=true;
   if(e.code==='KeyG' && gaze.ready){ calibrateGaze(); }
   if(e.code==='KeyH' && gaze.ready){ gaze.invertYaw=!gaze.invertYaw; feed('Mirada '+(gaze.invertYaw?'normal':'invertida')); }
   if(e.code==='KeyB' && playing && mode==='drone'){ drone.acro=!drone.acro;
-    feed('Vuelo: '+(drone.acro?'ACRO — dron de carreras, sigue avanzando al soltar':'FÁCIL — sueltas y se para, mantiene la altura')); updateChips(); }
+    if(drone.acro){
+      /* Se entra NIVELADO y con el rumbo actual: el cuaternión arranca de cero
+         cada vez, porque heredar la actitud de un vuelo anterior es aparecer
+         de espaldas sin haber hecho nada. */
+      drone.quat=new THREE.Quaternion().setFromEuler(new THREE.Euler(0,drone.yaw,0,'YXZ'));
+      drone.wx=drone.wy=drone.wz=0;
+      feed('Vuelo: ACRO REAL (rate) — la palanca pide GRADOS/SEGUNDO, sin tope: flips y loops. Espacio = gas a fondo, Shift = cortar');
+    } else {
+      drone.pitch=0; drone.roll=0; drone.quat=null;
+      feed('Vuelo: FÁCIL — sueltas y se para, mantiene la altura');
+    }
+    updateChips(); }
   if(['Space','KeyW','KeyA','KeyS','KeyD','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code)) e.preventDefault();
 });
 addEventListener('keyup',e=>{ keys[e.code]=false; });
@@ -5814,6 +5842,56 @@ function mostrarPorQue(){
 }
 function cerrarPorQue(){ const el=$('porqueBox'); if(el&&el.classList.contains('on')){ el.classList.remove('on'); paused=false; return true; } return false; }
 
+/* =====================================================================
+   INSTRUMENTOS DE ENTRENAMIENTO
+   El horizonte artificial y el visor de palancas: los dos que un instructor
+   pone delante del alumno. Salen en la escuela y en modo técnico, y se
+   apagan solos fuera — el HUD de combate ya está bastante lleno.
+   ===================================================================== */
+function dibujarInstrumentos(){
+  const activos = mode==='drone' && drone.active && (ESC.activa || MODO_TECNICO);
+  const A=$('adiCv'), S=$('stkCv'); if(!A||!S) return;
+  A.classList.toggle('on',activos); S.classList.toggle('on',activos);
+  if(!activos) return;
+  /* HORIZONTE ARTIFICIAL. La mitad azul es el cielo y la parda el suelo; la
+     línea blanca fija es TU aparato. Se lee al revés de lo que se piensa: si
+     el aparato banquea a la derecha, el horizonte del instrumento gira a la
+     IZQUIERDA — igual que el de verdad, porque el instrumento muestra el
+     mundo visto desde el aparato. */
+  const g=A.getContext('2d'), W=A.width, H=A.height, cx=W/2, cy=H/2, R=W/2-6;
+  g.clearRect(0,0,W,H);
+  g.save(); g.beginPath(); g.arc(cx,cy,R,0,TAU); g.clip();
+  g.translate(cx,cy); g.rotate(drone.roll||0);
+  const dy=clamp((drone.pitch||0)/(Math.PI/2),-1,1)*R*1.2;
+  g.fillStyle='#274b6e'; g.fillRect(-R*2,-R*2+dy,R*4,R*2);      // cielo
+  g.fillStyle='#4a3a26'; g.fillRect(-R*2,dy,R*4,R*2);           // tierra
+  g.strokeStyle='#eef1f6'; g.lineWidth=1.5;
+  g.beginPath(); g.moveTo(-R,dy); g.lineTo(R,dy); g.stroke();   // el horizonte
+  for(const p of [-30,-15,15,30]){ const py=dy - p/90*R*1.2;    // escala de cabeceo
+    g.beginPath(); g.moveTo(-R*0.28,py); g.lineTo(R*0.28,py); g.globalAlpha=0.5; g.stroke(); g.globalAlpha=1; }
+  g.restore();
+  g.strokeStyle='#f5b301'; g.lineWidth=2.5;                     // TU aparato, fijo
+  g.beginPath(); g.moveTo(cx-R*0.55,cy); g.lineTo(cx-R*0.18,cy); g.lineTo(cx-R*0.08,cy+6);
+  g.lineTo(cx,cy); g.lineTo(cx+R*0.08,cy+6); g.lineTo(cx+R*0.18,cy); g.lineTo(cx+R*0.55,cy); g.stroke();
+  /* VISOR DE PALANCAS (modo 2). Ver qué hacen tus dedos mientras vuelas es lo
+     que deja a un instructor corregirte; aquí te corriges tú. Izquierda: gas y
+     guiñada. Derecha: cabeceo y alabeo. */
+  const s2=S.getContext('2d'), w2=S.width, h2=S.height;
+  s2.clearRect(0,0,w2,h2);
+  const inp=ULT_INP||{};
+  const caja=(x0,ex,ey,eti)=>{
+    s2.strokeStyle='rgba(140,147,163,.5)'; s2.lineWidth=1;
+    s2.strokeRect(x0,8,78,78-8);
+    s2.beginPath(); s2.moveTo(x0+39,8); s2.lineTo(x0+39,78); s2.moveTo(x0,43); s2.lineTo(x0+78,43); s2.strokeStyle='rgba(140,147,163,.2)'; s2.stroke();
+    s2.fillStyle='#3ff0c0'; s2.beginPath();
+    s2.arc(x0+39+clamp(ex,-1,1)*34, 43-clamp(ey,-1,1)*30, 5, 0, TAU); s2.fill();
+    s2.fillStyle='#8c93a3'; s2.font='700 8px system-ui'; s2.textAlign='center'; s2.fillText(eti, x0+39, h2-2);
+  };
+  const gas=(inp.up?1:0)-(inp.down?1:0);
+  caja(6,  clamp(inp.dr_yaw||0,-1,1), gas, 'GAS · GUIÑADA');
+  caja(104,clamp(inp.dr_roll||inp.dr_yaw||0,-1,1), clamp(inp.dr_pitch||0,-1,1), 'CABECEO · ALABEO');
+}
+
 /* lee la intención del jugador (unificado) */
 let PALANCA_DBG=null;   // la pone DRONES.palanca(); null = mandan los controles reales
 function readInput(dt){
@@ -5866,8 +5944,10 @@ function readInput(dt){
   if(linkLost){ inp.fire=false; inp.sec=false; }
   // ÓPTICA dañada: puntería temblorosa
   if(dmg.optica>0.05){ inp.dyaw+=(Math.random()-0.5)*dmg.optica*0.05; inp.dpitch+=(Math.random()-0.5)*dmg.optica*0.03; }
+  ULT_INP=inp;      // el visor de palancas dibuja lo que de verdad entró
   return inp;
 }
+let ULT_INP=null;
 
 /* =====================================================================
    LÓGICA DEL JUGADOR
@@ -6159,6 +6239,23 @@ const VEL_DRON=30*M, VEL_SUBE=15*M;
    competición en acro (1,73 g). No son adornos: de aquí sale la aceleración. */
 const TILT_MAX=35*Math.PI/180, ACRO_MAX=60*Math.PI/180;
 const _dv1=new THREE.Vector3(), _dv2=new THREE.Vector3(), _dv3=new THREE.Vector3();
+const _dq=new THREE.Quaternion(), _deu=new THREE.Euler(), _up3=new THREE.Vector3();
+/* El viento RACHEADO. El viento medio lo pone el clima (windVec); aquí se le
+   suman las rachas: dos senos de frecuencias que no comparten múltiplos (por
+   eso no se repite el patrón) más un giro lento de dirección. Un simulador con
+   viento constante enseña a compensar UNA vez; el real obliga a corregir
+   siempre, y eso es medio oficio de volar. */
+const _rafa=new THREE.Vector3();
+function vientoAhora(){
+  const w=windVec.length(); if(w<1e-4) return _rafa.set(0,0,0);
+  const t=missionTime;
+  const g=1 + 0.45*Math.sin(t*0.9) * Math.sin(t*0.23+1.7);        // rachas de fuerza
+  const giro=Math.sin(t*0.11)*0.5;                                 // deriva de dirección
+  const c=Math.cos(giro), s2=Math.sin(giro);
+  _rafa.set(windVec.x*c - windVec.z*s2, 0, windVec.x*s2 + windVec.z*c).multiplyScalar(g);
+  _rafa.y=w*0.18*Math.sin(t*1.7)*Math.sin(t*0.41);                 // térmicas leves
+  return _rafa;
+}
 function gimbalAuto(){
   // altura sobre el SUELO, no sobre el nivel del mar
   const h=drone.pos.y-terrainHeight(drone.pos.x, drone.pos.z);
@@ -6222,7 +6319,17 @@ function updateDrone(dt, inp){
      ser el reloj de la misión y pasa a ser lo que es en un dron real: el
      límite de las salidas MUY largas. 1/(20*60) = 0.000833. */
   drone.batt=clamp(drone.batt - dt*0.000833*(1+(inp.up?0.6:0)), 0, 1);
-  const power = drone.batt>0.04 ? 1 : 0.3;
+  /* ⚠ LA BATERÍA SE HUNDE BAJO CARGA (sag). Antes era un escalón: 100% de
+     potencia hasta el 4% y de golpe 30%. Una LiPo real entrega menos tensión
+     cuanto más descargada está, y el piloto lo SIENTE mucho antes de aterrizar:
+     al 50% ya notas el aparato menos vivo, al 20% los punch se acaban. Es una
+     de las cosas que separan un juego de un simulador, porque gestionar la
+     batería ES parte de pilotar. */
+  const b=drone.batt;
+  const power = b>0.5 ? 0.93+0.07*(b-0.5)/0.5
+              : b>0.2 ? 0.80+0.13*(b-0.2)/0.3
+              : b>0.05? 0.62+0.18*(b-0.05)/0.15
+              : 0.30;
   /* yaw — derecha = gira a la derecha (signo negativo, ver nota en updatePlayer).
      Con INERCIA: antes el giro arrancaba y paraba EN SECO en el mismo cuadro, y
      eso es lo que hacía que el vuelo se sintiera de videojuego viejo — ningún
@@ -6300,7 +6407,7 @@ function updateDrone(dt, inp){
     // y la velocidad se convierte en movimiento por donde apunta el morro
     const cp=Math.cos(drone.pitch), sp=Math.sin(drone.pitch);
     drone.vel.set(sy*cp, sp, cy*cp).multiplyScalar(drone.vAire*power);
-    drone.vel.addScaledVector(windVec, 0.6);             // el viento arrastra de verdad
+    drone.vel.addScaledVector(vientoAhora(), 0.6);       // el viento (racheado) arrastra de verdad
     if(enPerdida) drone.vel.y-=9.81*M*dt*2.2;            // sin sustentación, cae
     /* PILOTO AUTOMÁTICO DE ÓRBITA (tecla O). Un ala fija no puede quedarse
        mirando un punto: tiene que darle vueltas. Es como se vigila de verdad
@@ -6317,27 +6424,59 @@ function updateDrone(dt, inp){
       drone.roll=damp(drone.roll, clamp(err*1.6,-FI_MAX,FI_MAX), 2.2, dt);
     }
   } else if(drone.acro){
-    /* ACRO — el dron de carreras de siempre: la palanca inclina el aparato y
-       la inclinación genera el empuje. Sigue avanzando al soltar, se hunde si
-       no das gas y el viento te arrastra. Es lo realista para un FPV de
-       competición y es difícil a propósito. */
-    /* En ACRO la palanca manda la INCLINACIÓN y la inclinación genera el
-       empuje — que es literalmente como vuela un cuadricóptero. Aquí drone.pitch
-       y drone.roll SÍ son ángulos en radianes, y el empuje sale de a=g·tan(θ),
-       la misma ley que en el modo fácil. Antes era `accel=38` unidades/s², que
-       son 198 m/s² = 20 g: más que un caza. Con 60° de inclinación salen 1,7 g,
-       que es lo que da un aparato de competición de 5 pulgadas. */
-    drone.pitch=clamp(drone.pitch+inPitch*2.4*dt, -ACRO_MAX, ACRO_MAX);
-    drone.roll =clamp(drone.roll +inRoll *2.4*dt, -ACRO_MAX, ACRO_MAX);
-    const G_A=9.81*M*power;
-    drone.vel.addScaledVector(fwd, Math.tan(drone.pitch)*G_A*dt);
-    drone.vel.addScaledVector(right, Math.tan(drone.roll)*G_A*dt);
-    drone.vel.addScaledVector(windVec, dt);
-    drone.vel.y += lift*9.81*M*1.6*power*dt;     // el gas da hasta 1,6 g de subida
-    drone.vel.y -= 9.81*M*dt;                    // y la gravedad es la de la Tierra
-    /* Resistencia del aire: τ≈1,3 s. Con el 0,12 de antes (τ=0,47 s) el aparato
-       se paraba solo en medio segundo y eso mataba la inercia que define el acro. */
-    drone.vel.x*=Math.pow(0.45,dt); drone.vel.z*=Math.pow(0.45,dt); drone.vel.y*=Math.pow(0.75,dt);
+    /* =================== ACRO REAL: MODO RATE ===================
+       Lo que antes se llamaba acro era MODO ÁNGULO: la palanca pedía una
+       inclinación y un tope de 60° la frenaba. Eso en un simulador serio se
+       llama "sport", no acro. El acro de verdad —el de Betaflight, el de
+       Liftoff, el que se usa para APRENDER FPV— es MODO RATE:
+
+         · la palanca pide VELOCIDAD DE GIRO (grados/segundo), no ángulo
+         · la actitud se integra libre, sin tope: flips, loops, invertido
+         · el gas empuja por el EJE DEL APARATO, no "hacia arriba": invertido
+           y con gas te clavas contra el suelo. Esa es la lección uno.
+         · nadie te endereza: sueltas y el GIRO para, el ángulo se queda
+
+       La actitud vive en un cuaternión porque con ángulos de Euler un loop
+       pasa por el bloqueo de cardán y la actitud se corrompe justo cuando el
+       morro apunta a plomo — que en acro es todo el tiempo.
+
+       Números de la casa (los de un 5 pulgadas real): RATE 540 °/s con expo
+       0,65 · empuje máx 2,2 g · motor lag τ≈55 ms · punta ~150 km/h. */
+    if(!drone.quat){ drone.quat=new THREE.Quaternion().setFromEuler(_deu.set(0,drone.yaw,0,'YXZ')); }
+    const RATE=540*Math.PI/180, RYAW=280*Math.PI/180;
+    /* Expo: fino en el centro (precisión), entero en la punta (agilidad).
+       r' = x³·e + x·(1−e) — la curva estándar de las emisoras. */
+    const expo=(x,e)=>x*x*x*e + x*(1-e);
+    const pQ=expo(clamp(inPitch,-1,1),0.65)*RATE;
+    const rQ=expo(clamp(inRoll ,-1,1),0.65)*RATE;
+    const yQ=expo(clamp(inp.dr_yaw||0,-1,1),0.5)*RYAW;
+    /* Los motores no saltan a la tasa pedida: la persiguen (τ≈55 ms). Es lo
+       que separa "girar" de "teletransportar el horizonte". */
+    drone.wx=damp(drone.wx||0, pQ, 18, dt);
+    drone.wy=damp(drone.wy||0, -yQ, 18, dt);
+    drone.wz=damp(drone.wz||0, -rQ, 18, dt);
+    _dq.setFromEuler(_deu.set(drone.wx*dt, drone.wy*dt, drone.wz*dt, 'XYZ'));
+    drone.quat.multiply(_dq).normalize();
+    /* El gas: por el eje del aparato y SOLO positivo, como los motores reales
+       (no hay empuje negativo — por eso volar invertido exige picar).
+       Subir = a fondo (2,2 g) · nada = colgado (1 g) · bajar = cortar. */
+    const thr=(inp.up?2.2 : inp.down?0.12 : 1.0)*9.81*M*power;
+    _up3.set(0,1,0).applyQuaternion(drone.quat);
+    drone.vel.addScaledVector(_up3, thr*dt);
+    drone.vel.y -= 9.81*M*dt;
+    drone.vel.addScaledVector(vientoAhora(), dt*0.9);
+    /* Resistencia cuadrática a = −k·v²: la punta sale de empuje = resistencia,
+       no de un tope escrito. k=0,064 → 2,2 g dan ~150 km/h. */
+    const vv=drone.vel.length();
+    drone.vel.multiplyScalar(Math.max(0, 1-0.064*vv*dt));
+    /* Efecto suelo: a menos de metro y medio, el colchón de aire devuelve
+       parte del empuje. Es lo que hace flotar el final del aterrizaje. */
+    const aglE=(drone.pos.y-terrainHeight(drone.pos.x,drone.pos.z))*MPU;
+    if(aglE<1.5 && thr>0) drone.vel.y += thr*0.12*(1-aglE/1.5)*dt;
+    /* La actitud de Euler se DERIVA del cuaternión: el resto del juego
+       (enlace, HUD, sonido) sigue leyendo yaw/pitch/roll y no se entera. */
+    _deu.setFromQuaternion(drone.quat,'YXZ');
+    drone.yaw=_deu.y; drone.pitch=_deu.x; drone.roll=-_deu.z;
   } else if(NAVAL){
     /* ================== CASCO EN EL AGUA (USV y UUV) ==================
        Un barco NO es un dron que flota, y hasta ahora lo era: usaba el modelo
@@ -6428,7 +6567,8 @@ function updateDrone(dt, inp){
     _dv3.set(0,0,0).addScaledVector(fwd, inPitch*VEL_DRON*power)
                    .addScaledVector(right, inRoll*VEL_DRON*power);
     _dv3.y = lift*VEL_SUBE*power;
-    _dv3.x += windVec.x*0.18; _dv3.z += windVec.z*0.18;   // el viento se nota, no manda
+    const _vg=vientoAhora();
+    _dv3.x += _vg.x*0.18; _dv3.z += _vg.z*0.18;   // el viento (racheado) se nota, no manda
     /* ⚠ ESTOS DOS NÚMEROS SON LA MASA DEL APARATO. damp(a,b,λ,dt) es un retardo
        con constante τ=1/λ, y la aceleración de pico es λ·(velocidad máxima).
        Estuvieron en 5,5 y 6,5, que a 30 m/s son 165 m/s² = 16,8 g horizontales
@@ -6525,7 +6665,12 @@ function updateDrone(dt, inp){
     drone.pos.y + Math.sin(tv*2.3)*meceo,
     drone.pos.z + Math.cos(tv*1.3)*meceo*0.6);
   const tiemblo=(drone.diving?0:1)*(0.006+0.030*wv);
-  drone.mesh.rotation.set(
+  if(drone.acro && drone.quat){
+    /* En rate la actitud ES el cuaternión: pasarlo por Euler aquí rompería el
+       vuelo invertido. El temblor va como rotación extra encima. */
+    drone.mesh.quaternion.copy(drone.quat);
+    drone.mesh.rotateX(Math.sin(tv*2.9)*tiemblo); drone.mesh.rotateZ(Math.cos(tv*2.1)*tiemblo);
+  } else drone.mesh.rotation.set(
     drone.pitch + Math.sin(tv*2.9)*tiemblo,
     drone.yaw,
     -drone.roll + Math.cos(tv*2.1)*tiemblo);
@@ -6594,27 +6739,33 @@ function updateCamera(dt){
       V.set(drone.pos.x - sy*cp*dist, drone.pos.y - player.view.pitch*dist + 0.8*M, drone.pos.z - cy*cp*dist);
       camera.position.lerp(V, clamp(13*dt,0,1));
       V2.set(drone.pos.x + sy*30*M, drone.pos.y + player.view.pitch*30*M, drone.pos.z + cy*30*M); camera.lookAt(V2);
+    } else if(drone.acro && drone.quat){
+      /* FPV EN ACRO: la cámara es SOLIDARIA con el fuselaje, sin gimbal y sin
+         suavizado, con la lente montada 25° arriba como en un aparato de
+         carreras. Sale entera del cuaternión — dirección Y vertical del
+         aparato — porque con Euler el vuelo invertido voltearía la imagen
+         donde no toca. Si el dron está de espaldas, el mundo se ve de
+         espaldas: eso ES acro, y así se aprende a salir de un flip. */
+      _dv1.set(0, Math.sin(0.44), Math.cos(0.44)).applyQuaternion(drone.quat);   // mirada
+      _up3.set(0,1,0).applyQuaternion(drone.quat);                               // arriba DEL APARATO
+      camera.position.set(drone.pos.x+_dv1.x*0.2*M, drone.pos.y+_dv1.y*0.2*M, drone.pos.z+_dv1.z*0.2*M);
+      camera.up.copy(_up3);
+      V2.copy(camera.position).addScaledVector(_dv1, 30*M);
+      camera.lookAt(V2);
+      camera.up.set(0,1,0);              // las demás cámaras cuentan con el arriba del mundo
     } else { // FPV: la cámara VA EN EL DRON, mirando a donde apunta el gimbal
       const cy=Math.cos(drone.yaw), sy=Math.sin(drone.yaw);
-      /* ⚠ En ACRO la cámara va ATORNILLADA al fuselaje: el cabeceo del aparato
-         entra en la mirada, y por eso el horizonte se va cuando te picas. Es la
-         diferencia entre un FPV y una cámara colgada de un raíl. En fácil manda
-         el gimbal, que es lo que hace un dron comercial y lo que mantiene el
-         modo fácil fácil. El +25° del acro es la inclinación con la que se
-         monta la lente en un aparato de carreras. */
-      const g=drone.acro ? (drone.pitch||0)+0.44 : (drone.gimbal||0);
+      /* En fácil manda el gimbal, que es lo que hace un dron comercial y lo que
+         mantiene el modo fácil fácil. La cámara va en el morro, a 20 cm, sin
+         suavizado: atornillada, no colgada. */
+      const g=(drone.gimbal||0);
       const cg=Math.cos(g), sg=Math.sin(g);
       const dx=sy*cg, dy=sg, dz=cy*cg;                 // hacia dónde mira la cámara
-      /* ⚠ LA CÁMARA VA EN EL MORRO, a 8 cm del centro. Estuvo 3,6 m DETRÁS de un
-         aparato de 0,9 m —cuatro envergaduras— con un brazo elástico de 0,1 s
-         encima: eso es una cámara de persecución, no un FPV, y filtraba toda la
-         vibración. Sin lerp: la cámara está atornillada, no colgada. */
       camera.position.set(drone.pos.x+dx*0.2*M, drone.pos.y+dy*0.2*M+0.05*M, drone.pos.z+dz*0.2*M);
       V2.set(drone.pos.x+dx*30*M, drone.pos.y+dy*30*M, drone.pos.z+dz*30*M);
       camera.lookAt(V2);
-      /* El HORIZONTE SE INCLINA con el banqueo. En acro va entero (la cámara es
-         solidaria); en fácil, el gimbal estabiliza el 60%. */
-      camRollFPV=damp(camRollFPV, -(drone.roll||0)*(drone.acro?1:0.6), 8, dt);
+      // el gimbal estabiliza el 60% del banqueo; el resto se ve, y da vida
+      camRollFPV=damp(camRollFPV, -(drone.roll||0)*0.6, 8, dt);
       camera.rotateZ(camRollFPV);
       /* VIBRACIÓN DE MOTORES. El "meceo" y el "tiemblo" que calcula updateDrone
          se pintan en drone.mesh, y la cámara sigue a drone.pos: no llegaban a la
@@ -6674,6 +6825,7 @@ function cycleCam(){
    ===================================================================== */
 let currentReal=null;
 function resetPlay(){
+  limpiarEscuela();
   stats=derivedStats(currentLoadout());
   /* ⚠ NO llamar aquí a disposeGroup(): buildVehicle, buildDrone y buildPerro
      arman sus mallas con geo(), que es una CACHÉ COMPARTIDA por nombre
@@ -6695,6 +6847,7 @@ function resetPlay(){
   player.speed=0; player.yawRate=0; player.susPitch=0; player.susRoll=0; player.dustT=0;
   mode='tank'; camMode=0; droneCam=0; drone.active=false; drone.batt=1; drone.kamikaze=false; if(drone.mesh)drone.mesh.visible=false;
   drone.orbita=null; drone.vAire=null; drone.aleteo=0;   // estado del ala fija y del ave
+  drone.quat=null; drone.wx=drone.wy=drone.wz=0;         // y del acro (rate)
   /* MANCHAS TÉRMICAS: apagarlas todas, y conservar en el registro solo las que
      siguen colgando de algo que está en la escena. Antes se vaciaba el
      registro a secas (`heatSprites.length=0`) y las mallas que SOBREVIVEN a la
@@ -6877,6 +7030,9 @@ function checkObjectives(){
     else if(o.type==='recon'){ if(reconDone>=o.n) st.done=true; }
     else if(o.type==='reach'){ /* se comprueba en el loop */ }
     else if(o.type==='survive'){ /* por tiempo */ }
+    else if(o.type==='hover'){ if(ESC.tHover>=o.s) st.done=true; }
+    else if(o.type==='aros'){ if(ESC.idx>=o.n) st.done=true; }
+    else if(o.type==='aterriza'){ if(ESC.aterrizado) st.done=true; }
     if(!st.done) allDone=false;
   }
   updateObjText();
@@ -7295,6 +7451,7 @@ function updateHUD(dt){
     }
   }
   $('telem').innerHTML=telem;
+  dibujarInstrumentos();
   // SEÑAL real (enlace por línea de vista)
   const bars=clamp(Math.round(signal*5+0.15),0,5);
   const sig=$('sig').children; for(let i=0;i<5;i++){ sig[i].style.height=(5+i*2)+'px';
@@ -7379,6 +7536,7 @@ function simulate(dt){
   F('ia.tick');  IA.tick(dt);            // capa de IA: refresca los blancos percibibles de cada bando
   F('enemigos'); updateEnemies(dt);
   F('aliados');  updateAllies(dt);
+  F('escuela');  updateEscuela(dt);
   F('duelo');    if(duelo.active) dueloTick(dt, inp);
   F('proyectiles'); updateProjectiles(dt);
   F('efectos');  updateEffects(dt);
@@ -8658,7 +8816,158 @@ function renderCampana(){
     } else pr.textContent='';
   }
 }
+/* =====================================================================
+   🎓 ESCUELA DE VUELO
+   ---------------------------------------------------------------------
+   Misiones de pilotaje puro: sin enemigos, sin armas — el adversario es la
+   física. La progresión es la de una escuela FPV de verdad: estacionario,
+   puertas en fácil, aterrizaje de precisión, y de ahí al ACRO real (rate) y
+   al ala fija. El clima se elige por misión porque el viento es medio
+   temario: quien solo voló en calma no sabe volar.
+   ===================================================================== */
+const ESCUELA=[
+  { id:'e1', name:'1 · El estacionario', bioma:'desierto', wx:'lluvia', equipo:{dron:'recon'},
+    desc:'Mantén el dron dentro del aro 15 segundos. Hay viento racheado: el modo FÁCIL sostiene la altura, pero el viento lo pasea — corrígelo tú. Es la primera hora de todo curso.',
+    objs:[{type:'hover', s:15, r:3.5, text:'Aguanta dentro del aro 15 s'}] },
+  { id:'e2', name:'2 · Las puertas', bioma:'desierto', equipo:{dron:'recon'},
+    desc:'Cinco aros en orden. Sin cronómetro y sin viento: la lección es PLANEAR la entrada — llegar alineado vale más que llegar rápido.',
+    objs:[{type:'aros', n:5, text:'Cruza los 5 aros en orden'}] },
+  { id:'e3', name:'3 · Aterrizaje de precisión', bioma:'canon', equipo:{dron:'recon'},
+    desc:'Posa el dron sobre la plataforma a menos de 1,5 m/s. Cerca del suelo notarás el colchón del efecto suelo: el aparato flota justo cuando quieres bajar. Todos los aterrizajes reales pelean con eso.',
+    objs:[{type:'aterriza', vmax:1.5, text:'Aterriza en la plataforma, suave (< 1,5 m/s)'}] },
+  { id:'e4', name:'4 · Primer rate', bioma:'desierto', equipo:{dron:'ataque'}, modo:'acro',
+    desc:'ACRO REAL: la palanca pide grados por segundo, nada te endereza, y el gas empuja por el eje del aparato. Tres aros amplios. Vas a estrellarte — para eso existe el simulador.',
+    objs:[{type:'aros', n:3, text:'Cruza 3 aros en ACRO (rate)'}] },
+  { id:'e5', name:'5 · Circuito FPV con viento', bioma:'canon', wx:'lluvia', equipo:{dron:'ataque'}, modo:'acro',
+    desc:'Seis aros, lluvia y rachas, en rate. Lo que se entrena aquí es la mirada: el aro siguiente se busca ANTES de salir del actual.',
+    objs:[{type:'aros', n:6, text:'El circuito completo, en rate y con viento'}] },
+  { id:'e6', name:'6 · Ala fija: las puertas grandes', bioma:'canon', equipo:{dron:'largo'},
+    desc:'El ala fija no puede parar ni retroceder: cuatro puertas GRANDES que se toman planeando el viraje con dos aros de antelación. Vigila la velocidad del aire — por debajo de la de pérdida el ala te suelta.',
+    objs:[{type:'aros', n:4, grande:true, text:'Cruza las 4 puertas con el ala fija'}] },
+];
+
+/* El estado en vivo de la misión de escuela. Se limpia en resetPlay. */
+const ESC={ activa:false, aros:[], idx:0, tHover:0, hoverPos:null, hoverR:0, pad:null, padPos:null, aterrizado:false, grupo:null };
+
+function limpiarEscuela(){
+  if(ESC.grupo){ scene.remove(ESC.grupo); disposeGroup(ESC.grupo); }
+  ESC.activa=false; ESC.aros=[]; ESC.idx=0; ESC.tHover=0; ESC.hoverPos=null;
+  ESC.pad=null; ESC.padPos=null; ESC.aterrizado=false; ESC.grupo=null;
+}
+
+function startEscuela(m){
+  const l=currentLoadout();
+  if(m.equipo){ for(const k in m.equipo) l[k]=m.equipo[k]; store.loadout=l; save(); }
+  currentReal=null; missionIdx=-1;
+  resetPlay();
+  buildWorld(m.bioma||'desierto');
+  if(m.wx){ WX=m.wx; applyEnvironment(); }
+  deployMission({ id:'esc_'+m.id, name:m.name, survive:0, enemies:[], objs:m.objs, escuela:true });
+  crearEscenarioEscuela(m);
+  /* La escuela va EN EL DRON desde el primer segundo, y si la lección es de
+     rate, el modo se pone solo — pedirle a un alumno que pulse B antes de su
+     primera clase de acro es perder al alumno. */
+  if(mode!=='drone') toggleDrone();
+  if(m.modo==='acro'){ drone.acro=true;
+    drone.quat=new THREE.Quaternion().setFromEuler(new THREE.Euler(0,drone.yaw,0,'YXZ'));
+    drone.wx=drone.wy=drone.wz=0;
+    feed('ACRO REAL · palanca = °/s · Espacio gas a fondo · Shift corta','good');
+  }
+}
+
+function crearEscenarioEscuela(m){
+  limpiarEscuela(); ESC.activa=true; ESC.grupo=new THREE.Group(); scene.add(ESC.grupo);
+  const o=m.objs[0];
+  const py=player.pos.y;
+  if(o.type==='hover'){
+    ESC.hoverPos=new THREE.Vector3(player.pos.x, py+12*M+2, player.pos.z+30*M);
+    ESC.hoverR=(o.r||3.5)*M;
+    const aro=new THREE.Mesh(new THREE.TorusGeometry(ESC.hoverR,0.09,10,36),
+      new THREE.MeshBasicMaterial({color:0x3ff0c0, transparent:true, opacity:0.85}));
+    aro.position.copy(ESC.hoverPos); ESC.grupo.add(aro); ESC.aroHover=aro;
+  }
+  if(o.type==='aros'){
+    /* El circuito se teje alrededor del punto de despegue: una espiral suave
+       con subidas y bajadas — el mismo trazado sirve en llano y en cañón
+       porque la altura se apoya en el terreno de cada aro. */
+    const R=(o.grande?7:2.2), paso=o.grande?90:34;
+    for(let i=0;i<o.n;i++){
+      const a=i*(o.grande?0.9:1.1)-0.5, rr=(o.grande?60:26)+i*paso*0.55;
+      const x=player.pos.x+Math.sin(a)*rr, z=player.pos.z+Math.cos(a)*rr;
+      const y=terrainHeight(x,z)+ (o.grande? (14+i*6)*M*5 : (8+((i*5)%14))*M*5 );
+      const aro=new THREE.Mesh(new THREE.TorusGeometry(R*M*5,0.12,10,40),
+        new THREE.MeshBasicMaterial({color:0x8c93a3, transparent:true, opacity:0.55}));
+      aro.position.set(x,y,z);
+      /* cada aro mira al anterior: el circuito se recorre en el orden en que
+         se ve, no hay que adivinarlo */
+      if(i>0) aro.lookAt(ESC.aros[i-1].m.position); else aro.lookAt(player.pos.x,y,player.pos.z);
+      ESC.grupo.add(aro);
+      ESC.aros.push({m:aro, r:R*M*5, hecho:false});
+    }
+    marcarAro();
+  }
+  if(o.type==='aterriza'){
+    const x=player.pos.x+40*M*5, z=player.pos.z+15*M*5, y=terrainHeight(x,z);
+    ESC.padPos=new THREE.Vector3(x,y,z);
+    const pad=new THREE.Mesh(new THREE.CylinderGeometry(1.6,1.6,0.12,20),
+      new THREE.MeshStandardMaterial({color:0x1c2c3a, emissive:0x0d5a4a, emissiveIntensity:0.6}));
+    pad.position.set(x,y+0.06,z); ESC.grupo.add(pad);
+    const h=new THREE.Mesh(new THREE.TorusGeometry(1.2,0.06,8,28),
+      new THREE.MeshBasicMaterial({color:0x3ff0c0}));
+    h.rotation.x=-Math.PI/2; h.position.set(x,y+0.14,z); ESC.grupo.add(h);
+    feed('La plataforma está marcada en verde · baja DESPACIO al final');
+  }
+}
+function marcarAro(){
+  ESC.aros.forEach((a,i)=>{ a.m.material.color.setHex(a.hecho?0x2a4a44 : i===ESC.idx?0x3ff0c0 : 0x8c93a3);
+    a.m.material.opacity=a.hecho?0.25 : i===ESC.idx?0.95 : 0.5; });
+}
+/* El chequeo por cuadro. Vive en simulate() y cuesta unas comparaciones. */
+function updateEscuela(dt){
+  if(!ESC.activa || !playing || mode!=='drone' || !drone.active) return;
+  const o=(mission&&mission.objs&&mission.objs[0])||{};
+  if(o.type==='hover' && ESC.hoverPos){
+    const dentro=drone.pos.distanceTo(ESC.hoverPos) < ESC.hoverR*1.15;
+    ESC.tHover = dentro ? ESC.tHover+dt : Math.max(0, ESC.tHover-dt*0.6);
+    if(ESC.aroHover){ ESC.aroHover.material.color.setHex(dentro?0x3ff0c0:0xf5b301);
+      ESC.aroHover.rotation.y+=dt*0.6; }
+    const st=objState[0]; if(st && !st.done){
+      st.def.text='Aguanta dentro del aro · '+ESC.tHover.toFixed(1)+' / '+o.s+' s';
+      updateObjText(); if(ESC.tHover>=o.s) checkObjectives(); }
+  }
+  if(o.type==='aros' && ESC.aros.length){
+    const a=ESC.aros[ESC.idx];
+    if(a && drone.pos.distanceTo(a.m.position) < a.r*1.25){
+      a.hecho=true; ESC.idx++; marcarAro(); SONIDO.ui&&SONIDO.ui('ok');
+      feed('◎ Aro '+ESC.idx+' de '+ESC.aros.length+(ESC.idx<ESC.aros.length?'':' — ¡circuito completo!'),'good');
+      checkObjectives();
+    }
+  }
+  if(o.type==='aterriza' && ESC.padPos && !ESC.aterrizado){
+    const agl=(drone.pos.y-terrainHeight(drone.pos.x,drone.pos.z))*MPU;
+    const distH=Math.hypot(drone.pos.x-ESC.padPos.x, drone.pos.z-ESC.padPos.z)*MPU;
+    if(agl<0.5 && distH<8){
+      const v=drone.vel.length()*MPU;
+      if(v<=o.vmax){ ESC.aterrizado=true; feed('✔ Posado a '+v.toFixed(1)+' m/s — de manual','good'); checkObjectives(); }
+      else if(drone.vel.y<-0.3){ feed('⚠ '+v.toFixed(1)+' m/s: aterrizaje DURO. Frena antes con el efecto suelo','bad');
+        drone.vel.y=Math.abs(drone.vel.y)*0.4; }   // rebota: en la escuela no se rompe, se repite
+    }
+  }
+}
+
 /* La línea de tiempo. Se pinta una vez; lo único vivo son los botones. */
+function renderEscuela(){
+  const w=$('escuelaList'); if(!w) return; w.innerHTML='';
+  ESCUELA.forEach(m=>{
+    const done=!!store.prog['esc_'+m.id];
+    const el=document.createElement('button'); el.className='mcard';
+    el.style.borderLeftColor = done ? 'var(--verde)' : 'var(--ambar)';
+    el.innerHTML='<div class="mtop"><span class="biome" style="color:var(--ambar)">'+(m.modo==='acro'?'ACRO REAL':'PILOTAJE')+'</span><span class="diff">'+(done?'✔':'🎓')+'</span></div>'+
+      '<h4>'+m.name+'</h4><p>'+m.desc+'</p>';
+    el.onclick=()=>startEscuela(m);
+    w.appendChild(el);
+  });
+}
 function renderHistoria(){
   const w=$('eraList'); if(!w || w.dataset.lista) return; w.dataset.lista='1';
   ERAS.forEach(era=>{
@@ -8732,13 +9041,14 @@ function renderCond(){
   seg($('segWx'), WEATHER, WX, k=>{WX=k; store.env.wx=k;});
 }
 function switchTab(name){
-  ['missions','real','garage','pair','guerra','historia','help'].forEach(t=>$('tab-'+t).style.display= t===name?'block':'none');
+  ['missions','real','garage','pair','guerra','escuela','historia','help'].forEach(t=>$('tab-'+t).style.display= t===name?'block':'none');
   if(name==='guerra') cargarGuerra();
   document.querySelectorAll('#navSeg button').forEach(b=>b.classList.toggle('on', b.dataset.tab===name));
   $('condBar').style.display = (name==='missions'||name==='real')?'flex':'none';
   if(name==='garage') renderGarage();
   if(name==='missions') renderMissions();
   if(name==='historia') renderHistoria();
+  if(name==='escuela') renderEscuela();
   if(name==='real') renderReal();
   if(name==='missions'||name==='real') renderCond();
 }
@@ -9319,6 +9629,16 @@ if(location.search.indexOf('dbg')>=0) window.DRONES={
      con números en vez de a ojo. Salta el filtro a propósito: aquí se mide la
      respuesta del mando, no la del filtro. Deja la histéresis y la orden
      suavizada como estén — así se puede medir también el arranque. */
+  /* El acro real, medible: tasas de giro en °/s y actitud completa. */
+  rate:()=>{ const G2=180/Math.PI; return { acro:!!drone.acro,
+    wx:+((drone.wx||0)*G2).toFixed(0), wy:+((drone.wy||0)*G2).toFixed(0), wz:+((drone.wz||0)*G2).toFixed(0),
+    pitch:+(drone.pitch*G2).toFixed(0), roll:+(drone.roll*G2).toFixed(0),
+    invertido: drone.quat ? (_up3.set(0,1,0).applyQuaternion(drone.quat).y<0) : false,
+    vel_kmh:+(drone.vel.length()*MPU*3.6).toFixed(0), power:+((drone.batt>0.5?0.93+0.07*(drone.batt-0.5)/0.5:drone.batt>0.2?0.80+0.13*(drone.batt-0.2)/0.3:drone.batt>0.05?0.62+0.18*(drone.batt-0.05)/0.15:0.30)).toFixed(2),
+    batt:+drone.batt.toFixed(2) }; },
+  setBatt:(b)=>{ drone.batt=clamp(b,0,1); return drone.batt; },
+  acroOn:(on)=>{ drone.acro=!!on; if(on){ drone.quat=new THREE.Quaternion().setFromEuler(new THREE.Euler(0,drone.yaw,0,'YXZ')); drone.wx=drone.wy=drone.wz=0; } else { drone.quat=null; drone.pitch=0; drone.roll=0; } return drone.acro; },
+  viento:()=>({ medio:+windVec.length().toFixed(2), ahora:+vientoAhora().length().toFixed(2) }),
   /* Los documentales, para poder probarlos en frío: dibuja cada beat a dos
      tiempos y compara. Con rAF no se puede medir en un panel oculto (no corre
      en pestañas ocultas — trampa conocida), y esto sí. */
