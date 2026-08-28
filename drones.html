@@ -383,6 +383,10 @@
   .docuBtns button{background:rgba(8,10,14,.7);border:1px solid var(--linea);color:var(--hueso);
     font:inherit;font-size:12px;font-weight:700;padding:9px 18px;border-radius:9px;cursor:pointer}
   .docuBtns button:hover{border-color:var(--hud);color:var(--hud)}
+  /* El visor del centrado facial: en el centro, donde van los ojos. */
+  #caraCal{position:fixed;left:50%;top:38%;transform:translate(-50%,-50%);z-index:45;display:none;
+    padding:10px;background:rgba(6,10,16,.82);border:1px solid var(--linea);border-radius:16px}
+  #caraCal.on{display:block}
   /* La tarjeta de controles del dron. */
   #ctrlCard{position:fixed;right:calc(var(--sa-r) + 8px);top:calc(var(--sa-t) + 54px);z-index:9;display:none;
     width:230px;padding:11px 13px;background:rgba(6,10,16,.88);border:1px solid var(--linea);border-radius:12px;
@@ -551,6 +555,8 @@
     <!-- La tarjeta de controles: 9 segundos al desplegar, porque «no son
          claros» es un fallo tan real como cualquier otro. -->
     <div id="ctrlCard"></div>
+    <!-- El visor del centrado facial: tu cabeza como un punto sobre la diana -->
+    <div id="caraCal"><canvas id="caraCalCv" width="150" height="150"></canvas></div>
     <canvas id="adiCv" width="120" height="120"></canvas>
     <canvas id="stkCv" width="190" height="95"></canvas>
     <div id="feed"></div>
@@ -5457,7 +5463,7 @@ addEventListener('keydown',e=>{ keys[e.code]=true;
      Estaban las dos atadas al mismo keydown, así que una sola pulsación abría
      el panel Y congelaba la escena a la vez. */
   if(e.code==='KeyU' && playing){ if(!cerrarPorQue()) mostrarPorQue(); }
-  if(e.code==='KeyG' && gaze.ready){ calibrateGaze(); }
+  if(e.code==='KeyG' && gaze.ready){ if(gaze.piloto) iniciarCentradoFacial(); else calibrateGaze(); }
   if(e.code==='KeyH' && gaze.ready){ gaze.invertYaw=!gaze.invertYaw; feed('Mirada '+(gaze.invertYaw?'normal':'invertida')); }
   if(e.code==='KeyB' && playing && mode==='drone'){ drone.acro=!drone.acro;
     if(drone.acro){
@@ -5700,6 +5706,7 @@ function detectGaze(){
       gaze.kiss = pk>0.55; gaze.parpadeo = bl>0.4;   // sale gratis: ya se leían los blendshapes
     }
     gaze.detected=ok;
+    if(ok && gaze.piloto && CFA.activo) centradoFacialPaso(gaze.yaw, gaze.pitch);
     if(ok){                                  // muestra HACIA DÓNDE y CUÁNTO está girando (para poder ajustarlo)
       // en GRADOS POR SEGUNDO: '0.34' no le dice nada a nadie, '19°/s' sí
       const v=gaze.dbgYaw*180/Math.PI, fl = v>3?'▶▶' : v<-3?'◀◀' : '•';
@@ -5766,18 +5773,92 @@ function mostrarControles(){
   el.classList.add('on');
   clearTimeout(el._t); el._t=setTimeout(()=>el.classList.remove('on'), 9000);
 }
+/* =====================================================================
+   EL CENTRADO FACIAL — el cero se GANA, no se supone
+   ---------------------------------------------------------------------
+   El fallo que reportó Joan: cara recta y el dron yéndose solo. La causa: el
+   cero se tomaba EN EL INSTANTE de encender el modo — si en ese momento la
+   cabeza estaba 4° girada (mirando el botón que acababas de pulsar, por
+   ejemplo), ese sesgo quedaba de base para siempre.
+   El ritual nuevo no deja pilotar hasta que la cabeza esté QUIETA y AL FRENTE:
+     · recoge ~1,2 s de muestras y exige que no se muevan más de 2,5°
+     · si te mueves, el reloj vuelve a empezar (y el visor te lo dice)
+     · el cero es la MEDIANA de la ventana quieta, no una foto
+     · un visor en pantalla muestra TU cabeza como un punto sobre una diana:
+       ves exactamente qué está leyendo la cámara y cuándo estás centrado
+   Y en vuelo, si llevas 2 s sin pedir nada (palanca en cero), la base se
+   desliza hacia tu postura real: el sesgo residual no se acumula. */
+const CFA={ activo:false, muestras:[], quieto:0, reposo:0 };
+function iniciarCentradoFacial(){
+  CFA.activo=true; CFA.muestras=[]; CFA.quieto=0;
+  const el=$('caraCal'); if(el) el.classList.add('on');
+  feed('🧑‍✈️ Centrando: cabeza QUIETA y mirando AL FRENTE…','good');
+}
+/* Un paso del centrado, llamado con cada lectura de la cámara (~22 Hz).
+   Separado en función propia para poder probarlo sin cámara. */
+function centradoFacialPaso(yaw,pitch){
+  if(!CFA.activo) return false;
+  CFA.muestras.push([yaw,pitch]);
+  if(CFA.muestras.length>26) CFA.muestras.shift();
+  const el=$('caraCalCv');
+  if(CFA.muestras.length>=8){
+    let yMin=1e9,yMax=-1e9,pMin=1e9,pMax=-1e9;
+    for(const [y,pp] of CFA.muestras){ if(y<yMin)yMin=y; if(y>yMax)yMax=y; if(pp<pMin)pMin=pp; if(pp>pMax)pMax=pp; }
+    const quieta=(yMax-yMin)<0.044 && (pMax-pMin)<0.044;    // 2,5° de margen
+    if(!quieta){ CFA.muestras=CFA.muestras.slice(-4); }      // te moviste: reinicia
+    else if(CFA.muestras.length>=26){
+      const ys=CFA.muestras.map(m=>m[0]).sort((a,b)=>a-b);
+      const ps=CFA.muestras.map(m=>m[1]).sort((a,b)=>a-b);
+      gaze.baseYaw=(ys[12]+ys[13])/2; gaze.basePitch=(ps[12]+ps[13])/2;
+      gaze.baseEyeX=gaze.eyeRawX; gaze.baseEyeY=gaze.eyeRawY;
+      gaze.calibViewPitch=player.view.pitch;
+      gaze.active=true; CFA.activo=false; CFA.reposo=0;
+      const e2=$('caraCal'); if(e2) setTimeout(()=>e2.classList.remove('on'), 900);
+      feed('✔ Centrado: TU postura de ahora es el cero. G para recentrar cuando quieras','good');
+      mostrarControles();
+      return true;
+    }
+  }
+  dibujarCentrado(yaw,pitch);
+  return false;
+}
+function dibujarCentrado(yaw,pitch){
+  const cv=$('caraCalCv'); if(!cv) return; const g=cv.getContext('2d');
+  const W=cv.width,H=cv.height,cx=W/2,cy=H/2;
+  g.clearRect(0,0,W,H);
+  const R1=W*0.42;
+  const frac=Math.min(1, CFA.muestras.length/26);
+  g.strokeStyle='rgba(140,147,163,.5)'; g.lineWidth=1.5;
+  g.beginPath(); g.arc(cx,cy,R1,0,TAU); g.stroke();
+  g.beginPath(); g.moveTo(cx-R1,cy); g.lineTo(cx+R1,cy); g.moveTo(cx,cy-R1); g.lineTo(cx,cy+R1);
+  g.strokeStyle='rgba(140,147,163,.25)'; g.stroke();
+  // el anillo de progreso: se llena mientras estás quieto
+  g.strokeStyle='#3ff0c0'; g.lineWidth=3;
+  g.beginPath(); g.arc(cx,cy,R1,-Math.PI/2,-Math.PI/2+frac*TAU); g.stroke();
+  // TU cabeza: el punto. Dentro del circulo pequeño = suficientemente recta
+  const dy=(gaze.baseYaw!==undefined?yaw:yaw), dp=pitch;
+  const px=cx-clamp(dy/0.35,-1,1)*R1, py=cy+clamp(dp/0.35,-1,1)*R1;
+  const cerca=Math.hypot(px-cx,py-cy)<R1*0.35;
+  g.fillStyle=cerca?'#3ff0c0':'#f5b301';
+  g.beginPath(); g.arc(px,py,7,0,TAU); g.fill();
+  g.fillStyle='#8c93a3'; g.font='700 10px system-ui'; g.textAlign='center';
+  g.fillText(frac>=1?'…':'QUIETO · AL FRENTE', cx, H-8);
+}
 function toggleCara(){
   if(gaze.piloto){ gaze.piloto=false; feed('Piloto facial apagado — vuelves al teclado');
     if($('btnCara'))$('btnCara').classList.remove('press'); mostrarControles(); return; }
   gaze.piloto=true;
   if($('btnCara'))$('btnCara').classList.add('press');
-  if(!gaze.on && !gaze.loading) toggleGaze();          // enciende cámara y calibrado si hace falta
-  feed('🧑‍✈️ Piloto facial: la cabeza es la palanca. Mira al frente mientras centra…','good');
-  mostrarControles();
+  if(!gaze.on && !gaze.loading) toggleGaze();          // enciende la cámara si hace falta
+  /* ⚠ SIEMPRE se pasa por el ritual de centrado, también si la cámara ya
+     estaba encendida por el apuntado de torreta: aquel cero era para OTRA
+     cosa y con otra postura. Reutilizarlo era el fallo del dron derivando. */
+  iniciarCentradoFacial();
 }
 /* La palanca que sale de la cabeza. Devuelve {yaw,pitch} en -1..1, o null. */
 function palancaFacial(){
   if(!(gaze.piloto && gaze.active && gaze.detected)) return null;
+  if(CFA.activo) return {yaw:0, pitch:0};   // centrando: la cabeza aún no manda
   const o=gazeOffset();
   const DZ=0.05, TOPE=0.30;                 // 3° de zona muerta · 17° = palanca a fondo
   const curva=(v)=>{ const a=Math.abs(v); if(a<DZ) return 0;
@@ -5785,7 +5866,16 @@ function palancaFacial(){
   /* Signos, comprobados con simGaze: gaze.pitch CRECE al mirar abajo, y abajo
      = avanzar = dr_pitch positivo. El yaw de la cabeza crece hacia la
      izquierda de la pantalla y dr_yaw positivo gira a la derecha: se invierte. */
-  return { yaw: curva(-o.yaw), pitch: curva(o.pitch) };
+  const sy=curva(-o.yaw), sp=curva(o.pitch);
+  /* Recentrado en reposo: si llevas 2 s sin pedir nada, tu postura ACTUAL se
+     convierte despacio en el cero. El sesgo residual (te acomodaste en la
+     silla, la cámara derivó) se disuelve solo, sin tirones: 4%% por lectura
+     a 60 Hz tarda ~1 s en absorber un grado. */
+  if(sy===0 && sp===0){
+    CFA.reposo++;
+    if(CFA.reposo>120){ gaze.baseYaw+=(gaze.yaw-gaze.baseYaw)*0.04; gaze.basePitch+=(gaze.pitch-gaze.basePitch)*0.04; }
+  } else CFA.reposo=0;
+  return { yaw: sy, pitch: sp };
 }
 
 function gazeOffset(){
@@ -9841,7 +9931,26 @@ if(location.search.indexOf('dbg')>=0) window.DRONES={
   caraPrueba:(yawGrados,pitchGrados)=>{ gaze.piloto=true; gaze.active=true; gaze.detected=true; gaze.ready=true; gaze.hasEye=false;
     gaze.baseYaw=0; gaze.basePitch=0; gaze.yaw=(yawGrados||0)*Math.PI/180; gaze.pitch=(pitchGrados||0)*Math.PI/180;
     const pf=palancaFacial(); return pf?{yaw:+pf.yaw.toFixed(2), pitch:+pf.pitch.toFixed(2)}:null; },
-  caraOff:()=>{ gaze.piloto=false; gaze.active=false; return true; },
+  caraOff:()=>{ gaze.piloto=false; gaze.active=false; CFA.activo=false; return true; },
+  /* Lee la palanca con la BASE GANADA por el centrado (caraPrueba la resetea;
+     esto no): es la comprobación de que «cara recta = palanca en cero». */
+  caraLee:(yawGrados,pitchGrados)=>{ const G2=Math.PI/180;
+    gaze.piloto=true; gaze.active=true; gaze.detected=true; gaze.hasEye=false;
+    gaze.yaw=(yawGrados||0)*G2; gaze.pitch=(pitchGrados||0)*G2;
+    const pf=palancaFacial(); return pf?{yaw:+pf.yaw.toFixed(3), pitch:+pf.pitch.toFixed(3)}:null; },
+  /* El ritual de centrado, probado sin cámara: alimenta N lecturas con un
+     sesgo fijo más ruido y devuelve dónde quedó el cero. */
+  centradoPrueba:(sesgoGrados, ruidoGrados, lecturas)=>{
+    gaze.piloto=true; gaze.ready=true; gaze.active=false;
+    iniciarCentradoFacial(); const el=$('caraCal'); if(el) el.classList.remove('on');
+    const G2=Math.PI/180, sesgo=(sesgoGrados||0)*G2, ruido=(ruidoGrados||0)*G2;
+    let listo=false, i=0;
+    for(; i<(lecturas||60) && !listo; i++){
+      const r1=Math.sin(i*1.7)*ruido, r2=Math.sin(i*2.3+1)*ruido;
+      listo=centradoFacialPaso(sesgo+r1, sesgo*0.5+r2);
+    }
+    return { lecturas_usadas:i, centrado:listo,
+      base_yaw_grados:+(gaze.baseYaw/G2).toFixed(2), base_pitch_grados:+(gaze.basePitch/G2).toFixed(2) }; },
   /* El acro real, medible: tasas de giro en °/s y actitud completa. */
   rate:()=>{ const G2=180/Math.PI; return { acro:!!drone.acro,
     wx:+((drone.wx||0)*G2).toFixed(0), wy:+((drone.wy||0)*G2).toFixed(0), wz:+((drone.wz||0)*G2).toFixed(0),

@@ -689,6 +689,33 @@ vuelo: 16,7 m avanzados solo con la cabeza.
   misión especial DEBE restaurarse en resetPlay, no confiar en que el jugador
   pase por el menú de clima.
 
+
+## 28-ago (3ª tanda): el cero facial se GANA, no se supone
+
+Joan: «tengo la cara derecha y el dron se va hacia un lado». Causa: el cero se
+tomaba EN EL INSTANTE de encender el modo — si la cabeza estaba 4° girada
+(mirando el botón que acababa de pulsar), ese sesgo quedaba de base. Y el
+recentrado automático que existía era el del apuntado de torreta, que se apaga
+justo cuando la cabeza pilota.
+
+**El ritual de centrado** (`CFA` + `centradoFacialPaso`): no pilota hasta que
+la cabeza esté QUIETA (26 lecturas ≈1,2 s con menos de 2,5° de excursión — si
+te mueves, reinicia) y el cero es la MEDIANA de la ventana quieta. Un visor en
+el centro de la pantalla muestra TU cabeza como un punto sobre una diana con
+anillo de progreso: ves lo que la cámara lee y cuándo estás centrado. SIEMPRE
+se pasa por el ritual al encender (también si la cámara ya estaba encendida
+por la torreta: aquel cero era de otra cosa). G lo repite cuando quieras. Y en
+vuelo, 2 s con la palanca en cero deslizan la base a tu postura real: el sesgo
+residual se disuelve solo.
+
+Verificado sin cámara con `DRONES.centradoPrueba(sesgo,ruido,n)` y
+`DRONES.caraLee(yaw,pitch)` (lee la palanca SIN resetear la base — caraPrueba
+la resetea y no sirve para esto):
+- sesgo 6° + ruido 1° → centra en 26 lecturas, base 5,95°
+- la postura natural de Joan tras centrar → palanca 0,0 (la queja, muerta)
+- girar 20° desde SU cero → palanca 1,0 · barbilla 10° abajo → 0,25
+- ruido de 4° (moviéndose) → NO completa nunca, la base no se toca
+
 ## Trampas que ya costaron tiempo
 
 - **La rama de este repo es `main`, no `master`.** Otros proyectos de Joan usan
