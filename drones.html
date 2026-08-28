@@ -383,6 +383,13 @@
   .docuBtns button{background:rgba(8,10,14,.7);border:1px solid var(--linea);color:var(--hueso);
     font:inherit;font-size:12px;font-weight:700;padding:9px 18px;border-radius:9px;cursor:pointer}
   .docuBtns button:hover{border-color:var(--hud);color:var(--hud)}
+  /* La tarjeta de controles del dron. */
+  #ctrlCard{position:fixed;right:calc(var(--sa-r) + 8px);top:calc(var(--sa-t) + 54px);z-index:9;display:none;
+    width:230px;padding:11px 13px;background:rgba(6,10,16,.88);border:1px solid var(--linea);border-radius:12px;
+    font-size:11px;line-height:1.75;color:var(--hueso)}
+  #ctrlCard.on{display:block}
+  #ctrlCard b{color:var(--hud);font-weight:800}
+  #ctrlCard .tt{font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--gris);margin-bottom:4px}
   /* Instrumentos de entrenamiento (escuela y modo técnico). */
   #adiCv{position:fixed;left:calc(var(--sa-l) + 8px);bottom:calc(var(--sa-b) + 118px);z-index:8;display:none;
     width:96px;height:96px;border-radius:50%;border:1px solid var(--linea);background:rgba(6,10,16,.55)}
@@ -541,6 +548,9 @@
     <div id="porqueBox"></div>
     <!-- Instrumentos de entrenamiento: horizonte artificial y visor de palancas.
          Salen en la escuela y en modo técnico. -->
+    <!-- La tarjeta de controles: 9 segundos al desplegar, porque «no son
+         claros» es un fallo tan real como cualquier otro. -->
+    <div id="ctrlCard"></div>
     <canvas id="adiCv" width="120" height="120"></canvas>
     <canvas id="stkCv" width="190" height="95"></canvas>
     <div id="feed"></div>
@@ -580,6 +590,7 @@
     <button class="tbtn util" id="btnCam"><span class="ic">🎥</span>CÁM</button>
     <button class="tbtn util" id="btnSensor"><span class="ic">🌡️</span>SENSOR</button>
     <button class="tbtn util" id="btnGaze"><span class="ic">👁️</span>MIRADA</button>
+    <button class="tbtn util" id="btnCara"><span class="ic">🧑‍✈️</span>PILOTO FACIAL</button>
     <button class="tbtn util" id="btnTec"><span class="ic">🔧</span>TÉCNICO</button>
     <button class="tbtn util" id="btnPorQue"><span class="ic">?</span>POR QUÉ</button>
     <button class="tbtn util" id="btnVoice"><span class="ic">🎤</span>VOZ</button>
@@ -5733,6 +5744,50 @@ function detectHand(){
    más de lo que suma la cabeza — la torreta arrancaba hacia el lado contrario.
    Los ojos son un buen puntero de POSICIÓN y un pésimo mando de VELOCIDAD, así
    que ahora solo aportan un pequeño desvío de puntería (gazeFino), nunca giro. */
+/* =====================================================================
+   🧑‍✈️ PILOTO FACIAL — la cabeza vuela el dron (diseño de Joan)
+   ---------------------------------------------------------------------
+   Los ojos se quedan quietos mirando la pantalla; la CABEZA es la palanca:
+     · girar la cabeza a un lado  → el dron GIRA hacia ese lado
+     · mirar ABAJO               → el dron AVANZA  (como picar el morro)
+     · mirar ARRIBA              → el dron RETROCEDE
+     · subir/bajar sigue en ESPACIO/SHIFT, y el beso 💋 dispara
+   El mapeo abajo=avanza no es capricho: es el gesto del FPV (morro abajo =
+   acelerar), así que lo aprendido aquí vale para la emisora de verdad.
+   Reusa TODO el saneamiento de la mirada — One Euro, zona muerta, curva
+   cuadrática — porque sin eso el ruido de la cámara pilotaría el dron. */
+function mostrarControles(){
+  const el=$('ctrlCard'); if(!el) return;
+  const facial=gaze.piloto&&gaze.active;
+  el.innerHTML='<div class="tt">'+(facial?'🧑‍✈️ PILOTO FACIAL':'CONTROLES DEL DRON')+'</div>'+
+    (facial
+      ? 'Cabeza a los lados → <b>girar</b><br>Mirar abajo → <b>avanzar</b><br>Mirar arriba → <b>retroceder</b><br><b>ESPACIO</b> subir · <b>SHIFT</b> bajar<br>💋 beso → <b>disparar</b> · <b>G</b> recentrar'
+      : '<b>W</b> adelante · <b>S</b> atrás<br><b>A</b>/<b>D</b> girar<br><b>ESPACIO</b> subir · <b>SHIFT</b> bajar<br><b>R</b>/<b>Q</b> cámara arriba/abajo<br><b>B</b> acro · <b>C</b> vista · <b>F</b> recoger');
+  el.classList.add('on');
+  clearTimeout(el._t); el._t=setTimeout(()=>el.classList.remove('on'), 9000);
+}
+function toggleCara(){
+  if(gaze.piloto){ gaze.piloto=false; feed('Piloto facial apagado — vuelves al teclado');
+    if($('btnCara'))$('btnCara').classList.remove('press'); mostrarControles(); return; }
+  gaze.piloto=true;
+  if($('btnCara'))$('btnCara').classList.add('press');
+  if(!gaze.on && !gaze.loading) toggleGaze();          // enciende cámara y calibrado si hace falta
+  feed('🧑‍✈️ Piloto facial: la cabeza es la palanca. Mira al frente mientras centra…','good');
+  mostrarControles();
+}
+/* La palanca que sale de la cabeza. Devuelve {yaw,pitch} en -1..1, o null. */
+function palancaFacial(){
+  if(!(gaze.piloto && gaze.active && gaze.detected)) return null;
+  const o=gazeOffset();
+  const DZ=0.05, TOPE=0.30;                 // 3° de zona muerta · 17° = palanca a fondo
+  const curva=(v)=>{ const a=Math.abs(v); if(a<DZ) return 0;
+    const u=Math.min(1,(a-DZ)/(TOPE-DZ)); return Math.sign(v)*u*u; };
+  /* Signos, comprobados con simGaze: gaze.pitch CRECE al mirar abajo, y abajo
+     = avanzar = dr_pitch positivo. El yaw de la cabeza crece hacia la
+     izquierda de la pantalla y dr_yaw positivo gira a la derecha: se invierte. */
+  return { yaw: curva(-o.yaw), pitch: curva(o.pitch) };
+}
+
 function gazeOffset(){
   return { yaw:(gaze.yaw-gaze.baseYaw), pitch:(gaze.pitch-gaze.basePitch) };
 }
@@ -5949,6 +6004,11 @@ function readInput(dt){
     }
     if(T.fire) inp.fire=true; if(T.sec) inp.sec=true;
   }
+  // 🧑‍✈️ PILOTO FACIAL: en modo dron, la cabeza ES la palanca (diseño de Joan:
+  // abajo=avanza, arriba=retrocede, lados=gira). Suma sobre el teclado — puedes
+  // corregir con W/S/A/D sin apagar nada.
+  if(mode==='drone'){ const pf=palancaFacial();
+    if(pf){ inp.dr_yaw=clamp(inp.dr_yaw+pf.yaw,-1,1); inp.dr_pitch=clamp(inp.dr_pitch+pf.pitch,-1,1); } }
   // MANO (dedo índice): señala para mover; si escondes el dedo, se detiene. Tiene prioridad al conducir.
   if(hand.active){ inp.moveF=hand.moveF; inp.moveT=hand.moveT;
     if(mode==='drone'){ inp.dr_pitch=hand.moveF; inp.dr_yaw=hand.moveT; } }
@@ -5984,7 +6044,7 @@ function updatePlayer(dt, inp){
   // vista libre (torreta en tanque, cámara 360° en dron)
   player.view.yaw+=inp.dyaw||0; player.view.pitch=clamp(player.view.pitch+(inp.dpitch||0),-0.7,0.5);
   // apuntar con la mirada: TASA de giro (gira mientras la cabeza esté girada, sin tope) + pitch proporcional
-  if(gaze.active && gaze.detected){
+  if(gaze.active && gaze.detected && !(gaze.piloto && mode==='drone')){
     const o=gazeOffset();
     /* ⚠ AQUÍ ESTABA LA HIPERSENSIBILIDAD, Y TIENE NÚMERO. La curva era
        `(θ−0,02)^1,2 · 36`, sin tope: girar la cabeza 10° daba 219 °/s, 20° daba
@@ -6242,6 +6302,7 @@ function deployDrone(){
     addHeat(drone.mesh, 0.4, stats.drone.ave?0.8:(stats.drone.ala?3.0:2.2)); }
   drone.active=true; drone.hp=60; drone.kamikaze=false; drone.diving=false; drone.acro=false;
   drone.muni=(stats.carga&&stats.carga.muni)||0;      // las granadas se rearman al recoger
+  mostrarControles();
   {
     const mB=stats.drone.kg||1, mC=(stats.carga&&stats.carga.kg)||0, twr=2.2*mB/(mB+mC);
     if(twr<1.03) feed('⚠ SOBRECARGADO: empuje/peso '+twr.toFixed(2)+' — este aparato NO levanta esa carga. Míralo en el Garaje','bad');
@@ -6291,11 +6352,15 @@ function vientoAhora(){
   return _rafa;
 }
 function gimbalAuto(){
-  // altura sobre el SUELO, no sobre el nivel del mar
+  /* ⚠ LA CÁMARA MIRA A DONDE VAS, NO A DONDE CUELGAS. La versión anterior
+     bajaba el gimbal con la altura —hasta −66°— pensando en OBSERVAR el suelo,
+     y eso volvía el pilotaje ingobernable: avanzabas a 100 km/h viéndote los
+     pies. La regla nueva es la de un piloto: en MARCHA, horizonte (−5°);
+     QUIETO en altura, la vista cae al suelo para observar. La marcha manda. */
   const h=drone.pos.y-terrainHeight(drone.pos.x, drone.pos.z);
-  // a ras de suelo mira un poco hacia abajo (como miraba antes la cámara fija);
-  // a ~380 m sobre el suelo ya va a 66°, que es el ángulo con el que se sobrevuela
-  return lerp(-0.2, -1.15, clamp((h-10)/70, 0, 1));
+  const marcha=clamp(Math.hypot(drone.vel.x,drone.vel.z)/(VEL_DRON*0.25), 0, 1);
+  const observar=lerp(-0.2, -1.15, clamp((h-10)/70, 0, 1));
+  return lerp(observar, -0.09, marcha);
 }
 function ajustarGimbal(d){
   if(!drone.active) return;
@@ -6922,6 +6987,13 @@ function cycleCam(){
 let currentReal=null;
 function resetPlay(){
   limpiarEscuela();
+  /* ⚠ EL CLIMA DE LA ESCUELA SE QUEDABA PEGADO. La lección del estacionario
+     pone lluvia para enseñar el viento, y nadie la quitaba: desde ese momento
+     TODAS las misiones tenían rachas invisibles empujando el dron. Joan lo
+     reportó como "el vuelo no es controlable, algo falla" — y fallaba esto.
+     Cada misión arranca con el clima que el jugador tiene elegido; la escuela
+     lo cambia solo para su lección. */
+  TOD=store.env.tod||'dia'; WX=store.env.wx||'despejado';
   stats=derivedStats(currentLoadout());
   /* ⚠ NO llamar aquí a disposeGroup(): buildVehicle, buildDrone y buildPerro
      arman sus mallas con geo(), que es una CACHÉ COMPARTIDA por nombre
@@ -9282,6 +9354,7 @@ function wireUI(){
     const pais=sel.value||(CAMPANA.naciones()[0]||[])[0];
     if(pais) CAMPANA.empezar('nacion', pais); };
   $('cmNacionSel').onchange=(e)=>CAMPANA.empezar('nacion', e.target.value);
+  $('btnCara').onclick=(e)=>{ e.stopPropagation(); toggleCara(); };
   $('btnTec').onclick=(e)=>{ e.stopPropagation(); toggleTecnico(); };
   $('btnPorQue').onclick=(e)=>{ e.stopPropagation(); if(!cerrarPorQue()) mostrarPorQue(); };
   $('porqueBox').onclick=()=>cerrarPorQue();
@@ -9763,6 +9836,12 @@ if(location.search.indexOf('dbg')>=0) window.DRONES={
      con números en vez de a ojo. Salta el filtro a propósito: aquí se mide la
      respuesta del mando, no la del filtro. Deja la histéresis y la orden
      suavizada como estén — así se puede medir también el arranque. */
+  /* El piloto facial, medible sin cámara: simula la cabeza y devuelve la
+     palanca que saldría. */
+  caraPrueba:(yawGrados,pitchGrados)=>{ gaze.piloto=true; gaze.active=true; gaze.detected=true; gaze.ready=true; gaze.hasEye=false;
+    gaze.baseYaw=0; gaze.basePitch=0; gaze.yaw=(yawGrados||0)*Math.PI/180; gaze.pitch=(pitchGrados||0)*Math.PI/180;
+    const pf=palancaFacial(); return pf?{yaw:+pf.yaw.toFixed(2), pitch:+pf.pitch.toFixed(2)}:null; },
+  caraOff:()=>{ gaze.piloto=false; gaze.active=false; return true; },
   /* El acro real, medible: tasas de giro en °/s y actitud completa. */
   rate:()=>{ const G2=180/Math.PI; return { acro:!!drone.acro,
     wx:+((drone.wx||0)*G2).toFixed(0), wy:+((drone.wy||0)*G2).toFixed(0), wz:+((drone.wz||0)*G2).toFixed(0),

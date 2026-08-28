@@ -654,6 +654,41 @@ circuito cronometrado con 7,5 kg: siente el peso).
 - Los tanques SE MUEVEN mientras la granada cae: las pruebas automáticas
   deben adelantar el tiro midiendo el rumbo, o dan 0 bajas y parecen bug.
 
+
+## 28-ago (2ª tanda): «el vuelo no es controlable» — dos causas reales, y el piloto facial
+
+Joan reportó controles confusos y vuelo ingobernable. La auditoría encontró
+DOS fallos de verdad, ninguno donde se esperaba:
+
+1. **El clima de la escuela se quedaba pegado.** La lección del estacionario
+   pone lluvia (con rachas) para enseñar el viento y nadie la quitaba: desde
+   ese momento TODAS las misiones tenían viento invisible empujando el dron.
+   Arreglo: resetPlay restaura TOD/WX desde store.env. Verificado: lluvia en
+   la escuela → despejado en la misión siguiente.
+2. **La cámara se miraba los pies.** El gimbal automático bajaba hasta −66°
+   con la altura (pensado para observar), así que avanzando a 100 km/h veías
+   el suelo. Regla nueva: en MARCHA, horizonte (−5°/−9°); quieto en altura,
+   cae para observar. La marcha manda. Verificado: −11° quieto, −7° en marcha.
+
+Además: **tarjeta de controles** 9 s al desplegar el dron (W/S/A/D · ESPACIO/
+SHIFT · R/Q · B · C · F) — «no son claros» es un fallo tan real como cualquiera.
+
+**🧑‍✈️ PILOTO FACIAL** (diseño de Joan, botón en la botonera): los ojos quietos
+mirando la pantalla, la CABEZA es la palanca — lados = girar, mirar ABAJO =
+avanzar (el gesto del FPV: morro abajo = acelerar), ARRIBA = retroceder;
+ESPACIO/SHIFT suben y bajan, el beso 💋 dispara, G recentra. Reusa TODO el
+saneamiento de la mirada (One Euro, zona muerta 3°, curva cuadrática, tope a
+17°) — sin eso el ruido de la cámara pilotaría el dron. El teclado SUMA (se
+puede corregir con W/S/A/D sin apagar nada), y el apuntado de torreta cede
+cuando la cabeza pilota. Verificado con `DRONES.caraPrueba(yaw,pitch)`:
+abajo 10° → palanca +0,25 · arriba → −0,25 · derecha → gira · 2° → 0. En
+vuelo: 16,7 m avanzados solo con la cabeza.
+
+### Trampa nueva
+- Cualquier ajuste "temporal" de globales de entorno (WX/TOD) que haga una
+  misión especial DEBE restaurarse en resetPlay, no confiar en que el jugador
+  pase por el menú de clima.
+
 ## Trampas que ya costaron tiempo
 
 - **La rama de este repo es `main`, no `master`.** Otros proyectos de Joan usan
