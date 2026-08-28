@@ -387,6 +387,7 @@
   #caraCal{position:fixed;left:50%;top:38%;transform:translate(-50%,-50%);z-index:45;display:none;
     padding:10px;background:rgba(6,10,16,.82);border:1px solid var(--linea);border-radius:16px}
   #caraCal.on{display:block}
+  #caraCal.mini{top:auto;bottom:calc(var(--sa-b) + 8px);left:50%;transform:translateX(-50%) scale(0.52);transform-origin:bottom center;opacity:.85;cursor:pointer}
   /* La tarjeta de controles del dron. */
   #ctrlCard{position:fixed;right:calc(var(--sa-r) + 8px);top:calc(var(--sa-t) + 54px);z-index:9;display:none;
     width:230px;padding:11px 13px;background:rgba(6,10,16,.88);border:1px solid var(--linea);border-radius:12px;
@@ -3991,6 +3992,16 @@ function buildDrone(color, opt){
     g.add(rot); rotors.push(rot);
   }
 
+  // ---- pod de cámara FPV en el morro: caja inclinada + lente que brilla ----
+  E.p(geo('podCam', ()=>new THREE.BoxGeometry(0.26,0.2,0.16)), darkM, [0,0.09,0.62], [-0.42,0,0]);
+  E.p(geo('lente',  ()=>new THREE.CylinderGeometry(0.075,0.085,0.06,12)),
+      new THREE.MeshStandardMaterial({color:0x0a1420, roughness:0.05, metalness:0.95}), [0,0.14,0.70], [Math.PI/2-0.42,0,0]);
+  // ---- antena de video (látigo inclinado) y GPS (disco encima) ----
+  E.p(geo('antena', ()=>new THREE.CylinderGeometry(0.014,0.014,0.5,5)), darkM, [-0.16,0.28,-0.5], [0.5,0,0.15]);
+  E.p(geo('antCap', ()=>new THREE.SphereGeometry(0.03,6,5)),
+      new THREE.MeshStandardMaterial({color:0xd8dde4, roughness:0.6}), [-0.245,0.5,-0.61]);
+  E.p(geo('gps',    ()=>new THREE.CylinderGeometry(0.12,0.12,0.045,10)),
+      new THREE.MeshStandardMaterial({color:0xe8e4da, roughness:0.75}), [0.15,0.14,-0.35]);
   // ---- batería LiPo colgada, con sus bridas ----
   E.p(geo('lipo', ()=>new THREE.BoxGeometry(0.44,0.2,0.7)), lipoM, [0,-0.16,-0.1]);
   E.p(geo('lipoEtiq',()=>new THREE.BoxGeometry(0.45,0.06,0.24)), bodyM, [0,-0.16,-0.1]);
@@ -5706,7 +5717,10 @@ function detectGaze(){
       gaze.kiss = pk>0.55; gaze.parpadeo = bl>0.4;   // sale gratis: ya se leían los blendshapes
     }
     gaze.detected=ok;
-    if(ok && gaze.piloto && CFA.activo) centradoFacialPaso(gaze.yaw, gaze.pitch);
+    if(ok && gaze.piloto){
+      if(CFA.activo) centradoFacialPaso(gaze.yaw, gaze.pitch);
+      else dibujarCentrado(gaze.yaw-gaze.baseYaw, gaze.pitch-gaze.basePitch);  // modo vuelo: el punto es tu DESVÍO
+    }
     if(ok){                                  // muestra HACIA DÓNDE y CUÁNTO está girando (para poder ajustarlo)
       // en GRADOS POR SEGUNDO: '0.34' no le dice nada a nadie, '19°/s' sí
       const v=gaze.dbgYaw*180/Math.PI, fl = v>3?'▶▶' : v<-3?'◀◀' : '•';
@@ -5768,7 +5782,7 @@ function mostrarControles(){
   const facial=gaze.piloto&&gaze.active;
   el.innerHTML='<div class="tt">'+(facial?'🧑‍✈️ PILOTO FACIAL':'CONTROLES DEL DRON')+'</div>'+
     (facial
-      ? 'Cabeza a los lados → <b>girar</b><br>Mirar abajo → <b>avanzar</b><br>Mirar arriba → <b>retroceder</b><br><b>ESPACIO</b> subir · <b>SHIFT</b> bajar<br>💋 beso → <b>disparar</b> · <b>G</b> recentrar'
+      ? 'Cabeza a los lados → <b>girar</b><br>Mirar abajo → <b>avanzar</b> · arriba → <b>retroceder</b><br><b>ESPACIO</b> subir · <b>SHIFT</b> bajar · 💋 disparar<br><b>G</b> o clic en la diana → recentrar<br><b>H</b> → espejo (si gira al revés)'
       : '<b>W</b> adelante · <b>S</b> atrás<br><b>A</b>/<b>D</b> girar<br><b>ESPACIO</b> subir · <b>SHIFT</b> bajar<br><b>R</b>/<b>Q</b> cámara arriba/abajo<br><b>B</b> acro · <b>C</b> vista · <b>F</b> recoger');
   el.classList.add('on');
   clearTimeout(el._t); el._t=setTimeout(()=>el.classList.remove('on'), 9000);
@@ -5790,8 +5804,8 @@ function mostrarControles(){
    desliza hacia tu postura real: el sesgo residual no se acumula. */
 const CFA={ activo:false, muestras:[], quieto:0, reposo:0 };
 function iniciarCentradoFacial(){
-  CFA.activo=true; CFA.muestras=[]; CFA.quieto=0;
-  const el=$('caraCal'); if(el) el.classList.add('on');
+  CFA.activo=true; CFA.muestras=[]; CFA.quieto=0; CFA.emaY=null; CFA.emaP=null;
+  const el=$('caraCal'); if(el){ el.classList.add('on'); el.classList.remove('mini'); }
   feed('🧑‍✈️ Centrando: cabeza QUIETA y mirando AL FRENTE…','good');
 }
 /* Un paso del centrado, llamado con cada lectura de la cámara (~22 Hz).
@@ -5812,8 +5826,10 @@ function centradoFacialPaso(yaw,pitch){
       gaze.baseYaw=(ys[12]+ys[13])/2; gaze.basePitch=(ps[12]+ps[13])/2;
       gaze.baseEyeX=gaze.eyeRawX; gaze.baseEyeY=gaze.eyeRawY;
       gaze.calibViewPitch=player.view.pitch;
-      gaze.active=true; CFA.activo=false; CFA.reposo=0;
-      const e2=$('caraCal'); if(e2) setTimeout(()=>e2.classList.remove('on'), 900);
+      gaze.active=true; CFA.activo=false; CFA.emaY=null; CFA.emaP=null;
+      /* el visor NO se esconde: pasa a modo vuelo (pequeño), para que la
+         deriva se VEA en el momento en que empiece, no cuando ya te fastidia */
+      const e2=$('caraCal'); if(e2){ e2.classList.add('mini'); }
       feed('✔ Centrado: TU postura de ahora es el cero. G para recentrar cuando quieras','good');
       mostrarControles();
       return true;
@@ -5845,7 +5861,8 @@ function dibujarCentrado(yaw,pitch){
   g.fillText(frac>=1?'…':'QUIETO · AL FRENTE', cx, H-8);
 }
 function toggleCara(){
-  if(gaze.piloto){ gaze.piloto=false; feed('Piloto facial apagado — vuelves al teclado');
+  if(gaze.piloto){ gaze.piloto=false; CFA.activo=false; feed('Piloto facial apagado — vuelves al teclado');
+    const ec=$('caraCal'); if(ec){ ec.classList.remove('on'); ec.classList.remove('mini'); }
     if($('btnCara'))$('btnCara').classList.remove('press'); mostrarControles(); return; }
   gaze.piloto=true;
   if($('btnCara'))$('btnCara').classList.add('press');
@@ -5860,21 +5877,36 @@ function palancaFacial(){
   if(!(gaze.piloto && gaze.active && gaze.detected)) return null;
   if(CFA.activo) return {yaw:0, pitch:0};   // centrando: la cabeza aún no manda
   const o=gazeOffset();
-  const DZ=0.05, TOPE=0.30;                 // 3° de zona muerta · 17° = palanca a fondo
-  const curva=(v)=>{ const a=Math.abs(v); if(a<DZ) return 0;
-    const u=Math.min(1,(a-DZ)/(TOPE-DZ)); return Math.sign(v)*u*u; };
+  /* ⚠ EL ABSORBEDOR DE DERIVA, versión corregida. El primero absorbía tu
+     POSTURA cuando la palanca estaba en cero — y eso es un trinquete: si
+     compensabas el sesgo girando la cabeza, tu compensación se volvía el
+     nuevo cero y quedabas atrapado girado (exactamente lo que reportó Joan).
+     Este absorbe lo contrario: el DESVÍO PEQUEÑO SOSTENIDO. Si durante ~12 s
+     la cabeza marca 1-8° casi constantes, eso no es una orden (nadie ordena
+     6° fijos medio minuto): es el encuadre que se movió — te acomodaste en
+     la silla, el portátil se inclinó — y la base se desliza hasta anularlo.
+     Con la cabeza RECTA y el dron torciéndose solo, esto lo cura en unos
+     12 s sin tocar nada; y una orden de giro real (grande o breve) no entra
+     en la banda. */
+  CFA.emaY=(CFA.emaY==null)?o.yaw :CFA.emaY +(o.yaw -CFA.emaY)*0.0035;
+  CFA.emaP=(CFA.emaP==null)?o.pitch:CFA.emaP+(o.pitch-CFA.emaP)*0.0035;
+  const absorbe=(ema,eje)=>{ const a=Math.abs(ema);
+    if(a>0.017 && a<0.14){ if(eje==='y') gaze.baseYaw+=ema*0.004; else gaze.basePitch+=ema*0.004; } };
+  absorbe(CFA.emaY,'y'); absorbe(CFA.emaP,'p');
+  const DZY=0.07, DZ=0.05, TOPE=0.30;       // yaw 4° (más ruidoso) · pitch 3° · 17° a fondo
+  const curva=(v,dz)=>{ const a=Math.abs(v); if(a<dz) return 0;
+    const u=Math.min(1,(a-dz)/(TOPE-dz)); return Math.sign(v)*u*u; };
   /* Signos, comprobados con simGaze: gaze.pitch CRECE al mirar abajo, y abajo
      = avanzar = dr_pitch positivo. El yaw de la cabeza crece hacia la
      izquierda de la pantalla y dr_yaw positivo gira a la derecha: se invierte. */
-  const sy=curva(-o.yaw), sp=curva(o.pitch);
+  /* La H invierte el giro: hay cámaras y drivers que entregan el video en
+     espejo, y con espejo girar la cabeza a la derecha lee como izquierda. En
+     vez de adivinar el driver, el jugador lo prueba y lo cambia al vuelo. */
+  const sy=curva(-o.yaw,DZY)*(gaze.invertYaw?-1:1), sp=curva(o.pitch,DZ);
   /* Recentrado en reposo: si llevas 2 s sin pedir nada, tu postura ACTUAL se
      convierte despacio en el cero. El sesgo residual (te acomodaste en la
      silla, la cámara derivó) se disuelve solo, sin tirones: 4%% por lectura
      a 60 Hz tarda ~1 s en absorber un grado. */
-  if(sy===0 && sp===0){
-    CFA.reposo++;
-    if(CFA.reposo>120){ gaze.baseYaw+=(gaze.yaw-gaze.baseYaw)*0.04; gaze.basePitch+=(gaze.pitch-gaze.basePitch)*0.04; }
-  } else CFA.reposo=0;
   return { yaw: sy, pitch: sp };
 }
 
@@ -6439,6 +6471,21 @@ function vientoAhora(){
   const c=Math.cos(giro), s2=Math.sin(giro);
   _rafa.set(windVec.x*c - windVec.z*s2, 0, windVec.x*s2 + windVec.z*c).multiplyScalar(g);
   _rafa.y=w*0.18*Math.sin(t*1.7)*Math.sin(t*0.41);                 // térmicas leves
+  /* GRADIENTE DE ALTURA (capa límite): pegado al suelo la vegetación y las
+     construcciones frenan el viento; a cien metros sopla entero. Ley de
+     potencia aproximada: 55%% a ras, 100%% desde ~60 m. Es media lección de
+     vuelo real: abajo se está más tranquilo, y aterrizar se planea ahí. */
+  if(mode==='drone' && drone.active){
+    const agl=(drone.pos.y-terrainHeight(drone.pos.x,drone.pos.z))*MPU;
+    _rafa.multiplyScalar(0.55+0.45*clamp(agl/60,0,1));
+    /* Y TURBULENCIA MECÁNICA abajo: el aire que rompe contra obstáculos
+       sacude al que pasa rápido y bajo. Sube con la marcha, muere a 12 m. */
+    const marcha=Math.hypot(drone.vel.x,drone.vel.z);
+    if(agl<12 && marcha>1.2){
+      const k=w*0.25*(1-agl/12)*Math.min(1,marcha/4);
+      _rafa.x+=Math.sin(t*7.3)*k; _rafa.z+=Math.cos(t*8.9)*k; _rafa.y+=Math.sin(t*11.1)*k*0.6;
+    }
+  }
   return _rafa;
 }
 function gimbalAuto(){
@@ -6909,6 +6956,16 @@ function updateDrone(dt, inp){
      hélice vertical en la cola, una lancha una hélice sumergida — y un pájaro
      no tiene hélice ninguna: BATE. */
   const ud=drone.mesh.userData;
+  /* EL DIFUMINADO DE LAS PALAS. A régimen alto el ojo no ve palas: ve un
+     disco. Las palas se esconden pasado el 45%% de gas y el disco se carga en
+     proporción — es el detalle que más «vídeo real de dron» le da a la
+     imagen, y cuesta dos líneas por rotor. */
+  if(ud.rotors && !ud.ala && !ud.barco && !ud.alas){
+    for(const r of ud.rotors){ if(r.children.length>=2){
+      r.children[0].visible = gasR<0.45;
+      const mDisc=r.children[1].material; mDisc.opacity=0.05+0.30*gasR;
+    } }
+  }
   if(ud.alas){
     /* Aleteo. La frecuencia sube con el esfuerzo, como en un ave de verdad, y
        las alas suben rápido y bajan despacio (la batida de potencia es la de
@@ -7598,6 +7655,11 @@ function updateChips(){
   $('chipWeap').textContent=w;
   $('chipWeap').className='chip '+((mode==='drone'&&drone.kamikaze)?'warn':'');
   $('reticle').classList.toggle('on', mode==='tank' && camMode!==2);
+  /* ⚠ CADA MODO CON SUS BOTONES. La MIRADA apunta la TORRETA del vehiculo
+     terrestre: en el dron no hay torreta y el botón solo confundía (reporte
+     de Joan). Y el PILOTO FACIAL vuela el DRON: en el UGV no pinta nada. */
+  if($('btnGaze')) $('btnGaze').style.display = (mode==='drone') ? 'none':'';
+  if($('btnCara')) $('btnCara').style.display = (mode==='drone') ? '':'none';
   // botón KAMIKAZE (solo en dron con carga) · 2ª arma solo en tanque
   const droneArmed = mode==='drone' && drone.active && stats.drone.armed;
   if($('btnKmk')) $('btnKmk').style.display = droneArmed?'grid':'none';
@@ -9445,6 +9507,7 @@ function wireUI(){
     if(pais) CAMPANA.empezar('nacion', pais); };
   $('cmNacionSel').onchange=(e)=>CAMPANA.empezar('nacion', e.target.value);
   $('btnCara').onclick=(e)=>{ e.stopPropagation(); toggleCara(); };
+  $('caraCal').onclick=()=>{ if(gaze.piloto && !CFA.activo) iniciarCentradoFacial(); };
   $('btnTec').onclick=(e)=>{ e.stopPropagation(); toggleTecnico(); };
   $('btnPorQue').onclick=(e)=>{ e.stopPropagation(); if(!cerrarPorQue()) mostrarPorQue(); };
   $('porqueBox').onclick=()=>cerrarPorQue();

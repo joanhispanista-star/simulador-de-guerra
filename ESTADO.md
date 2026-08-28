@@ -716,6 +716,41 @@ la resetea y no sirve para esto):
 - girar 20° desde SU cero → palanca 1,0 · barbilla 10° abajo → 0,25
 - ruido de 4° (moviéndose) → NO completa nunca, la base no se toca
 
+
+## 28-ago (4ª tanda): el trinquete facial, botones por modo, y el dron real
+
+**La cara seguía descentrada, y la causa era MI arreglo anterior.** El
+recentrado en reposo absorbía tu POSTURA cuando la palanca estaba en cero —
+un trinquete: si compensabas el sesgo girando la cabeza, tu compensación se
+volvía el nuevo cero y quedabas atrapado girado (el reporte exacto de Joan).
+El absorbedor nuevo trabaja al revés: absorbe el DESVÍO PEQUEÑO SOSTENIDO
+(1-8° casi constantes durante ~12 s — nadie ordena 6° fijos medio minuto: es
+el encuadre que se movió). Verificado: sesgo de 6° que aparece tras centrar →
+palanca 0 en 15 s sola; una orden real de 20° NO se absorbe (0,57 constante).
+Más: **H = espejo** (hay cámaras que entregan el video invertido), zona muerta
+de yaw a 4°, el **visor queda en pantalla en vuelo** (mini-diana abajo: la
+deriva se VE cuando empieza), y **clic en la diana = recentrar**.
+
+**Botones por modo** (reporte de Joan): MIRADA apunta la TORRETA — fuera del
+modo dron; PILOTO FACIAL vuela el DRON — fuera del modo UGV. Verificado en
+ambos sentidos.
+
+**El dron más real**: pod de cámara FPV inclinado con lente, antena de video
+de látigo, GPS sobre el bastidor — y **las palas se difuminan con el régimen**
+(pasado el 45% de gas las palas se esconden y el disco de giro se carga:
+opacidad 0,05+0,30·gas). Es el detalle que más «video de dron» da a la imagen.
+
+**El viento, estudiado**: gradiente de capa límite (55% a ras del suelo, 100%
+desde ~60 m — medido en vivo: 0,85 abajo vs 1,35 arriba) y turbulencia
+mecánica bajo 12 m cuando pasas rápido. Abajo se está más tranquilo, y
+aterrizar se planea ahí: media lección de vuelo real.
+
+### Trampas nuevas
+- Las misiones ARRANCAN en el dron: una prueba que quiera medir "modo UGV"
+  tiene que llamar a toggleDrone explícitamente, no suponer el modo inicial.
+- setEnv ANTES de start no sirve: resetPlay restaura el clima del jugador
+  (ese es el arreglo de la 2ª tanda). El clima de prueba se pone DESPUÉS.
+
 ## Trampas que ya costaron tiempo
 
 - **La rama de este repo es `main`, no `master`.** Otros proyectos de Joan usan
