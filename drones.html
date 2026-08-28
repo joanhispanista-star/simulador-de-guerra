@@ -5606,7 +5606,13 @@ async function toggleGaze(){
   gaze.loading=true; $('gazeBox').classList.add('on'); gazeStatus('Cámara…','wait');
   try{
     if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('sin cámara');
-    gaze.stream=await navigator.mediaDevices.getUserMedia({ video:{ width:320, height:240, facingMode:'user' }, audio:false });
+    /* ⚠ 640×480, no 320×240. La definición de la cámara ES la definición de
+       los landmarks: a 320px el cabeceo (la señal más débil de las tres) se
+       ahogaba en el ruido y Joan lo sintió tal cual — «giro la cabeza hacia
+       adelante y casi no lo lee». Cuatro veces más píxeles por el mismo
+       precio: el modelo corre igual de rápido porque él mismo reescala, pero
+       parte de una imagen nítida. */
+    gaze.stream=await navigator.mediaDevices.getUserMedia({ video:{ width:640, height:480, facingMode:'user' }, audio:false });
     const v=$('gazeCam'); v.srcObject=gaze.stream; gaze.video=v; await v.play().catch(()=>{});
     gazeStatus('Modelo…','wait');
     let vis=null;
@@ -5684,10 +5690,9 @@ function detectGaze(){
       /* ⚠ LA POSE DE LA CABEZA ENTRABA CRUDA. MediaPipe a 320×240 mete 1-2° de
          ruido por muestra, y la zona muerta era de 1,15°: el ruido la superaba
          y la torreta giraba sola. Ahora pasa por el filtro antes de tocar nada. */
-      const dtG=Math.min(0.2, (t-(gaze.tPrev||t))/1000)||0.045; gaze.tPrev=t;
+      const dtG=Math.min(0.2, (t-(gaze.tPrev||t))/1000)||0.045; gaze.tPrev=t; gaze.dtG=dtG;
       gaze.fYaw  =unEuro(gaze.fYaw,   _ge.y, dtG);
-      gaze.fPitch=unEuro(gaze.fPitch, _ge.x, dtG);
-      gaze.yaw=gaze.fYaw.x; gaze.pitch=gaze.fPitch.x; ok=true;
+      gaze.yaw=gaze.fYaw.x; gaze.pitchM=_ge.x; ok=true;   // el pitch crudo espera a la fusión
       if(gaze.calibrando) gaze.muestras.push(gaze.yaw);
     }
     // seguimiento FINO de los OJOS (iris) — más preciso en el PC
@@ -5705,9 +5710,29 @@ function detectGaze(){
       const lh=Math.max(0.008, Math.abs(lTop.y-lBot.y)/2), rh=Math.max(0.008, Math.abs(rTop.y-rBot.y)/2);
       const ex=((lIris.x-(lOut.x+lIn.x)/2)/lw + (rIris.x-(rOut.x+rIn.x)/2)/rw)/2;
       const ey=((lIris.y-(lTop.y+lBot.y)/2)/lh + (rIris.y-(rTop.y+rBot.y)/2)/rh)/2;
+      /* ⚠ EL CABECEO SE REFUERZA CON LA NARIZ. El pitch de la matriz facial es
+         la señal más débil del modelo (bajar la barbilla apenas rota los
+         rasgos para la cámara). Pero la POSICIÓN de la punta de la nariz
+         respecto a la línea de los ojos se mueve MUCHO con la barbilla —
+         geometría simple de proyección — y normalizada por la distancia entre
+         ojos es inmune a acercarse o alejarse de la cámara. La fusión pesa
+         más la nariz que la matriz, y el cero lo absorbe el ritual de
+         centrado, así que el offset constante de cada cara no importa. */
+      const nariz=lm[1], midY=(lOut.y+rOut.y)/2;
+      const interoc=Math.max(0.02, Math.hypot(rOut.x-lOut.x, rOut.y-lOut.y));
+      gaze.ratioNariz=(nariz.y-midY)/interoc;
       // si estás parpadeando, el iris no dice nada útil: se retiene el último valor
       if(isFinite(ex)&&isFinite(ey)&&!gaze.parpadeo){ gaze.eyeRawX=gaze.eyeRawX*0.7+ex*0.3; gaze.eyeRawY=gaze.eyeRawY*0.7+ey*0.3; gaze.hasEye=true; }
       ok=ok||gaze.hasEye;
+    }
+    /* El pitch FINAL: matriz (estable, sosa) + nariz (viva, ruidosa), y el
+       filtro un-euro encima de la mezcla, no de cada parte. */
+    if(gaze.pitchM!==undefined){
+      const fusion = (gaze.ratioNariz!==undefined)
+        ? 0.45*gaze.pitchM + 1.30*gaze.ratioNariz
+        : gaze.pitchM;
+      gaze.fPitch=unEuro(gaze.fPitch, fusion, gaze.dtG||0.045);
+      gaze.pitch=gaze.fPitch.x;
     }
     // BESO (gesto de boca) -> dispara. Blendshape 'mouthPucker'
     const bs = res && res.faceBlendshapes && res.faceBlendshapes[0] && res.faceBlendshapes[0].categories;
@@ -5852,8 +5877,9 @@ function dibujarCentrado(yaw,pitch){
   g.strokeStyle='#3ff0c0'; g.lineWidth=3;
   g.beginPath(); g.arc(cx,cy,R1,-Math.PI/2,-Math.PI/2+frac*TAU); g.stroke();
   // TU cabeza: el punto. Dentro del circulo pequeño = suficientemente recta
-  const dy=(gaze.baseYaw!==undefined?yaw:yaw), dp=pitch;
-  const px=cx-clamp(dy/0.35,-1,1)*R1, py=cy+clamp(dp/0.35,-1,1)*R1;
+  const dy=yaw, dp=pitch;
+  // el cabeceo va con más ganancia visual: su recorrido útil es la mitad
+  const px=cx-clamp(dy/0.30,-1,1)*R1, py=cy+clamp(dp/0.18,-1,1)*R1;
   const cerca=Math.hypot(px-cx,py-cy)<R1*0.35;
   g.fillStyle=cerca?'#3ff0c0':'#f5b301';
   g.beginPath(); g.arc(px,py,7,0,TAU); g.fill();
@@ -5893,16 +5919,20 @@ function palancaFacial(){
   const absorbe=(ema,eje)=>{ const a=Math.abs(ema);
     if(a>0.017 && a<0.14){ if(eje==='y') gaze.baseYaw+=ema*0.004; else gaze.basePitch+=ema*0.004; } };
   absorbe(CFA.emaY,'y'); absorbe(CFA.emaP,'p');
-  const DZY=0.07, DZ=0.05, TOPE=0.30;       // yaw 4° (más ruidoso) · pitch 3° · 17° a fondo
-  const curva=(v,dz)=>{ const a=Math.abs(v); if(a<dz) return 0;
-    const u=Math.min(1,(a-dz)/(TOPE-dz)); return Math.sign(v)*u*u; };
+  /* ⚠ CADA EJE CON SU RECORRIDO. La barbilla cómoda se mueve ~10-12°, no 17:
+     pedirle 17° para palanca a fondo era pedir el cuello entero — «casi no lo
+     lee» era en parte esto. El giro (yaw) sí tiene 17° de recorrido cómodo. */
+  const DZY=0.07, TOPEY=0.30;               // giro: 4° muerta · 17° a fondo
+  const DZP=0.035, TOPEP=0.175;             // cabeceo: 2° muerta · 10° a fondo
+  const curva=(v,dz,tope)=>{ const a=Math.abs(v); if(a<dz) return 0;
+    const u=Math.min(1,(a-dz)/(tope-dz)); return Math.sign(v)*u*u; };
   /* Signos, comprobados con simGaze: gaze.pitch CRECE al mirar abajo, y abajo
      = avanzar = dr_pitch positivo. El yaw de la cabeza crece hacia la
      izquierda de la pantalla y dr_yaw positivo gira a la derecha: se invierte. */
   /* La H invierte el giro: hay cámaras y drivers que entregan el video en
      espejo, y con espejo girar la cabeza a la derecha lee como izquierda. En
      vez de adivinar el driver, el jugador lo prueba y lo cambia al vuelo. */
-  const sy=curva(-o.yaw,DZY)*(gaze.invertYaw?-1:1), sp=curva(o.pitch,DZ);
+  const sy=curva(-o.yaw,DZY,TOPEY)*(gaze.invertYaw?-1:1), sp=curva(o.pitch,DZP,TOPEP);
   /* Recentrado en reposo: si llevas 2 s sin pedir nada, tu postura ACTUAL se
      convierte despacio en el cero. El sesgo residual (te acomodaste en la
      silla, la cámara derivó) se disuelve solo, sin tirones: 4%% por lectura

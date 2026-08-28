@@ -751,6 +751,26 @@ aterrizar se planea ahí: media lección de vuelo real.
 - setEnv ANTES de start no sirve: resetPlay restaura el clima del jugador
   (ese es el arreglo de la 2ª tanda). El clima de prueba se pone DESPUÉS.
 
+
+## 28-ago (5ª tanda): «el cabeceo casi no se lee» — definición y fusión con la nariz
+
+Joan: girar la cabeza hacia adelante casi no se lee. Tres causas, tres arreglos:
+
+1. **La cámara pedía 320×240.** La definición de la cámara ES la definición de
+   los landmarks, y el cabeceo es la señal más débil de las tres. Ahora
+   640×480: cuatro veces más píxeles, mismo costo (el modelo reescala él).
+2. **El pitch de la matriz facial se refuerza con LA NARIZ**: la posición de
+   la punta de la nariz respecto a la línea de los ojos se mueve mucho con la
+   barbilla (proyección simple), y normalizada por la distancia interocular es
+   inmune a acercarse o alejarse. Fusión 0,45·matriz + 1,30·nariz, filtro
+   un-euro ENCIMA de la mezcla, cero absorbido por el ritual. (Corre en el
+   camino de cámara real: verificado el cableado, no la cámara.)
+3. **Cada eje con su recorrido**: la barbilla cómoda da 10-12°, no 17. El
+   cabeceo ahora: 2° muerta, 10° a fondo. Medido: 10° → 0,98 de palanca
+   (antes 0,25 — cuatro veces menos). El giro sigue 4°/17°.
+
+La diana también pinta el cabeceo con ganancia doble: el punto BAJA visible.
+
 ## Trampas que ya costaron tiempo
 
 - **La rama de este repo es `main`, no `master`.** Otros proyectos de Joan usan
