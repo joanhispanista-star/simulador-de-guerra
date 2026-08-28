@@ -1,4 +1,4 @@
-# Estado de Drones de Combate · 23 de agosto de 2026
+# Estado de Drones de Combate · 28 de agosto de 2026
 
 **Vive en `Desktop\drones`** (antes `Desktop\maquinas`; se renombró el 15-ago
 porque ya no comparte carpeta con ningún otro juego).
@@ -607,6 +607,52 @@ jugando hasta MISIÓN CUMPLIDA.
   (0,1,0) después: las demás cámaras cuentan con el arriba del mundo.
 - En las pruebas del estacionario el dron de prueba SE VA con el viento (es la
   gracia de la misión): sujetarlo re-teletransportando, no esperar quieto.
+
+
+## 28-ago: el peso, las cargas explosivas y el crono
+
+**El peso es física, no un modificador.** La relación empuje/peso (TWR) se
+calcula de la masa del aparato + su carga, y de ella cuelgan el techo de
+inclinación (acos(1/TWR)), la trepada, las tasas de giro (√ de la razón de
+masas), el gasto de batería (∝ peso^1,5) y el hundimiento si TWR<1. Medido:
+
+| | TWR | trepa |
+|---|---|---|
+| FPV limpio | 2,20 | 12 m/s |
+| Carguero + antitanque (7,5 kg) | 1,32 | 3,3 m/s |
+| FPV + antitanque | 0,59 | **se hunde 43 m: NO vuela** |
+
+Eso último obligó a añadir el **hexacóptero carguero** (4,5 kg, tipo «Baba
+Yagá»): la física exigía el aparato que el frente inventó por la misma razón.
+
+**Ranura nueva en el garaje: la carga del FPV** — granadas ×4 (0,5 kg),
+carga hueca kamikaze (1,2 kg) y antitanque pesada (3 kg), con masas reales.
+- **La granada HEREDA tu velocidad al soltarla**: no cae donde estás, cae
+  donde ibas. Probado: soltando quieto sobre tanques en movimiento, 0 bajas
+  (¡el tanque se mueve durante la caída!); con adelanto, caen. dmg 90 porque
+  cae al techo, que es el punto débil — con 45 la misión salía imposible
+  (2 impactos × 3 tanques > 4 granadas).
+- **El kamikaze detona con la carga montada** (hueca 150/3 m, pesada 240/6 m)
+  y **lo que la espoleta tocó recibe el impacto entero**: la espoleta dispara
+  a 4 m y la hueca solo dañaba a 3 — detonaba SOBRE el blanco sin hacerle
+  nada. Pasó en la prueba; quedó escrito en el código.
+
+**Crono con récord** en los circuitos de aros: arranca en el PRIMER aro (como
+las carreras FPV), en vivo en el HUD, récord por misión en `store.cronos`,
+y la ficha lo enseña («⏱ Récord: 0.80 s — bájalo»). Verificado: 2,67 → 0,80.
+
+**Tres misiones tácticas** en la Escuela (7-9): Granadas en altura (adelantar
+con el vuelo), El kamikaze (objetivo: jammer escoltado, fibra + carga hueca,
+en rate — verificada hasta MISIÓN CUMPLIDA), y El ladrillo con hélices (el
+circuito cronometrado con 7,5 kg: siente el peso).
+
+### Trampas nuevas
+- `mTot` se usa en el gasto de batería, que está ARRIBA en updateDrone: la
+  masa se declara antes que la batería o revienta el arranque.
+- En el cañón, el picado kamikaze choca con las lomas antes de llegar: el
+  ataque se planea desde lejos y alineado, no desde encima (es la gracia).
+- Los tanques SE MUEVEN mientras la granada cae: las pruebas automáticas
+  deben adelantar el tiro midiendo el rumbo, o dan 0 bajas y parecen bug.
 
 ## Trampas que ya costaron tiempo
 

@@ -996,6 +996,7 @@ function load(){ try{ const s=JSON.parse(localStorage.getItem(SKEY)||'{}');
   store.vol=(typeof s.vol==='number')?s.vol:0.7;
   store.faccion=(s.faccion==='azul'||s.faccion==='rojo')?s.faccion:null;   // guerra
   store.campana=s.campana&&typeof s.campana==='object'?s.campana:{modo:null,nacion:null,ganadas:{}};
+  store.cronos=s.cronos&&typeof s.cronos==='object'?s.cronos:{};   // récords de circuito, en segundos
   store.env=Object.assign({tod:'dia',wx:'despejado'}, s.env||{}); }catch(e){} }
 function save(){ try{ localStorage.setItem(SKEY, JSON.stringify(store)); }catch(e){} }
 load();
@@ -1219,6 +1220,23 @@ const CATALOG={
        el acero. Por eso cuesta el doble en puntos y sigue mereciendo la pena. */
     {id:'compuesto', name:'Compuesto cerámico', cost:24, hp:110, kg:190, CdA:0.15, note:'190 kg · el doble de protección por kilo que el acero'},
   ]},
+  /* ---------------- CARGA DEL DRON FPV ---------------- */
+  carga:{ label:'Carga del dron FPV', pick:[
+    {id:'ninguna', name:'Sin carga', cost:0, kg:0, note:'0 kg · el aparato vuela como nació'},
+    /* Los números son los de las municiones que de verdad se cuelgan de un
+       FPV: una granada VOG-17 pesa ~0,35 kg (aquí 0,5 con el soporte), una
+       carga hueca de RPG ~1,2 kg, una antitanque tipo TM recortada ~3 kg. */
+    /* dmg 90: una granada BIEN puesta mata el blindado, porque cae donde el
+       blindaje es fino — el techo. Con 45 hacían falta dos impactos por tanque
+       y solo hay cuatro granadas para tres: la misión salía imposible. Se
+       probó con adelanto correcto y 1 de 6 caían: ahora el acierto PAGA. */
+    {id:'granada', name:'Granadas ×4 (soltar en altura)', cost:8, kg:0.5, tipo:'granada', dmg:90, splash:4, muni:4,
+      note:'0,5 kg · cuatro granadas que HEREDAN tu velocidad al soltarlas: bombardear exige apuntar con el vuelo'},
+    {id:'rpg', name:'Carga hueca (kamikaze)', cost:12, kg:1.2, tipo:'kamikaze', dmg:150, splash:3,
+      note:'1,2 kg · perfora blindaje EN el punto de impacto; poca onda. El dron es la munición'},
+    {id:'tm', name:'Antitanque pesada (kamikaze)', cost:18, kg:3.0, tipo:'kamikaze', dmg:240, splash:6,
+      note:'3,0 kg · mata cualquier blindado. El aparato queda LENTO y torpe: siente el peso'},
+  ]},
   /* ---------------- TREN MOTRIZ ---------------- */
   tren:{ label:'Tren motriz', pick:[
     {id:'e15', name:'Motor eléctrico 15 kW', cost:10, tipo:'electrico', kW:15, kg:8,  dB:58, ir:'baja',
@@ -1242,9 +1260,19 @@ const CATALOG={
     {id:'d40',  name:'Depósito 40 L de gasóleo',  cost:16, tipo:'combustion', litros:40, kg:22, note:'22 kg vacío + 34 de gasóleo · para salidas largas'},
   ]},
   dron:{ label:'Dron aéreo', pick:[
-    {id:'recon', name:'Reconocimiento', cost:10, armed:false, cam:1.3, maxAlt:130, note:'Marca blancos, ligero'},
-    {id:'ataque', name:'Ataque', cost:22, armed:true, dmg:60, cam:1.0, maxAlt:130, note:'Suelta cargas explosivas'},
-    {id:'fibra', name:'Fibra óptica', cost:24, armed:true, dmg:50, cam:1.6, maxAlt:150, fiber:true, note:'Inmune a jamming, sin pérdida de señal, video nítido, largo alcance'},
+    /* `kg` es la masa del APARATO VACÍO. Importa porque la carga explosiva se
+       suma encima y la relación empuje/peso decide todo lo que se siente:
+       un FPV de 1,1 kg con 3 kg de antitanque vuela como un ladrillo con
+       hélices — y eso es EXACTAMENTE lo que debe sentirse. */
+    {id:'recon', name:'Reconocimiento', cost:10, armed:false, cam:1.3, maxAlt:130, kg:0.6, note:'Marca blancos, ligero (0,6 kg)'},
+    {id:'ataque', name:'Ataque (FPV 7")', cost:22, armed:true, dmg:60, cam:1.0, maxAlt:130, kg:1.1, note:'FPV de carga: 1,1 kg vacío. Elige su carga abajo'},
+    {id:'fibra', name:'Fibra óptica', cost:24, armed:true, dmg:50, cam:1.6, maxAlt:150, fiber:true, kg:1.4, note:'Inmune a jamming (1,4 kg: la bobina pesa). Elige su carga abajo'},
+    /* El carguero existe porque la física lo exige: un FPV de 1,1 kg con 2,2 de
+       empuje/peso levanta 1,3 kg de carga COMO MUCHO — la antitanque de 3 kg lo
+       deja clavado en el suelo, y probarlo lo confirmó (TWR 0,59). Para eso el
+       frente inventó los hexacópteros cargueros tipo «Baba Yagá». */
+    {id:'cargero', name:'Carguero pesado (hexa)', cost:30, armed:true, dmg:60, cam:1.1, maxAlt:110, kg:4.5,
+      note:'4,5 kg y seis motores: el único que levanta la carga antitanque. Grande, lento y visible'},
     /* `ala:true` NO es un adorno: cambia el modelo de vuelo entero (ver
        updateDrone). Un aparato de larga distancia es de ALA FIJA — no puede
        quedarse quieto en el aire, se sustenta con la velocidad y vira
@@ -1282,7 +1310,7 @@ const AI_LVL={
   vet:{name:'Veterano', det:125, reload:1.6, disp:0.05, lead:0.5, hp:45},
   eli:{name:'Élite',    det:160, reload:1.1, disp:0.02, lead:1.0, hp:55},
 };
-const DEFAULT_LOADOUT={chasis:'medio',canon:'estandar',secundaria:'mg',blindaje:'placas',tren:'e15',energia:'lipo',dron:'recon',aliados:'duo'};
+const DEFAULT_LOADOUT={chasis:'medio',canon:'estandar',secundaria:'mg',blindaje:'placas',tren:'e15',energia:'lipo',dron:'recon',carga:'ninguna',aliados:'duo'};
 const BUDGET=120;
 function partOf(slot,id){ return CATALOG[slot].pick.find(p=>p.id===id)||CATALOG[slot].pick[0]; }
 function loadoutCost(l){ let c=0; for(const s in CATALOG) c+=partOf(s,l[s]).cost; return c; }
@@ -1422,7 +1450,7 @@ function derivedStats(l){
   const boost=clamp(1+ (f.kWrueda/Math.max(f.masa,1))*22, 1, 1.7);
   return {
     hpMax:hp, hp, speed, turn:2.1*ch.turn, boost, stealth,
-    cannon:ca, secondary:se, drone:dr, allies:al, color:ch.color, l:l,
+    cannon:ca, secondary:se, drone:dr, carga:partOf('carga',l.carga), allies:al, color:ch.color, l:l,
     ficha:f          // la ingeniería viaja con el vehículo: la usan el HUD y las explicaciones
   };
 }
@@ -6213,6 +6241,12 @@ function deployDrone(){
     // el ave casi no da firma térmica: medio kilo de plástico con un motor diminuto
     addHeat(drone.mesh, 0.4, stats.drone.ave?0.8:(stats.drone.ala?3.0:2.2)); }
   drone.active=true; drone.hp=60; drone.kamikaze=false; drone.diving=false; drone.acro=false;
+  drone.muni=(stats.carga&&stats.carga.muni)||0;      // las granadas se rearman al recoger
+  {
+    const mB=stats.drone.kg||1, mC=(stats.carga&&stats.carga.kg)||0, twr=2.2*mB/(mB+mC);
+    if(twr<1.03) feed('⚠ SOBRECARGADO: empuje/peso '+twr.toFixed(2)+' — este aparato NO levanta esa carga. Míralo en el Garaje','bad');
+    else if(twr<1.45) feed('⚖ Cargado: empuje/peso '+twr.toFixed(2)+' — trepa lento y frena tarde');
+  }
   droneCam = stats.drone.view360?1:0;   // los de larga distancia arrancan en 360°
   drone.pos.copy(player.pos).add(new THREE.Vector3(0,8*M,0));
   drone.vel.set(0,0,0); drone.yaw=player.yaw; drone.pitch=0; drone.roll=0; drone.yawVel=0;
@@ -6271,7 +6305,8 @@ function ajustarGimbal(d){
 }
 function armKamikaze(){
   if(mode!=='drone'||!drone.active) return;
-  if(!stats.drone.armed){ feed('Este dron no lleva carga — usa Ataque, Fibra o Híbrido'); return; }
+  const cgK=stats.carga&&stats.carga.tipo==='kamikaze';
+  if(!stats.drone.armed && !cgK){ feed('Este dron no lleva carga — móntale una en el Garaje, o usa Ataque/Fibra'); return; }
   if(drone.diving) return;
   drone.kamikaze=true; drone.diving=true;   // un toque = pica en picado y detona al impactar
   feed('💥 ¡PICADO KAMIKAZE!','bad'); updateChips();
@@ -6297,9 +6332,21 @@ function toggleDrone(){
   updateChips();
 }
 function detonateDrone(){
-  spawnExplosion(drone.pos, 7, 0xffb030); spawnSmoke(drone.pos);     // metros: carga de un FPV
+  /* La potencia de la detonación ES la de la carga montada: una carga hueca
+     mata el blindado que toca y poco más (perfora, no expande); la antitanque
+     pesada arrasa el radio entero. Sin carga montada, la genérica de siempre. */
+  const cg=(stats.carga&&stats.carga.tipo==='kamikaze')?stats.carga:null;
+  const dmgK=cg?cg.dmg:130, radK=(cg?cg.splash:9)*M, visK=cg?cg.splash*2:7;
+  spawnExplosion(drone.pos, visK, 0xffb030); spawnSmoke(drone.pos);
   const fl=new THREE.PointLight(0xffa040,8,60); fl.position.copy(drone.pos); scene.add(fl); effects.push({mesh:fl,t:0,life:0.35,kind:'light'});
-  for(const e of enemies){ if(e.alive && e.pos.distanceTo(drone.pos)<9*M) damageEnemy(e, 130); }
+  /* ⚠ LO QUE LA ESPOLETA TOCÓ RECIBE EL IMPACTO ENTERO, aparte del radio. La
+     espoleta de proximidad dispara a 4 m, y la carga hueca solo daña a 3: sin
+     esta línea el kamikaze podía detonar SOBRE el blanco y no hacerle nada —
+     pasó en la prueba. Una carga que perfora mata lo que perfora; el radio es
+     para lo que estaba al lado. */
+  if(drone.contacto && drone.contacto.alive) damageEnemy(drone.contacto, dmgK);
+  drone.contacto=null;
+  for(const e of enemies){ if(e.alive && e.pos.distanceTo(drone.pos)<radK) damageEnemy(e, dmgK); }
   drone.active=false; drone.kamikaze=false; drone.diving=false; if(drone.mesh)drone.mesh.visible=false;
   feed('💥 Munición merodeadora: impacto','good');
   mode='tank'; updateChips(); $('btnUp').style.display='none'; $('btnDown').style.display='none';
@@ -6314,11 +6361,16 @@ function updateDrone(dt, inp){
     const gr=Math.round(drone.gimbal*180/Math.PI);
     if(gr!==_gimbalVisto){ _gimbalVisto=gr; updateChips(); }
   }
+  const mBase=stats.drone.kg||1.0, mCarga=(stats.carga&&stats.carga.kg)||0;
+  const mTot=mBase+mCarga, TWR=2.2*mBase/mTot;
   /* Batería: 20 MINUTOS de vuelo (decisión de Joan, 15-ago-2026; antes eran
      55 segundos). Subir sigue gastando 60 % más. Con esto la batería deja de
      ser el reloj de la misión y pasa a ser lo que es en un dron real: el
      límite de las salidas MUY largas. 1/(20*60) = 0.000833. */
-  drone.batt=clamp(drone.batt - dt*0.000833*(1+(inp.up?0.6:0)), 0, 1);
+  /* Sostener más peso pide más potencia SIEMPRE, no solo al subir: la teoría
+     del rotor dice potencia ∝ peso^1,5, y es la razón de que un dron cargado
+     vuelva con la batería a la mitad del tiempo. */
+  drone.batt=clamp(drone.batt - dt*0.000833*(1+(inp.up?0.6:0))*Math.pow(mTot/mBase,1.5), 0, 1);
   /* ⚠ LA BATERÍA SE HUNDE BAJO CARGA (sag). Antes era un escalón: 100% de
      potencia hasta el 4% y de golpe 30%. Una LiPo real entrega menos tensión
      cuanto más descargada está, y el piloto lo SIENTE mucho antes de aterrizar:
@@ -6345,6 +6397,14 @@ function updateDrone(dt, inp){
      que un rotor en el aire, y hasta ahora usaban las mismas. */
   const dom=stats.drone.domain;
   const NAVAL = (dom==='surface' || dom==='sub');
+  /* ⚠ LA RELACIÓN EMPUJE/PESO (TWR) ES LA FÍSICA DE LA CARGA. Los motores dan
+     el mismo empuje con o sin granadas colgando; lo que cambia es el peso que
+     ese empuje tiene que mover. Un FPV limpio anda sobrado (2,2 g); con 3 kg
+     de antitanque encima, el mismo empuje da 1,1 g — apenas se sostiene, sube
+     a duras penas y no puede inclinarse sin hundirse. TODO lo que sigue
+     (techo de inclinación, punta, trepada, gasto de batería, tasas de giro)
+     cuelga de este número, así que el peso no es un "modificador": es física. */
+
   const cy=Math.cos(drone.yaw), sy=Math.sin(drone.yaw);
   // "right" es la DERECHA DE LA PANTALLA (comprobado con la matriz de la cámara):
   // con el signo anterior, inclinar a la derecha desplazaba el dron a la izquierda.
@@ -6443,7 +6503,11 @@ function updateDrone(dt, inp){
        Números de la casa (los de un 5 pulgadas real): RATE 540 °/s con expo
        0,65 · empuje máx 2,2 g · motor lag τ≈55 ms · punta ~150 km/h. */
     if(!drone.quat){ drone.quat=new THREE.Quaternion().setFromEuler(_deu.set(0,drone.yaw,0,'YXZ')); }
-    const RATE=540*Math.PI/180, RYAW=280*Math.PI/180;
+    /* La inercia de giro crece con la masa colgada lejos del centro: con
+       carga, las tasas bajan. Raíz de la razón de masas: 3 kg encima de un
+       aparato de 1,1 baja de 540 a ~290 °/s, que es lo que se siente. */
+    const mk=Math.sqrt(mBase/mTot);
+    const RATE=540*Math.PI/180*mk, RYAW=280*Math.PI/180*mk;
     /* Expo: fino en el centro (precisión), entero en la punta (agilidad).
        r' = x³·e + x·(1−e) — la curva estándar de las emisoras. */
     const expo=(x,e)=>x*x*x*e + x*(1-e);
@@ -6460,7 +6524,7 @@ function updateDrone(dt, inp){
     /* El gas: por el eje del aparato y SOLO positivo, como los motores reales
        (no hay empuje negativo — por eso volar invertido exige picar).
        Subir = a fondo (2,2 g) · nada = colgado (1 g) · bajar = cortar. */
-    const thr=(inp.up?2.2 : inp.down?0.12 : 1.0)*9.81*M*power;
+    const thr=(inp.up?TWR : inp.down?0.12 : Math.min(1.0,TWR))*9.81*M*power;
     _up3.set(0,1,0).applyQuaternion(drone.quat);
     drone.vel.addScaledVector(_up3, thr*dt);
     drone.vel.y -= 9.81*M*dt;
@@ -6564,9 +6628,16 @@ function updateDrone(dt, inp){
        Y la inclinación pasa a ser lo que es en realidad: la CONSECUENCIA de
        acelerar, no la forma de pilotar. Por eso se calcula de la palanca y
        solo sirve para que el aparato se vea inclinado al arrancar y frenar. */
-    _dv3.set(0,0,0).addScaledVector(fwd, inPitch*VEL_DRON*power)
-                   .addScaledVector(right, inRoll*VEL_DRON*power);
-    _dv3.y = lift*VEL_SUBE*power;
+    const velEf=VEL_DRON*Math.sqrt(Math.tan(Math.min(TILT_MAX, Math.acos(Math.min(1,1/Math.max(TWR,1.01)))))/Math.tan(TILT_MAX));
+    const subeEf=VEL_SUBE*clamp((TWR-1)/1.2, 0.05, 1);   // trepar es lo primero que se pierde
+    _dv3.set(0,0,0).addScaledVector(fwd, inPitch*velEf*power)
+                   .addScaledVector(right, inRoll*velEf*power);
+    _dv3.y = lift*subeEf*power;
+    /* ⚠ SOBRECARGADO NO VUELA. Si el empuje no llega al peso (TWR<1), la
+       controladora no puede sostener la altura por mucho modo fácil que haya:
+       el aparato se hunde. Sin esto, montar 3 kg en un FPV «funcionaba»
+       flotando a media potencia — mentira cómoda que enseña mal. */
+    if(TWR<1.03) _dv3.y -= VEL_SUBE*(1.03-TWR)*6*power;
     const _vg=vientoAhora();
     _dv3.x += _vg.x*0.18; _dv3.z += _vg.z*0.18;   // el viento (racheado) se nota, no manda
     /* ⚠ ESTOS DOS NÚMEROS SON LA MASA DEL APARATO. damp(a,b,λ,dt) es un retardo
@@ -6587,7 +6658,11 @@ function updateDrone(dt, inp){
        m/s² = 0,70 g. Esto es lo que hace que la postura y el movimiento no
        puedan volver a contradecirse: la inclinación que se dibuja abajo sale de
        esta misma aceleración. */
-    const A_MAX=9.81*Math.tan(TILT_MAX)*M*dt;
+    /* Con carga no puedes inclinar 35°: inclinado, el empuje vertical es
+       T·cosθ, y si eso baja del peso te hundes. El techo real de inclinación
+       es acos(peso/empuje), y de él salen la aceleración y la punta. */
+    const tiltEf=Math.min(TILT_MAX, Math.acos(Math.min(1,1/Math.max(TWR,1.01))));
+    const A_MAX=9.81*Math.tan(tiltEf)*M*dt;
     const ddx=drone.vel.x-vx0, ddz=drone.vel.z-vz0, dd=Math.hypot(ddx,ddz);
     if(dd>A_MAX){ const k=A_MAX/dd; drone.vel.x=vx0+ddx*k; drone.vel.z=vz0+ddz*k; }
     /* ⚠ LA INCLINACIÓN ES LA CAUSA DE LA ACELERACIÓN, NO SU ADORNO. Un
@@ -6603,8 +6678,8 @@ function updateDrone(dt, inp){
     const aF=(drone.vel.x-vx0)/Math.max(dt,1e-4)*fwd.x + (drone.vel.z-vz0)/Math.max(dt,1e-4)*fwd.z;
     const aR=(drone.vel.x-vx0)/Math.max(dt,1e-4)*right.x + (drone.vel.z-vz0)/Math.max(dt,1e-4)*right.z;
     const G_U=9.81*M;                       // la gravedad, en unidades/s²
-    drone.pitch=damp(drone.pitch, clamp(Math.atan2(aF, G_U), -TILT_MAX, TILT_MAX), 5, dt);
-    drone.roll =damp(drone.roll,  clamp(Math.atan2(aR, G_U), -TILT_MAX, TILT_MAX) + drone.yawVel*0.16, 5, dt);
+    drone.pitch=damp(drone.pitch, clamp(Math.atan2(aF, G_U), -tiltEf, tiltEf), 5, dt);
+    drone.roll =damp(drone.roll,  clamp(Math.atan2(aR, G_U), -tiltEf, tiltEf) + drone.yawVel*0.16, 5, dt);
   }
   // picado kamikaze: se lanza adelante-abajo, acelerando (igual en los dos modos)
   if(drone.diving){ drone.vel.set(sy*8.4, drone.vel.y-8.8*dt, cy*8.4); }
@@ -6620,7 +6695,7 @@ function updateDrone(dt, inp){
   // impacto kamikaze
   if(drone.diving){
     let boom = drone.pos.y<=minY;
-    for(const e of enemies){ if(e.alive && e.pos.distanceTo(drone.pos)<4*M){ boom=true; break; } }
+    for(const e of enemies){ if(e.alive && e.pos.distanceTo(drone.pos)<4*M){ boom=true; drone.contacto=e; break; } }
     if(boom){ detonateDrone(); return; }
   }
   if(drone.pos.y<minY){ drone.pos.y=minY; if(drone.vel.y<0)drone.vel.y=0; }
@@ -6697,10 +6772,31 @@ function updateDrone(dt, inp){
   for(const rp of reconPoints){ if(!rp.done && Math.hypot(drone.pos.x-rp.pos.x, drone.pos.z-rp.pos.z)<45*M){ rp.done=true; reconDone++;
     if(rp.marker&&rp.marker.userData.ring)rp.marker.userData.ring.material.color.setHex(0x3ff0c0);
     feed('Blanco marcado ('+reconDone+')','good'); checkObjectives(); } }
-  // soltar carga / disparar
+  // soltar carga / disparar — QUÉ suelta lo decide la carga montada en el garaje
   if(inp.fire && drone.dropReload<=0){
-    drone.dropReload= stats.drone.armed?1.4:0.5;
-    if(stats.drone.armed){
+    const cg=stats.carga;
+    if(cg && cg.tipo==='granada'){
+      /* ⚠ LA GRANADA HEREDA TU VELOCIDAD. Es la física de verdad y es TODA la
+         dificultad del bombardeo desde dron: la granada no cae donde estás,
+         cae donde IBAS. Soltar en movimiento exige adelantar el tiro con el
+         propio vuelo, que es la habilidad que los pilotos de Mosul y Ucrania
+         tuvieron que inventar. Sin herencia de velocidad esto sería un juego
+         de puntería; con ella es pilotaje. */
+      drone.dropReload=1.6;
+      if((drone.muni|0)<=0){ feed('Sin granadas — recoge el dron (F) para rearmar','bad'); }
+      else {
+        drone.muni--;
+        _dv1.copy(drone.vel); _dv1.y-=0.6;                  // tu velocidad + un empujoncito abajo
+        const v0=Math.max(_dv1.length(), 0.8);
+        fireProjectile(drone.pos.clone(), _dv1.normalize(), {speed:v0, dmg:cg.dmg, splash:cg.splash,
+          from:'player', color:0x9db26a, r:0.25, life:9, grav:9.81*M});
+        feed('Granada fuera · quedan '+drone.muni);
+      }
+    } else if(cg && cg.tipo==='kamikaze'){
+      drone.dropReload=0.6;
+      feed('Carga de impacto: usa 💥 KAMIKAZE (el dron ES la munición)');
+    } else if(stats.drone.armed){
+      drone.dropReload=1.4;
       const from=drone.pos.clone(); fireProjectile(from, new THREE.Vector3(0,-1,0), {speed:40, dmg:stats.drone.dmg, splash:7, from:'player', color:0xff7a3a, r:0.5, life:4});
     } else {
       // designación láser: marca el enemigo bajo el dron; tus misiles lo seguirán aunque no lo veas
@@ -7391,7 +7487,11 @@ function updateHUD(dt){
   if(mode==='drone'){ $('boostBar').style.width=(drone.batt*100)+'%'; $('vitals').querySelector('.boost .lbl').textContent='BATERÍA DRON'; }
   else { $('boostBar').style.width=(player.boost*100)+'%';
     $('vitals').querySelector('.boost .lbl').textContent = stats.ficha.tipoTren==='combustion'?'GASÓLEO':'BATERÍA'; }
-  $('ammoTxt').textContent = mode==='drone'? (drone.kamikaze?'KMKZ':'DRON '+Math.round(drone.batt*100)+'%') : (player.reload>0?'⟳':'LISTO');
+  $('ammoTxt').textContent = mode==='drone'
+    ? (drone.kamikaze?'KMKZ'
+       : (stats.carga&&stats.carga.tipo==='granada') ? 'GRAN ×'+(drone.muni|0)+' · '+Math.round(drone.batt*100)+'%'
+       : 'DRON '+Math.round(drone.batt*100)+'%')
+    : (player.reload>0?'⟳':'LISTO');
   // telemetría
   /* ⚠ drone.vel y player.vel están en UNIDADES/s, y una unidad son 5,22 m.
      Faltaba el MPU: el marcador escribía 21 km/h mientras el dron volaba a 108,
@@ -7422,6 +7522,8 @@ function updateHUD(dt){
            + (drone.orbita?' · <b>◎ ÓRBITA</b>':'');
     }
   }
+  if(ESC.activa && ESC.aros.length && ESC.tIni!=null && ESC.tFin==null)
+    telem+=' · ⏱ <b>'+(missionTime-ESC.tIni).toFixed(1)+'</b> s';
   telem+=' · RUMBO <b>'+String(Math.round(((mode==='drone'?drone.yaw:player.yaw)*180/Math.PI+360))%360).padStart(3,'0')+'°</b>';
   /* MODO TÉCNICO. Los mismos datos que ve un operador de verdad delante de su
      estación: lo que entrega el tren, lo que consume ahora, lo que queda y a
@@ -8156,7 +8258,7 @@ function renderGarage(){
   /* D0 — el garaje abre POR el dron: es la máquina principal del juego. El
      orden del objeto CATALOG no se toca (lo usan otros); solo cambia el orden
      de pintado. */
-  const orden=['dron','aliados','chasis','tren','energia','canon','secundaria','blindaje'];
+  const orden=['dron','carga','aliados','chasis','tren','energia','canon','secundaria','blindaje'];
   for(const slot of orden.concat(Object.keys(CATALOG).filter(k=>!orden.includes(k)))){
     const cat=CATALOG[slot]; if(!cat) continue;
     const box=document.createElement('div'); box.className='part';
@@ -8844,15 +8946,30 @@ const ESCUELA=[
   { id:'e6', name:'6 · Ala fija: las puertas grandes', bioma:'canon', equipo:{dron:'largo'},
     desc:'El ala fija no puede parar ni retroceder: cuatro puertas GRANDES que se toman planeando el viraje con dos aros de antelación. Vigila la velocidad del aire — por debajo de la de pérdida el ala te suelta.',
     objs:[{type:'aros', n:4, grande:true, text:'Cruza las 4 puertas con el ala fija'}] },
+  /* ---- LAS TÁCTICAS: el peso y la carga, aplicados ---- */
+  { id:'t1', name:'7 · Granadas en altura', bioma:'desierto', tipo:'tactica',
+    equipo:{dron:'ataque', carga:'granada'},
+    desc:'Cuatro granadas, tres blindados. La granada HEREDA tu velocidad al soltarla: no cae donde estás, cae donde ibas. Suelta en pasada lenta y alta, y adelanta el tiro con el propio vuelo — como se aprendió en Mosul.',
+    enemies:[{t:'tank',n:3}],
+    objs:[{type:'destroy',tag:'tank',n:3,text:'Destruye los 3 blindados con granadas'}] },
+  { id:'t2', name:'8 · El kamikaze', bioma:'canon', tipo:'tactica', modo:'acro',
+    equipo:{dron:'fibra', carga:'rpg'},
+    desc:'ATACAR EL OBJETIVO: un jammer protegido por dos torretas. Tu dron ES la munición — carga hueca, en rate y por fibra (inmune a su jamming). Si fallas el picado, vuelve al blindado (F) y lanza otro aparato.',
+    enemies:[{t:'jammer',n:1},{t:'turret',n:2}],
+    objs:[{type:'destroy',tag:'jammer',n:1,text:'💥 Destruye el OBJETIVO (el jammer)'}] },
+  { id:'t3', name:'9 · El ladrillo con hélices', bioma:'desierto', tipo:'tactica',
+    equipo:{dron:'cargero', carga:'tm'},
+    desc:'El circuito de las puertas en el hexacóptero carguero con 3 kg de antitanque: empuje/peso 1,3. Trepa a duras penas, no puede inclinarse como un FPV y gasta batería al doble. SIENTE el peso — y luego decide si necesitas la carga grande.',
+    objs:[{type:'aros', n:3, text:'El circuito, cargado (⏱ compite contigo)'}] },
 ];
 
 /* El estado en vivo de la misión de escuela. Se limpia en resetPlay. */
-const ESC={ activa:false, aros:[], idx:0, tHover:0, hoverPos:null, hoverR:0, pad:null, padPos:null, aterrizado:false, grupo:null };
+const ESC={ activa:false, aros:[], idx:0, tHover:0, hoverPos:null, hoverR:0, pad:null, padPos:null, aterrizado:false, grupo:null, tIni:null, tFin:null };
 
 function limpiarEscuela(){
   if(ESC.grupo){ scene.remove(ESC.grupo); disposeGroup(ESC.grupo); }
   ESC.activa=false; ESC.aros=[]; ESC.idx=0; ESC.tHover=0; ESC.hoverPos=null;
-  ESC.pad=null; ESC.padPos=null; ESC.aterrizado=false; ESC.grupo=null;
+  ESC.pad=null; ESC.padPos=null; ESC.aterrizado=false; ESC.grupo=null; ESC.tIni=null; ESC.tFin=null;
 }
 
 function startEscuela(m){
@@ -8862,7 +8979,7 @@ function startEscuela(m){
   resetPlay();
   buildWorld(m.bioma||'desierto');
   if(m.wx){ WX=m.wx; applyEnvironment(); }
-  deployMission({ id:'esc_'+m.id, name:m.name, survive:0, enemies:[], objs:m.objs, escuela:true });
+  deployMission({ id:'esc_'+m.id, name:m.name, survive:0, enemies:m.enemies||[], objs:m.objs, escuela:true });
   crearEscenarioEscuela(m);
   /* La escuela va EN EL DRON desde el primer segundo, y si la lección es de
      rate, el modo se pone solo — pedirle a un alumno que pulse B antes de su
@@ -8939,7 +9056,19 @@ function updateEscuela(dt){
     const a=ESC.aros[ESC.idx];
     if(a && drone.pos.distanceTo(a.m.position) < a.r*1.25){
       a.hecho=true; ESC.idx++; marcarAro(); SONIDO.ui&&SONIDO.ui('ok');
-      feed('◎ Aro '+ESC.idx+' de '+ESC.aros.length+(ESC.idx<ESC.aros.length?'':' — ¡circuito completo!'),'good');
+      /* ⚠ EL CRONO ARRANCA EN EL PRIMER ARO, no al desplegar: lo que se mide
+         es el circuito, no cuánto tardaste en encontrar la primera puerta.
+         Es como cronometran las carreras FPV de verdad. */
+      if(ESC.idx===1){ ESC.tIni=missionTime; feed('⏱ Crono en marcha','good'); }
+      if(ESC.idx>=ESC.aros.length && ESC.tIni!=null){
+        const t=missionTime-ESC.tIni, mejor=store.cronos[mission.id];
+        ESC.tFin=t;
+        if(mejor==null || t<mejor){ store.cronos[mission.id]=+t.toFixed(2); save();
+          feed('⏱ '+t.toFixed(2)+' s — ¡RÉCORD'+(mejor!=null?' (antes '+mejor.toFixed(2)+')':'')+'!','good'); }
+        else feed('⏱ '+t.toFixed(2)+' s · récord '+mejor.toFixed(2),'good');
+      } else if(ESC.idx<ESC.aros.length){
+        feed('◎ Aro '+ESC.idx+' de '+ESC.aros.length,'good');
+      }
       checkObjectives();
     }
   }
@@ -8962,8 +9091,10 @@ function renderEscuela(){
     const done=!!store.prog['esc_'+m.id];
     const el=document.createElement('button'); el.className='mcard';
     el.style.borderLeftColor = done ? 'var(--verde)' : 'var(--ambar)';
-    el.innerHTML='<div class="mtop"><span class="biome" style="color:var(--ambar)">'+(m.modo==='acro'?'ACRO REAL':'PILOTAJE')+'</span><span class="diff">'+(done?'✔':'🎓')+'</span></div>'+
-      '<h4>'+m.name+'</h4><p>'+m.desc+'</p>';
+    const rec=store.cronos['esc_'+m.id];
+    el.innerHTML='<div class="mtop"><span class="biome" style="color:var(--ambar)">'+(m.tipo==='tactica'?'⚔️ ATAQUE':m.modo==='acro'?'ACRO REAL':'PILOTAJE')+'</span><span class="diff">'+(done?'✔':m.tipo==='tactica'?'💥':'🎓')+'</span></div>'+
+      '<h4>'+m.name+'</h4><p>'+m.desc+'</p>'+
+      (rec!=null?'<div class="star" style="color:var(--ambar)">⏱ Récord: '+rec.toFixed(2)+' s — bájalo</div>':'');
     el.onclick=()=>startEscuela(m);
     w.appendChild(el);
   });
@@ -9609,6 +9740,9 @@ if(location.search.indexOf('dbg')>=0) window.DRONES={
     pos:allies.map(a=>({t:a.tierra?'perro':'dron', vivo:a.alive, x:+a.pos.x.toFixed(1), y:+a.pos.y.toFixed(1), z:+a.pos.z.toFixed(1), estado:a.ia&&a.ia.estado,
       mesh:{visible:a.mesh.visible, enEscena:!!a.mesh.parent, my:+a.mesh.position.y.toFixed(2), escala:+a.mesh.scale.x.toFixed(2)}}))}),
   droneInfo:()=>({type:stats&&stats.drone.id, fiber:!!(stats&&stats.drone.fiber), maxAlt:stats&&stats.drone.maxAlt, domain:stats&&stats.drone.domain, cam:DRONECAM_NAMES[droneCam], y:+drone.pos.y.toFixed(1),
+    carga:stats&&stats.carga&&stats.carga.id, masa_kg:+(((stats&&stats.drone.kg)||1)+((stats&&stats.carga&&stats.carga.kg)||0)).toFixed(1),
+    twr:+(2.2*((stats&&stats.drone.kg)||1)/(((stats&&stats.drone.kg)||1)+((stats&&stats.carga&&stats.carga.kg)||0))).toFixed(2),
+    muni:drone.muni|0,
     // hp y activo: el dron ya se puede derribar, y sin estos dos no hay forma de comprobarlo
     hp:+(drone.hp||0).toFixed(1), activo:!!drone.active,
     gimbal:Math.round((drone.gimbal||0)*180/Math.PI), gimbalManual:!!drone.gimbalManual}),

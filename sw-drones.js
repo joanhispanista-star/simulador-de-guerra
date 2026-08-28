@@ -11,7 +11,7 @@
    descargan del lugar que elijas — sin conexión no hay Bogotá. Las misiones
    normales, esas sí corren enteras.
 */
-const VERSION = 'v0_39';
+const VERSION = 'v0_40';
 const CACHE   = 'drones-' + VERSION;
 
 /* El cascarón: todo lo que hace falta para ARRANCAR. Se guarda al instalar,
