@@ -1668,6 +1668,9 @@ const SONIDO=(()=>{
       else if(clase==='logro'){ [523,659,784,1047].forEach((f,i)=>tono('triangle',f,f,0.16,0.15,i*0.10)); }
       else if(clase==='dano'){ tono('square',150,60,0.16,0.22); ruido(0.2,0.18,800,200,'lowpass'); }
       else if(clase==='bipBat'){ tono('square',980,980,0.06,0.14); tono('square',980,980,0.06,0.14,0.16); }
+      else if(clase==='splash'){ ruido(0.4,0.35,900,300,'lowpass'); tono('sine',180,60,0.25,0.2); }
+      else if(clase==='splashOut'){ ruido(0.25,0.3,2400,800,'bandpass'); }
+      else if(clase==='stall'){ tono('square',420,380,0.30,0.22); tono('square',420,380,0.30,0.22,0.45); }
       else if(clase==='bipUrgente'){ tono('square',1320,1320,0.07,0.18); }
       else                  { tono('sine',520,520,0.05,0.10); }
     },
@@ -1910,21 +1913,46 @@ function actualizarSombra(){
   sun.position.copy(SOL_BASE).add(sun.target.position);
 }
 function renderScene(){ if(!RENDER_ON) return;
+  if(skyMesh) skyMesh.material.uniforms.uT.value=missionTime;
   actualizarSombra();
   if(useComposer && composer) composer.render(); else if(renderer&&scene) renderer.render(scene, camera); }
 
 /* ---- Cielo con degradado + disco solar (shader) ---- */
+/* ⚠ EL CIELO CUENTA EL CLIMA. Antes era un degradado con sol: llovía a
+   cántaros bajo un cielo azul limpio, y de noche no había ni una estrella.
+   Ahora lleva NUBES por ruido fbm (4 octavas, proyección cilíndrica) cuya
+   cobertura la pone el clima, y ESTRELLAS de noche por hash, con la línea del
+   horizonte que un piloto nocturno usa como referencia de actitud. Todo en la
+   GPU, sobre los píxeles del cielo: costo cero para la lógica. */
 function initSky(){
   const mat=new THREE.ShaderMaterial({ side:THREE.BackSide, depthWrite:false, fog:false,
     uniforms:{ top:{value:new THREE.Color(0x2b6cb0)}, bot:{value:new THREE.Color(0xcfe0ef)},
-      sunDir:{value:new THREE.Vector3(0.5,0.6,0.4).normalize()}, sunCol:{value:new THREE.Color(0xfff2d0)} },
+      sunDir:{value:new THREE.Vector3(0.5,0.6,0.4).normalize()}, sunCol:{value:new THREE.Color(0xfff2d0)},
+      uT:{value:0}, uNubes:{value:0.28}, uNubeCol:{value:new THREE.Color(0xffffff)}, uNoche:{value:0} },
     vertexShader:'varying vec3 vD; void main(){ vD=position; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
     fragmentShader:['varying vec3 vD;','uniform vec3 top;','uniform vec3 bot;','uniform vec3 sunDir;','uniform vec3 sunCol;',
+      'uniform float uT;','uniform float uNubes;','uniform vec3 uNubeCol;','uniform float uNoche;',
+      'float hash(vec2 p){ return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }',
+      'float ruido(vec2 p){ vec2 i=floor(p); vec2 f=fract(p); f=f*f*(3.0-2.0*f);',
+      '  return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x),f.y); }',
+      'float fbm(vec2 p){ float v=0.0; float a=0.5;',
+      '  for(int k=0;k<4;k++){ v+=a*ruido(p); p*=2.03; a*=0.5; } return v; }',
       'void main(){ vec3 d=normalize(vD); float t=clamp(d.y*0.5+0.5,0.0,1.0);',
       ' vec3 c=mix(bot,top,pow(t,0.85));',
       ' float s=max(dot(d,normalize(sunDir)),0.0);',
       ' c+=sunCol*pow(s,900.0)*3.0;',            // disco solar
       ' c+=sunCol*pow(s,7.0)*0.20;',             // halo
+      // ESTRELLAS: solo de noche, solo sobre el horizonte, y titilan apenas
+      ' if(uNoche>0.5 && d.y>0.02){ vec2 sp=d.xz/(d.y+0.25)*38.0;',
+      '   float st=step(0.9975, hash(floor(sp)));',
+      '   float tw=0.75+0.25*sin(uT*2.7+hash(floor(sp)+7.0)*40.0);',
+      '   c+=vec3(0.9,0.93,1.0)*st*tw*0.85*clamp(d.y*5.0,0.0,1.0); }',
+      // NUBES: fbm proyectado, cobertura del clima, tenidas por el sol
+      ' if(d.y>0.01){ vec2 np=d.xz/(d.y+0.12)*1.6 + vec2(uT*0.005, uT*0.002);',
+      '   float nn=fbm(np);',
+      '   float cl=smoothstep(0.66-uNubes*0.42, 0.82-uNubes*0.42, nn)*clamp(d.y*4.0,0.0,1.0);',
+      '   vec3 colNube=mix(uNubeCol, uNubeCol*0.55+sunCol*0.45, pow(s,3.0)*0.8);',
+      '   c=mix(c, colNube, cl*0.85*(1.0-uNoche*0.55)); }',
       ' c=mix(c,bot,pow(1.0-t,3.0)*0.5);',       // bruma en el horizonte
       ' gl_FragColor=vec4(c,1.0); }'].join('\n') });
   skyMesh=new THREE.Mesh(new THREE.SphereGeometry(2000,32,16), mat);
@@ -1946,7 +1974,7 @@ function setSky(topHex, botHex, sunHex){
    rehacer normales cuesta ~0,6 ms, y SOLO corre cuando el agua es visible. */
 function initWater(){
   const mat=new THREE.MeshStandardMaterial({ color:0x2e5a78, roughness:0.22, metalness:0.35,
-    transparent:true, opacity:0.88 });
+    transparent:true, opacity:0.88, side:THREE.DoubleSide });   // desde abajo tambien existe
   water=new THREE.Mesh(new THREE.PlaneGeometry(WORLD*1.5, WORLD*1.5, 40, 40), mat);
   water.rotation.x=-Math.PI/2; water.visible=false; water.renderOrder=1; scene.add(water);
 }
@@ -1996,11 +2024,11 @@ const TODS={
   noche:{ ic:'🌙', name:'Noche', sunPos:new THREE.Vector3(-130,120,90), sunCol:0x9fb8e0, sunInt:0.5, hemiInt:0.2, hemiTop:0x243352, exposure:1.4, skyTop:0x05070f, skyBot:0x0e1a30, fogCol:0x0a1220, fogMul:1.55 },
 };
 const WEATHER={
-  despejado:{ ic:'☀️', name:'Despejado', sunMul:1, hemiMul:1, fogMul:1, fogCol:null, vis:1, part:null, wind:0 },
-  niebla:{ ic:'🌫️', name:'Niebla', sunMul:0.62, hemiMul:1.15, fogMul:3.6, fogCol:0x9aa6b2, vis:0.40, part:null, wind:3 },
-  lluvia:{ ic:'🌧️', name:'Lluvia', sunMul:0.5, hemiMul:1.1, fogMul:2.4, fogCol:0x8a94a0, vis:0.5, part:'rain', wind:9 },
-  nieve:{ ic:'❄️', name:'Nieve', sunMul:0.82, hemiMul:1.25, fogMul:2.0, fogCol:0xdfe8f2, vis:0.6, part:'snow', wind:4 },
-  polvo:{ ic:'🟫', name:'Polvo', sunMul:0.8, hemiMul:1.0, fogMul:2.3, fogCol:0xc7a678, vis:0.62, part:'dust', wind:7 },
+  despejado:{ ic:'☀️', name:'Despejado', sunMul:1, hemiMul:1, fogMul:1, fogCol:null, vis:1, part:null, wind:0, nubes:0.28 },
+  niebla:{ ic:'🌫️', name:'Niebla', sunMul:0.62, hemiMul:1.15, fogMul:3.6, fogCol:0x9aa6b2, vis:0.40, part:null, wind:3, nubes:0.0 },
+  lluvia:{ ic:'🌧️', name:'Lluvia', sunMul:0.5, hemiMul:1.1, fogMul:2.4, fogCol:0x8a94a0, vis:0.5, part:'rain', wind:9, nubes:0.85, nubeCol:0x8a9098 },
+  nieve:{ ic:'❄️', name:'Nieve', sunMul:0.82, hemiMul:1.25, fogMul:2.0, fogCol:0xdfe8f2, vis:0.6, part:'snow', wind:4, nubes:0.75, nubeCol:0xd8dde4 },
+  polvo:{ ic:'🟫', name:'Polvo', sunMul:0.8, hemiMul:1.0, fogMul:2.3, fogCol:0xc7a678, vis:0.62, part:'dust', wind:7, nubes:0.35, nubeCol:0xd8c0a0 },
 };
 function applyEnvironment(){
   if(!sun||!renderer) return;
@@ -2015,6 +2043,21 @@ function applyEnvironment(){
   setSky((t.skyTop!=null)?t.skyTop:worldBase.skyTop, (t.skyBot!=null)?t.skyBot:worldBase.fog, t.sunCol);
   const fogCol=(w.fogCol!=null)?w.fogCol:((t.fogCol!=null)?t.fogCol:worldBase.fog);
   scene.fog=new THREE.FogExp2(fogCol, worldBase.fogN*(t.fogMul||1)*(w.fogMul||1));
+  /* el CIELO cuenta el clima: cobertura de nubes por WEATHER, gris de nube en
+     lluvia/nieve, y el interruptor de noche para las estrellas */
+  if(skyMesh){ const u=skyMesh.material.uniforms;
+    u.uNubes.value = (w.nubes!=null)?w.nubes:0.28;
+    u.uNubeCol.value.setHex((w.nubeCol!=null)?w.nubeCol:0xffffff);
+    u.uNoche.value = NIGHT?1:0;
+  }
+  /* ⚠ LA LLUVIA MOJA. El 80%% de «está lloviendo» en pantalla es el suelo
+     brillante: la rugosidad de asfalto, terreno y edificios baja cuando
+     llueve y vuelve cuando escampa. roughness es un uniform: cambiarlo no
+     recompila nada y solo se escribe al cambiar el clima. */
+  const mojado=(WX==='lluvia');
+  if(typeof MAT_ASFALTO!=='undefined' && MAT_ASFALTO) MAT_ASFALTO.roughness = mojado?0.35:0.93;
+  if(terrainMesh && terrainMesh.material) terrainMesh.material.roughness = mojado?0.6:0.95;
+  if(typeof MAT_EDIFICIOS!=='undefined' && MAT_EDIFICIOS) MAT_EDIFICIOS.roughness = mojado?0.55:0.9;
   NIGHT=(TOD==='noche'); visRange=w.vis;
   // viento del clima (empuja al dron y arrastra las partículas)
   /* WEATHER.wind va en METROS POR SEGUNDO (lluvia 9, polvo 7, nieve 4, niebla 3
@@ -2100,7 +2143,7 @@ function clearTerrain(){
   if(farMesh){ scene.remove(farMesh); farMesh.geometry.dispose();
     if(farMesh.material.map)farMesh.material.map.dispose(); farMesh.material.dispose(); farMesh=null; }
   if(propGroup){ scene.remove(propGroup); disposeGroup(propGroup); propGroup=null; }
-  colliders=[]; MAT_EDIFICIOS=null;
+  colliders=[]; MAT_EDIFICIOS=null; MAT_ASFALTO=null;
   /* La rejilla de obstáculos se dimensiona con WORLD y se indexa con HALF, pero
      su caché solo miraba CUÁNTOS obstáculos hay. Al cambiar de tamaño de campo
      con el mismo número de edificios, seguía usando la rejilla del mundo viejo:
@@ -2118,7 +2161,10 @@ function makeGroundDetailTex(){
   for(let i=0;i<2800;i++){ const v=205+Math.floor(Math.random()*50);
     g.fillStyle='rgba('+v+','+v+','+v+','+(0.05+Math.random()*0.13)+')';
     const s=1+Math.random()*2.4; g.fillRect(Math.random()*128, Math.random()*128, s, s); }
-  const t=new THREE.CanvasTexture(c); t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(40,40); return t;
+  /* ⚠ 240, no 40: con 40 cada baldosa cubría 60 m y el suelo de cerca era
+     papilla — y el suelo ES la pantalla de un piloto de UGV a 3-7 m de altura.
+     A 240 la baldosa cae cada 10 m (7,8 cm/píxel): hay grano bajo las orugas. */
+  const t=new THREE.CanvasTexture(c); t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(240,240); return t;
 }
 function buildWorld(bkey){
   REAL=null;
@@ -2157,7 +2203,8 @@ function buildWorld(bkey){
     col[i*3]=cc.r*v; col[i*3+1]=cc.g*v; col[i*3+2]=cc.b*v;
   }
   geo.setAttribute('color', new THREE.BufferAttribute(col,3));
-  const mat=new THREE.MeshStandardMaterial({ vertexColors:true, roughness:0.96, metalness:0, map:makeGroundDetailTex() });
+  const mat=new THREE.MeshStandardMaterial({ vertexColors:true, roughness:0.96, metalness:0, map:makeGroundDetailTex(),
+    bumpMap:makeGroundDetailTex(), bumpScale:0.35 });   // el relieve fino que el terreno real ya tenía
   terrainMesh=new THREE.Mesh(geo, mat);
   terrainMesh.receiveShadow=true;
   scene.add(terrainMesh);
@@ -2789,7 +2836,7 @@ async function getBGU(){ if(BGU!==null) return BGU;
    Antes los edificios eran cajas grises lisas: esto es lo que hace que
    una ciudad parezca una ciudad.
    --------------------------------------------------------------------- */
-let TEX_FACHADA=null, TEX_LUCES=null, MAT_EDIFICIOS=null;
+let TEX_FACHADA=null, TEX_LUCES=null, MAT_EDIFICIOS=null, MAT_ASFALTO=null;
 function hacerTexturasFachada(){
   if(TEX_FACHADA) return;
   const W=128, H=128, cols=4, filas=2;      // 1 tramo de muro × 1 piso (se repite)
@@ -3630,6 +3677,7 @@ async function buildOSM(tok){
       roughness:0.95, metalness:0, polygonOffset:true, polygonOffsetFactor:-2, polygonOffsetUnits:-2 });
     const matAsf=new THREE.MeshStandardMaterial({ map:TEX_ASFALTO, color:0x3a3e44,
       roughness:0.93, metalness:0.02, polygonOffset:true, polygonOffsetFactor:-3, polygonOffsetUnits:-3 });
+    MAT_ASFALTO=matAsf;   // para mojarlo cuando llueve
     const matLin=new THREE.MeshStandardMaterial({ map:TEX_LINEA, color:0xffffff,
       roughness:0.8, metalness:0, alphaTest:0.5,
       polygonOffset:true, polygonOffsetFactor:-4, polygonOffsetUnits:-4 });
@@ -5463,7 +5511,16 @@ function resolveColliders(pos, r){
     const list=G.buckets[zz*n+xx]; if(!list) continue;
     for(const i of list){ const c=colliders[i];
       const ddx=pos.x-c.x, ddz=pos.z-c.z, d=Math.hypot(ddx,ddz), min=c.r+r;
-      if(d<min && d>0.001){ const push=(min-d); pos.x+=ddx/d*push; pos.z+=ddz/d*push; }
+      if(d<min && d>0.001){ const push=(min-d); pos.x+=ddx/d*push; pos.z+=ddz/d*push;
+        /* ⚠ CHOCAR CUESTA. Antes el colisionador empujaba EN SILENCIO: dabas
+           contra un edificio a fondo y no perdías ni un km/h. Ahora un empuje
+           grande (impacto de frente, no un roce) descuenta velocidad, sacude
+           la cámara y suena — y el alumno aprende a no arar las esquinas. */
+        if(pos===player.pos && push>0.05 && Math.abs(player.speed)>1.2){
+          player.speed*=0.35; recoilT=Math.max(recoilT,0.1);
+          if((player._golpeT||0)<missionTime-0.5){ player._golpeT=missionTime;
+            SONIDO.ui('dano'); feed('⚠ Impacto contra obstáculo','bad'); }
+        } }
     }
   }
 }
@@ -6288,6 +6345,24 @@ function readInput(dt){
   // ENLACE débil/perdido: degrada el control (autoridad, estática, deriva)
   inp.moveF*=linkAuth; inp.moveT*=linkAuth;
   inp.dr_pitch*=linkAuth; inp.dr_yaw*=linkAuth; inp.dr_roll*=linkAuth;
+  /* ⚠ FAILSAFE = VOLVER A CASA. Antes, perder el enlace te dejaba un 12%%
+     de autoridad — que es enseñar LO CONTRARIO de la realidad: toda
+     controladora seria trae RTH, y el alumno debe aprender a confiar en él.
+     Sin enlace (y sin fibra), el aparato ignora tus palancas, se orienta al
+     puesto de mando y navega solo; al recuperar señal, te lo devuelve. */
+  if(mode==='drone' && drone.active && linkLost && !stats.drone.fiber && !drone.diving){
+    const dx=cmdPost.x-drone.pos.x, dz=cmdPost.z-drone.pos.z, dist=Math.hypot(dx,dz);
+    const rumbo=Math.atan2(dx,dz);
+    let err=rumbo-drone.yaw; while(err>Math.PI)err-=TAU; while(err<-Math.PI)err+=TAU;
+    /* signo NEGATIVO: en el modo fácil el yaw integra `drone.yaw -= yawVel`
+       (la trampa de signos de la casa) — dr_yaw positivo gira a la DERECHA de
+       pantalla pero DECRECE el ángulo. Comprobado: con +err el failsafe volaba
+       alejándose del puesto. */
+    inp.dr_yaw=clamp(-err*1.4,-1,1); inp.dr_pitch=dist>12?0.6:0; inp.dr_roll=0;
+    inp.up=false; inp.down=false;
+    if((drone._rthT||0)<missionTime-3){ drone._rthT=missionTime;
+      feed('📡 FAILSAFE: sin enlace — el dron vuelve solo a casa','bad'); }
+  }
   if(signal<0.42){ const j=(1-signal)*0.03; inp.dyaw+=(Math.random()-0.5)*j; inp.dpitch+=(Math.random()-0.5)*j*0.6; }
   if(linkLost){ inp.fire=false; inp.sec=false; }
   // ÓPTICA dañada: puntería temblorosa
@@ -6349,7 +6424,8 @@ function updatePlayer(dt, inp){
     const fX=Math.sin(player.yaw), fZ=Math.cos(player.yaw), rX=Math.cos(player.yaw), rZ=-Math.sin(player.yaw);
     const n=terrainNormal(player.pos.x,player.pos.z);
     const grad=-(n.x*fX+n.z*fZ)/Math.max(0.3,n.y);          // + = cuesta arriba
-    const tract=clamp(1-grad*1.1, 0.28, 1.2);
+    /* mojado, las orugas patinan antes: 25%% menos de agarre en lluvia */
+    const tract=clamp(1-grad*1.1, 0.28, 1.2)*(WX==='lluvia'?0.75:1);
     // INERCIA: la velocidad no cambia de golpe (acelera/frena progresivo)
     const maxSp=stats.speed*(inp.boost&&player.boost>0.05?stats.boost:1)*mob;
     const targetSp=inp.moveF*maxSp*tract;
@@ -6408,8 +6484,16 @@ function updatePlayer(dt, inp){
     player.mesh.quaternion.slerp(_hullQ, clamp(12*dt,0,1));
     // polvo bajo las orugas al rodar en seco
     player.dustT-=dt;
-    if(Math.abs(player.speed)>3 && WX!=='niebla' && !water.visible && player.dustT<=0){ player.dustT=0.09;
-      spawnDust(player.pos.x - fX*1.6 + (Math.random()-0.5)*2, groundY+0.3, player.pos.z - fZ*1.6 + (Math.random()-0.5)*2); }
+    /* ⚠ EN METROS Y CON UMBRAL REAL. El polvo nacía a 8,3 m DETRÁS del
+       vehículo y a 1,6 m de altura (faltaban los ×M del reescalado) y pedía
+       3 u/s = 56 km/h — la mayoría de los UGV no llegan nunca. Ahora nace en
+       la popa de las orugas, pegado al suelo, desde 9 km/h, también al girar
+       sobre el eje (el giro neutral levanta polvo de verdad), y NO cuando el
+       suelo está mojado por lluvia. */
+    if(WX!=='niebla' && WX!=='lluvia' && !water.visible && player.dustT<=0
+       && (Math.abs(player.speed)>0.5 || Math.abs(player.yawRate)>0.5)){
+      player.dustT=0.09;
+      spawnDust(player.pos.x - fX*1.6*M*4 + (Math.random()-0.5)*0.5, groundY+0.15*M*4, player.pos.z - fZ*1.6*M*4 + (Math.random()-0.5)*0.5); }
     // torreta apunta según la vista, independiente de la inclinación del casco
     const ud=player.mesh.userData;
     ud.turret.rotation.set(0, player.view.yaw-player.yaw, 0);
@@ -6803,6 +6887,11 @@ function updateDrone(dt, inp){
     /* Viraje coordinado: ω = g·tan(φ)/V. Si el aparato entra en pérdida ya no
        hay sustentación que inclinar, así que tampoco hay viraje. */
     const enPerdida=drone.vAire<VP;
+    /* LA BOCINA DE STALL: el aviso de pérdida de todo avión real. Dos
+       graznidos por segundo mientras el ala no sustenta — el texto del HUD
+       no basta cuando los ojos están en el suelo que se acerca. */
+    if(enPerdida){ drone._stallT=(drone._stallT||0)-dt;
+      if(drone._stallT<=0){ SONIDO.ui('stall'); drone._stallT=1.0; } }
     const sust=enPerdida?0.25:1;
     drone.yawVel=(9.81*M)*Math.tan(drone.roll)/Math.max(drone.vAire,VP*0.6)*sust;
     drone.yaw-=drone.yawVel*dt;
@@ -7066,6 +7155,9 @@ function updateDrone(dt, inp){
   if(drone.diving){ drone.vel.set(sy*8.4, drone.vel.y-8.8*dt, cy*8.4); }
   drone.pos.addScaledVector(drone.vel, dt);
   // límites y suelo
+  const cercaBorde = Math.max(Math.abs(drone.pos.x),Math.abs(drone.pos.z)) > HALF-14;
+  if(cercaBorde && (drone._geoT||0)<missionTime-2.5){ drone._geoT=missionTime;
+    SONIDO.ui('bipBat'); feed('⚠ GEOVALLA: límite del campo','bad'); }
   drone.pos.x=clamp(drone.pos.x,-HALF+4,HALF-4); drone.pos.z=clamp(drone.pos.z,-HALF+4,HALF-4);
   const gy=terrainHeight(drone.pos.x,drone.pos.z);
   const wl = (water&&water.visible)? water.position.y : -9999;
@@ -7157,7 +7249,14 @@ function updateDrone(dt, inp){
   } else {
     for(const r of ud.rotors) r.rotation.y+=dt*(32+52*gasR);
   }
-  SONIDO.rotores(true, gasR, oirDesdeCamara(drone.pos, 60));
+  if(NAVAL){
+    /* un casco no zumba: PETARDEA. Se reusa el motor diesel del UGV con el
+       regimen del gas; sumergido, el agua lo ahoga (gana el filtro grave). */
+    SONIDO.rotores(false, 0, 0);
+    SONIDO.motor(true, gasR, oirDesdeCamara(drone.pos, 50)*(dom==='sub'?0.5:1));
+  } else {
+    SONIDO.rotores(true, gasR, oirDesdeCamara(drone.pos, 60));
+  }
   // reconocimiento: marca puntos cercanos
   drone.dropReload-=dt;
   for(const rp of reconPoints){ if(!rp.done && Math.hypot(drone.pos.x-rp.pos.x, drone.pos.z-rp.pos.z)<45*M){ rp.done=true; reconDone++;
@@ -7308,7 +7407,22 @@ function updateCamera(dt){
   }
 }
 function updateUnderwater(){
-  $('underFx').classList.toggle('on', !!(water && water.visible && camera.position.y < water.position.y-0.4));
+  {
+    const sumergido=!!(water && water.visible && camera.position.y < water.position.y-0.4);
+    $('underFx').classList.toggle('on', sumergido);
+    /* ⚠ BAJO EL AGUA LA NIEBLA ES AGUA. El tinte del DOM no basta: se veía
+       el mapa entero nítido a un kilómetro, como en una piscina infinita. El
+       agua real absorbe la luz en decenas de metros: al sumergir la cámara,
+       la niebla de la escena se vuelve azul densa (~35 m de visibilidad) y al
+       salir vuelve el clima. Es UNA reasignación de fog por transición. */
+    if(sumergido!==camera._bajoAgua){
+      camera._bajoAgua=sumergido;
+      if(sumergido){ camera._fogAntes=scene.fog; scene.fog=new THREE.FogExp2(0x0a3548, 0.16); }
+      else if(camera._fogAntes){ scene.fog=camera._fogAntes; camera._fogAntes=null; applyEnvironment(); }
+      /* y el oído se sumerge con la cámara: chapoteo al cruzar */
+      SONIDO.ui(sumergido?'splash':'splashOut');
+    }
+  }
 }
 function cycleCam(){
   if(mode==='drone'){ droneCam=(droneCam+1)%3; feed('Cámara dron · '+DRONECAM_NAMES[droneCam]); }
@@ -8037,7 +8151,10 @@ function sonidoAmbiente(dt){
   const alto = mode==='drone' && drone.active
     ? clamp((drone.pos.y-terrainHeight(drone.pos.x,drone.pos.z))/90, 0, 1) : 0;
   const clima = (WX==='niebla'||WX==='polvo') ? 0.45 : (WX==='lluvia'||WX==='nieve') ? 0.6 : 0.12;
-  SONIDO.viento(true, clamp(clima + alto*0.55, 0, 1));
+  /* el viento del oído también es AERODINÁMICO: a 140 km/h el aire ruge
+     aunque el día esté en calma. Es la mitad de la sensación de velocidad. */
+  const marchaAire=(mode==='drone'&&drone.active)?clamp(drone.vel.length()/(VEL_DRON*1.4),0,1)*0.6:0;
+  SONIDO.viento(true, clamp(clima + alto*0.55 + marchaAire, 0, 1));
 }
 function simulate(dt){
   const F=(n)=>{ if(window.__trace) window.__fase=n; };   // marcador de diagnóstico (inactivo por defecto)

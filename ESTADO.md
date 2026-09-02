@@ -771,6 +771,56 @@ Joan: girar la cabeza hacia adelante casi no se lee. Tres causas, tres arreglos:
 
 La diana también pinta el cabeceo con ganancia doble: el punto BAJA visible.
 
+
+## 28-ago (tandas 5-6): la gran pasada de realismo — 47 agentes auditando
+
+Joan pidió que gráficos y experiencia se sientan reales para FORMAR pilotos de
+los tres dominios, con presupuesto abierto. Una auditoría de 47 agentes en 6
+lentes (imagen, fpv, tierra, mar, sonido, operador) dejó 29 hallazgos
+verificados; se implementaron los 20 de mejor realismo-por-línea:
+
+**Imagen**: NUBES en el shader del cielo (fbm 4 octavas, cobertura por clima:
+llovía bajo cielo azul limpio), ESTRELLAS de noche (hash, titilan), el suelo
+de biomas con grano real (repeat 240 en vez de 40: la baldosa pasó de 60 m a
+10 m — el suelo ES la pantalla del piloto de UGV) + bumpMap, y LA LLUVIA MOJA
+(roughness dinámica: asfalto 0,93→0,35, terreno, edificios).
+
+**FPV**: OSD de controladora (voltaje 6S con sag real, RSSI, crono, ANGL/ACRO,
+avisos parpadeando), vídeo que ROMPE en franjas al caer la señal, pitidos de
+batería (30%/15%), grano; `forzarSenal()` y `osdInfo()` para probarlo.
+
+**Tierra**: el polvo en metros (nacía a 8,3 m detrás y 1,6 de alto — faltaban
+los ×M — y pedía 56 km/h; ahora desde 9 km/h y el giro neutral levanta),
+CHOCAR FRENA (speed×0,35 + sacudida + sonido — antes el colisionador empujaba
+en silencio), lluvia resta 25% de agarre y apaga el polvo, cámara de
+conducción con temblor.
+
+**Mar**: OLAS con normales ANALÍTICAS (la ola es función conocida: su normal
+es su derivada — computeVertexNormals costaba 4-5 ms, así 0,6), el casco
+flota sobre LA ola visible (proa/popa muestreadas), ESTELA de espuma + SPRAY,
+agua DoubleSide, y BAJO EL AGUA LA NIEBLA ES AGUA (FogExp2 azul denso ~35 m
+al sumergir la cámara; antes se veía el mapa entero nítido) + chapoteo.
+
+**Sonido**: viento AERODINÁMICO (sube con la velocidad del dron), bocina de
+STALL del ala fija (2 graznidos/s), la lancha y el submarino suenan a MOTOR
+(no a cuadricóptero; sumergido se ahoga), chapoteo al cruzar la superficie.
+
+**Operador**: FAILSAFE = RTH (sin enlace y sin fibra, el dron ignora palancas
+y vuelve solo a casa — verificado: 209→151 m en 10 s; antes quedaba un 12% de
+autoridad, que enseña lo contrario de la realidad) y GEOVALLA que avisa con
+bip antes del límite.
+
+### Trampas nuevas
+- El RTH giraba AL REVÉS la primera vez: en modo fácil `drone.yaw -= yawVel`
+  (la trampa de signos de la casa) — dr_yaw positivo DECRECE el ángulo. Todo
+  piloto automático nuevo debe probarse midiendo si la distancia BAJA.
+- computeVertexNormals cada cuadro es veneno: si la superficie es analítica,
+  la normal se escribe con la derivada en el mismo bucle.
+
+### Pendiente del plan de la auditoría (no entró hoy)
+huellas de orugas, distorsión de barril FPV, ríos con envMap, ARM/despegue,
+checklist prevuelo de escuela, replay del récord, drones enemigos audibles.
+
 ## Trampas que ya costaron tiempo
 
 - **La rama de este repo es `main`, no `master`.** Otros proyectos de Joan usan
