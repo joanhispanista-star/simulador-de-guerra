@@ -338,6 +338,8 @@
   #sensorFx.noc{opacity:1;background:
     repeating-linear-gradient(0deg,rgba(0,40,0,.12) 0,rgba(0,40,0,.12) 1px,transparent 2px,transparent 3px),
     radial-gradient(130% 120% at 50% 50%,rgba(40,255,120,.06) 40%,rgba(0,20,0,.7) 100%)}
+  #osdCv{position:fixed;inset:0;z-index:6;pointer-events:none;display:none;width:100vw;height:100vh}
+  #osdCv.on{display:block}
   #underFx{position:fixed;inset:0;z-index:3;pointer-events:none;opacity:0;transition:opacity .35s;
     background:radial-gradient(130% 120% at 50% 30%,rgba(20,120,150,.28) 0,rgba(4,40,70,.62) 100%);
     mix-blend-mode:normal}
@@ -498,6 +500,8 @@
 
   <canvas id="c"></canvas>
   <div id="sensorFx"></div>
+  <!-- OSD del video FPV: se dibuja por canvas, como lo pinta una controladora -->
+  <canvas id="osdCv"></canvas>
   <div id="underFx"></div>
   <div id="linkFx"></div>
 
@@ -1663,6 +1667,8 @@ const SONIDO=(()=>{
       else if(clase==='mal'){ tono('sawtooth',300,110,0.35,0.20); }
       else if(clase==='logro'){ [523,659,784,1047].forEach((f,i)=>tono('triangle',f,f,0.16,0.15,i*0.10)); }
       else if(clase==='dano'){ tono('square',150,60,0.16,0.22); ruido(0.2,0.18,800,200,'lowpass'); }
+      else if(clase==='bipBat'){ tono('square',980,980,0.06,0.14); tono('square',980,980,0.06,0.14,0.16); }
+      else if(clase==='bipUrgente'){ tono('square',1320,1320,0.07,0.18); }
       else                  { tono('sine',520,520,0.05,0.10); }
     },
 
@@ -1931,15 +1937,51 @@ function setSky(topHex, botHex, sunHex){
   // (sigue a la sombra) y el disco solar acabaría paseándose por el cielo
   u.sunDir.value.copy(SOL_BASE).normalize();
 }
-/* ---- Agua (para mapas costeros / con mar) ---- */
+/* ---- Agua (para mapas costeros / con mar) ----
+   ⚠ CON OLAS. Un plano quieto es lo primero que delata al videojuego en un
+   mapa naval: el mar VIVE o no es mar. Dos trenes de olas que no comparten
+   rumbo ni período (para que el patrón no se repita), amplitud que crece con
+   el viento, y las normales recalculadas para que el sol rompa en las crestas.
+   El costo se midió: la malla 56×56 son 3.249 vértices — actualizarlos y
+   rehacer normales cuesta ~0,6 ms, y SOLO corre cuando el agua es visible. */
 function initWater(){
-  const mat=new THREE.MeshStandardMaterial({ color:0x2e5a78, roughness:0.25, metalness:0.35,
-    transparent:true, opacity:0.86 });
-  water=new THREE.Mesh(new THREE.PlaneGeometry(WORLD*1.5, WORLD*1.5), mat);
+  const mat=new THREE.MeshStandardMaterial({ color:0x2e5a78, roughness:0.22, metalness:0.35,
+    transparent:true, opacity:0.88 });
+  water=new THREE.Mesh(new THREE.PlaneGeometry(WORLD*1.5, WORLD*1.5, 40, 40), mat);
   water.rotation.x=-Math.PI/2; water.visible=false; water.renderOrder=1; scene.add(water);
 }
 function setWater(level, on){
   if(!water) return; water.visible=!!on; if(on) water.position.y=level;
+}
+function updateWater(dt){
+  if(!water || !water.visible) return;
+  const g=water.geometry, pos=g.attributes.position, nor=g.attributes.normal;
+  const t=missionTime, viento=Math.min(1, windVec.length()*0.5);
+  const A1=(0.035+0.10*viento), A2=(0.02+0.06*viento);   // amplitudes en unidades (18-73 cm)
+  /* ⚠ LAS NORMALES SE CALCULAN ANALÍTICAMENTE, no con computeVertexNormals.
+     La ola es una función conocida: su normal es (−∂h/∂x, 1, −∂h/∂z)
+     normalizada, en el MISMO bucle y sin mirar vecinos. Con el recálculo por
+     vecinos el agua costaba 4-5 ms por cuadro; así cuesta ~0,6. Es la
+     diferencia entre saber la fórmula y pedirle a la máquina que la adivine. */
+  for(let i=0;i<pos.count;i++){
+    const x=pos.getX(i), y=pos.getY(i);   // el plano esta rotado: (x,y) del plano = (x,z) del mundo
+    const f1=x*0.055 + y*0.023 + t*0.9, f2=x*0.013 - y*0.047 + t*0.55;
+    pos.setZ(i, Math.sin(f1)*A1 + Math.sin(f2)*A2);
+    const dx=Math.cos(f1)*A1*0.055 + Math.cos(f2)*A2*0.013;
+    const dy=Math.cos(f1)*A1*0.023 - Math.cos(f2)*A2*0.047;
+    const inv=1/Math.sqrt(dx*dx+dy*dy+1);
+    nor.setXYZ(i, -dx*inv, -dy*inv, inv);   // en el espacio del plano, +z es el arriba del mundo
+  }
+  pos.needsUpdate=true; nor.needsUpdate=true;
+}
+/* La ALTURA de la ola en un punto del mundo: la misma funcion que la malla,
+   para que el casco cabecee con LA ola que se ve, no con un seno inventado. */
+function alturaOla(x,z){
+  if(!water||!water.visible) return 0;
+  const t=missionTime, viento=Math.min(1, windVec.length()*0.5);
+  const A1=(0.035+0.10*viento), A2=(0.02+0.06*viento);
+  const lx=x-water.position.x, lz=-(z-water.position.z);
+  return Math.sin(lx*0.055 + lz*0.023 + t*0.9)*A1 + Math.sin(lx*0.013 - lz*0.047 + t*0.55)*A2;
 }
 
 /* =====================================================================
@@ -4237,6 +4279,7 @@ const physBodies=[], barrelQueue=[]; let tankBody=null;
 const CANNON_GRAV=9.81*M;
 let SIG_RANGE=280;           // alcance del enlace (unidades). Lo escala fijarCampo() con el mundo.
 let gunAim={range:0, impact:new THREE.Vector3(), hit:false, valid:false};
+let SENAL_DBG=null;   // ?dbg: fuerza la señal para probar el OSD y el rasgado
 let TIRO_DBG=null;   // lo enciende DRONES.tiro(); null = apagado, coste cero
 let windVec=new THREE.Vector3();
 
@@ -4323,6 +4366,7 @@ function updateEffects(dt){
     if(k>=1){ scene.remove(e.mesh); if(e.mesh.geometry)e.mesh.geometry.dispose(); if(e.mesh.material)e.mesh.material.dispose(); effects.splice(i,1); continue; }
     if(e.kind==='boom'){ const s=e.size*(0.3+k*1.1); e.mesh.scale.setScalar(s); e.mesh.material.opacity=1-k; e.mesh.material.color.setRGB(1, 0.6-0.5*k, 0.2-0.2*k); }
     else if(e.kind==='smoke'){ e.mesh.scale.setScalar(e.size*(0.4+k)); e.mesh.material.opacity=0.7*(1-k); e.mesh.position.y+=dt*3; }
+    else if(e.kind==='espuma'){ e.mesh.scale.setScalar(e.size*(0.4+k*1.2)); e.mesh.material.opacity=(e.mesh.material.opacity>0?1:1)*0.55*(1-k); }
     else if(e.kind==='puff'){ e.mesh.scale.setScalar(e.size*(0.3+k*1.3)); e.mesh.material.opacity=0.75*(1-k*k); e.mesh.position.y+=e.rise*dt; e.mesh.material.rotation+=dt*0.4; }
     else if(e.kind==='ring'){ const s=e.size*(0.3+k*1.5); e.mesh.scale.setScalar(s); e.mesh.material.opacity=0.7*(1-k*k); }
     else if(e.kind==='tracer'){ e.mesh.material.opacity=0.9*(1-k); }
@@ -6078,6 +6122,70 @@ function mostrarPorQue(){
 function cerrarPorQue(){ const el=$('porqueBox'); if(el&&el.classList.contains('on')){ el.classList.remove('on'); paused=false; return true; } return false; }
 
 /* =====================================================================
+   OSD DEL VIDEO FPV — lo que pinta la controladora de un dron real
+   ---------------------------------------------------------------------
+   Un piloto FPV no mira un HUD de videojuego: mira el OSD que su controladora
+   sobreimprime al video — voltaje, RSSI, cronómetro, modo, avisos que
+   parpadean. Es EL elemento que hace que la imagen se lea como video de dron,
+   y además es formativo: el alumno aprende a escanear voltaje y RSSI porque
+   son los dos números que lo traen de vuelta a casa.
+   El voltaje sale de la curva real de una LiPo 6S: 4,2 V/celda llena, 3,3
+   vacía — el mismo sag que ya usa la física. El rasgado de video con señal
+   débil se pinta aquí también: franjas de estática horizontales, como rompe
+   de verdad el analógico. */
+let OSD_ULT={};
+function dibujarOSD(){
+  const cv=$('osdCv'); if(!cv) return;
+  const activo = playing && mode==='drone' && drone.active && droneCam===0;
+  cv.classList.toggle('on', activo);
+  if(!activo){ OSD_ULT={}; return; }
+  if(cv.width!==innerWidth||cv.height!==innerHeight){ cv.width=innerWidth; cv.height=innerHeight; }
+  const g=cv.getContext('2d'), W=cv.width, H=cv.height;
+  g.clearRect(0,0,W,H);
+  const mono='700 '+Math.round(H/42)+'px ui-monospace,Consolas,monospace';
+  const texto=(t,x,y,al,col)=>{ g.font=mono; g.textAlign=al||'left';
+    g.fillStyle='rgba(0,0,0,.75)'; g.fillText(t,x+2,y+2);
+    g.fillStyle=col||'#e8f4e8'; g.fillText(t,x,y); };
+  // cruz FPV: puntito y dos alas cortas, como Betaflight
+  g.strokeStyle='rgba(232,244,232,.95)'; g.lineWidth=2;
+  g.beginPath(); g.moveTo(W/2-18,H/2); g.lineTo(W/2-6,H/2); g.moveTo(W/2+6,H/2); g.lineTo(W/2+18,H/2); g.stroke();
+  g.fillStyle='rgba(232,244,232,.95)'; g.fillRect(W/2-1.5,H/2-1.5,3,3);
+  // la LiPo 6S: 3,3-4,2 V por celda segun carga
+  const volt=(19.8+5.4*drone.batt);
+  drone.tVuelo=(drone.tVuelo||0);
+  const mm=String(Math.floor(drone.tVuelo/60)).padStart(2,'0'), ss=String(Math.floor(drone.tVuelo%60)).padStart(2,'0');
+  const rssi=Math.round(signal*99);
+  texto(volt.toFixed(1)+'V', W*0.03, H*0.95);
+  texto(((volt/6).toFixed(2))+'V/c', W*0.03, H*0.95-H/38);
+  texto(mm+':'+ss, W*0.97, H*0.95, 'right');
+  texto('RSSI '+rssi, W*0.97, H*0.07, 'right', rssi<40?'#ff9a4a':undefined);
+  texto(drone.acro?'ACRO':'ANGL', W*0.03, H*0.07);
+  if(stats.carga&&stats.carga.id!=='ninguna') texto(stats.carga.tipo==='granada'?('GRAN x'+(drone.muni|0)):'CARGA', W*0.03, H*0.07+H/38);
+  // avisos que PARPADEAN: el parpadeo es el lenguaje del OSD
+  const blink=(missionTime%0.8)<0.45;
+  let aviso=null, col='#ffd24a';
+  if(linkLost){ aviso='FAILSAFE'; col='#ff5a4a'; }
+  else if(drone.batt<0.15){ aviso='ATERRIZA YA'; col='#ff5a4a'; }
+  else if(drone.batt<0.30){ aviso='BATERIA BAJA'; }
+  else if(signal<0.40){ aviso='RSSI CRITICO'; }
+  if(aviso && blink){ g.font='800 '+Math.round(H/26)+'px ui-monospace,Consolas,monospace'; g.textAlign='center';
+    g.fillStyle='rgba(0,0,0,.8)'; g.fillText(aviso, W/2+2, H*0.68+2);
+    g.fillStyle=col; g.fillText(aviso, W/2, H*0.68); }
+  OSD_ULT={volt:+volt.toFixed(1), rssi, timer:mm+':'+ss, modo:drone.acro?'ACRO':'ANGL', aviso};
+  /* RASGADO DE VIDEO. El analógico no se degrada uniforme: rompe en FRANJAS
+     horizontales de estática. Cuantas más, peor la señal. */
+  if(signal<0.55){
+    const franjas=Math.round((0.55-signal)*14);
+    for(let i=0;i<franjas;i++){
+      const y=((missionTime*7.3+i*137.5)%1)*H, h=2+((i*31)%12);
+      g.fillStyle='rgba(200,200,200,'+(0.10+0.20*(0.55-signal))+')';
+      g.fillRect(0,y,W,h);
+      g.fillStyle='rgba(0,0,0,0.18)'; g.fillRect(0,y+h,W,2);
+    }
+  }
+}
+
+/* =====================================================================
    INSTRUMENTOS DE ENTRENAMIENTO
    El horizonte artificial y el visor de palancas: los dos que un instructor
    pone delante del alumno. Salen en la escuela y en modo técnico, y se
@@ -6454,6 +6562,7 @@ function deployDrone(){
     addHeat(drone.mesh, 0.4, stats.drone.ave?0.8:(stats.drone.ala?3.0:2.2)); }
   drone.active=true; drone.hp=60; drone.kamikaze=false; drone.diving=false; drone.acro=false;
   drone.muni=(stats.carga&&stats.carga.muni)||0;      // las granadas se rearman al recoger
+  drone.tVuelo=0; drone.beepT=0;
   mostrarControles();
   {
     const mB=stats.drone.kg||1, mC=(stats.carga&&stats.carga.kg)||0, twr=2.2*mB/(mB+mC);
@@ -6603,6 +6712,16 @@ function updateDrone(dt, inp){
      del rotor dice potencia ∝ peso^1,5, y es la razón de que un dron cargado
      vuelva con la batería a la mitad del tiempo. */
   drone.batt=clamp(drone.batt - dt*0.000833*(1+(inp.up?0.6:0))*Math.pow(mTot/mBase,1.5), 0, 1);
+  drone.tVuelo=(drone.tVuelo||0)+dt;
+  /* PITIDOS DE BATERÍA, el idioma de toda controladora: al 30%% dos bips
+     tranquilos cada dos segundos y medio; al 15%%, bip rápido continuo. Un
+     piloto real ATERRIZA por el oído, no por mirar el número. */
+  drone.beepT=(drone.beepT||0)-dt;
+  if(drone.beepT<=0){
+    if(drone.batt<0.15){ SONIDO.ui('bipUrgente'); drone.beepT=0.55; }
+    else if(drone.batt<0.30){ SONIDO.ui('bipBat'); drone.beepT=2.5; }
+    else drone.beepT=0.5;
+  }
   /* ⚠ LA BATERÍA SE HUNDE BAJO CARGA (sag). Antes era un escalón: 100% de
      potencia hasta el 4% y de golpe 30%. Una LiPo real entrega menos tensión
      cuanto más descargada está, y el piloto lo SIENTE mucho antes de aterrizar:
@@ -6843,10 +6962,40 @@ function updateDrone(dt, inp){
       drone.roll = damp(drone.roll, clamp(-drone.yawVel*1.1, -0.42, 0.42), 2.4, dt);
       const proaArriba=clamp((v/VMAX)*0.22 - Math.min(0,acel/A_EMP)*0.18, -0.12, 0.22);
       drone.pitch=damp(drone.pitch, proaArriba, 1.8, dt);
-      // y la mar: el casco cabecea con el oleaje, más cuanto más viento
-      const mar=Math.min(1, windVec.length()*0.4);
-      drone.pitch += Math.sin(missionTime*1.35)*0.05*mar;
-      drone.roll  += Math.sin(missionTime*0.95+1.1)*0.07*mar;
+      /* el casco cabecea con LA OLA QUE SE VE: se muestrea la altura de la ola
+         delante y detras del casco y la diferencia ES el cabeceo. Antes era un
+         seno inventado que no coincidia con el agua dibujada. */
+      const olaProa=alturaOla(drone.pos.x+sy*0.3, drone.pos.z+cy*0.3);
+      const olaPopa=alturaOla(drone.pos.x-sy*0.3, drone.pos.z-cy*0.3);
+      drone.pitch += (olaProa-olaPopa)*1.6;
+      drone.roll  += Math.sin(missionTime*0.95+1.1)*0.05*Math.min(1,windVec.length()*0.4);
+      /* flotar SOBRE la ola: el casco sigue la superficie, no la linea media */
+      if(!esSub && water && water.visible) drone.pos.y = water.position.y + alturaOla(drone.pos.x,drone.pos.z) + 0.06;
+      /* ESTELA: espuma que nace en la popa y se queda ATRAS, sobre el agua,
+         creciendo y disolviendose. Es la firma visual de que un barco es un
+         barco; sin ella parece un juguete deslizado por un cristal. */
+      drone.estelaT=(drone.estelaT||0)-dt;
+      const marcha2=Math.hypot(drone.vel.x,drone.vel.z);
+      if(drone.estelaT<=0 && marcha2>0.5 && water && water.visible){
+        drone.estelaT=0.07;
+        if(!smokeTex) smokeTex=makeSmokeTex();
+        const e=new THREE.Sprite(new THREE.SpriteMaterial({map:smokeTex, color:0xeaf6ff,
+          transparent:true, opacity:0.5, depthWrite:false, rotation:Math.random()*TAU}));
+        e.position.set(drone.pos.x-sy*0.45+(Math.random()-0.5)*0.15,
+                       water.position.y+0.05,
+                       drone.pos.z-cy*0.45+(Math.random()-0.5)*0.15);
+        e.scale.setScalar(0.25+marcha2*0.05); scene.add(e);
+        effects.push({mesh:e, t:0, life:1.8, size:0.5+marcha2*0.12, kind:'espuma'});
+        /* y SPRAY de proa cuando planea: agua blanca lanzada a los lados */
+        if(marcha2>2.2 && Math.random()<0.5){
+          const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:smokeTex, color:0xffffff,
+            transparent:true, opacity:0.65, depthWrite:false}));
+          const lado=Math.random()<0.5?1:-1;
+          sp.position.set(drone.pos.x+sy*0.5+(-cy)*lado*0.22, water.position.y+0.10, drone.pos.z+cy*0.5+(sy)*lado*0.22);
+          sp.scale.setScalar(0.18); scene.add(sp);
+          effects.push({mesh:sp, t:0, life:0.5, size:0.4, kind:'espuma'});
+        }
+      }
     } else {
       drone.roll =damp(drone.roll,  clamp(-drone.yawVel*0.5,-0.2,0.2), 1.6, dt);
       drone.pitch=damp(drone.pitch, clamp(-drone.vel.y*2.2,-0.35,0.35), 1.6, dt);
@@ -7132,11 +7281,20 @@ function updateCamera(dt){
   // fuera del dron, el FOV vuelve a su sitio
   if(Math.abs(camera.fov-60)>0.05){ camera.fov=damp(camera.fov, 60, 3.5, dt); camera.updateProjectionMatrix(); }
   const tp=player.pos;
-  if(camMode===1){ // FPV torreta
+  if(camMode===1){ // FPV torreta = la camara de conduccion del operador
     const dir=aimDir(); const ud=player.mesh.userData; ud.turret.getWorldPosition(V);
     V.y+=0.35*M; V.addScaledVector(dir,0.5*M);
     camera.position.lerp(V, clamp(20*dt,0,1));
     V2.copy(V).addScaledVector(dir, 200*M); camera.lookAt(V2);
+    /* EL TEMBLOR DE CONDUCIR. Una camara atornillada a un casco con orugas
+       tiembla con la marcha — mas sobre terreno quebrado (la suspension ya
+       mide el cabeceo: se reusa su velocidad). Sin esto, conducir en primera
+       persona parecia una camara en un riel, igual que le pasaba al dron. */
+    const marchaU=Math.abs(player.speed)/Math.max(1,stats.speed);
+    const brusco=Math.abs(player.susPitch-(player._susP0||0))/Math.max(dt,1e-3); player._susP0=player.susPitch;
+    const tiembloU=0.0012*marchaU + Math.min(0.004, brusco*0.02);
+    camera.rotateX(Math.sin(missionTime*43.7)*tiembloU);
+    camera.rotateZ(Math.cos(missionTime*37.1)*tiembloU*0.7);
   } else if(camMode===2){ // táctica (arriba)
     V.set(tp.x, tp.y+45*M, tp.z-0.01); camera.position.lerp(V, clamp(8*dt,0,1)); camera.lookAt(tp.x,tp.y,tp.z);
   } else { // persecución
@@ -7609,6 +7767,7 @@ function computeSignal(dt){
   jammed=false;
   for(const e of enemies){ if(e.alive && e.jammer && Math.hypot(u.x-e.pos.x,u.z-e.pos.z)<95){ s*=0.12; jammed=true; } }
   signal=damp(signal, s, 6, dt);
+  if(SENAL_DBG!=null) signal=SENAL_DBG;   // ?dbg: para probar OSD y rasgado sin caminar hasta un jammer
   linkLost=signal<0.14;
   linkAuth=signal<0.14?0.12:(signal<0.4?0.6:1);
 }
@@ -7808,6 +7967,7 @@ function updateHUD(dt){
   }
   $('telem').innerHTML=telem;
   dibujarInstrumentos();
+  dibujarOSD();
   // SEÑAL real (enlace por línea de vista)
   const bars=clamp(Math.round(signal*5+0.15),0,5);
   const sig=$('sig').children; for(let i=0;i<5;i++){ sig[i].style.height=(5+i*2)+'px';
@@ -7893,6 +8053,7 @@ function simulate(dt){
   F('enemigos'); updateEnemies(dt);
   F('aliados');  updateAllies(dt);
   F('escuela');  updateEscuela(dt);
+  F('agua');     updateWater(dt);
   F('duelo');    if(duelo.active) dueloTick(dt, inp);
   F('proyectiles'); updateProjectiles(dt);
   F('efectos');  updateEffects(dt);
@@ -10025,6 +10186,8 @@ if(location.search.indexOf('dbg')>=0) window.DRONES={
     gaze.baseYaw=0; gaze.basePitch=0; gaze.yaw=(yawGrados||0)*Math.PI/180; gaze.pitch=(pitchGrados||0)*Math.PI/180;
     const pf=palancaFacial(); return pf?{yaw:+pf.yaw.toFixed(2), pitch:+pf.pitch.toFixed(2)}:null; },
   caraOff:()=>{ gaze.piloto=false; gaze.active=false; CFA.activo=false; return true; },
+  osdInfo:()=>OSD_ULT,
+  forzarSenal:(v)=>{ SENAL_DBG=(v==null)?null:clamp(v,0,1); return SENAL_DBG; },
   /* Lee la palanca con la BASE GANADA por el centrado (caraPrueba la resetea;
      esto no): es la comprobación de que «cara recta = palanca en cero». */
   caraLee:(yawGrados,pitchGrados)=>{ const G2=Math.PI/180;
