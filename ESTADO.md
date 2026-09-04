@@ -821,6 +821,36 @@ bip antes del límite.
 huellas de orugas, distorsión de barril FPV, ríos con envMap, ARM/despegue,
 checklist prevuelo de escuela, replay del récord, drones enemigos audibles.
 
+
+## 28-ago (7ª tanda): el salto de imagen — IBL, acabado de cámara y huellas
+
+Joan pidió gráficos «un 50% mejores». Tres piezas, con métrica objetiva:
+
+1. **El cielo ilumina el mundo (IBL)**: `scene.environment` con un PMREM
+   generado DEL PROPIO CIELO (regenerado solo al cambiar clima/hora, ~10 ms
+   una vez). Los metales dejaron de reflejar negro, los ríos dejaron de ser
+   brea, el atardecer baña el mundo de naranja él solo. La hemisférica baja a
+   ×0,6 SIEMPRE en applyEnvironment cuando hay entorno (no solo al regenerar:
+   mojar materiales también pasa por ahí y duplicaba el ambiente).
+2. **Acabado de cámara** (una pasada de GPU en el composer): viñeta, grano
+   fino que respira, aberración cromática leve en bordes, curva S y +8% de
+   saturación. La diferencia entre «render» y «imagen de cámara».
+3. **Huellas de orugas**: InstancedMesh de 700 parches en anillo — el rastro
+   persiste (como en tierra real), todo el rastro es UNA llamada de dibujo, y
+   en lluvia se encharca a ratos. Es la herramienta del instructor para
+   revisar la trazada.
+
+**Medido** (fotoPrueba, tonos distintos en la imagen): día 74→98 (+32%), mar
+107 (el agua reflejando el cielo), noche 42 de brillo con estrellas, lluvia
+83 con nubes y suelo mojado. Lógica: 2,2-4,5 ms. 294 huellas tras 10 s de
+conducción.
+
+### Trampa nueva
+- El PMREM comparte el MATERIAL del cielo (dos mallas, un material): si el
+  shader del cielo cambia, el entorno cambia gratis — pero un error de
+  compilación en ese shader ahora mata TAMBIÉN la iluminación. Probar noche
+  y lluvia tras cualquier cambio del shader.
+
 ## Trampas que ya costaron tiempo
 
 - **La rama de este repo es `main`, no `master`.** Otros proyectos de Joan usan

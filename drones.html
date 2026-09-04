@@ -1794,7 +1794,7 @@ const SONIDO=(()=>{
 /* =====================================================================
    MOTOR 3D
    ===================================================================== */
-let renderer, scene, camera, sun, hemi, skyMesh, water;
+let renderer, scene, camera, sun, hemi, skyMesh, water, gradePass=null;
 let composer=null, bloomPass=null, useComposer=false;   // post-proceso (bloom)
 let clock;
 const V=new THREE.Vector3(), V2=new THREE.Vector3(), Q=new THREE.Quaternion();
@@ -1856,6 +1856,30 @@ async function initPostFX(){
     composer.addPass(new RP.RenderPass(scene, camera));
     bloomPass=new UB.UnrealBloomPass(new THREE.Vector2(innerWidth,innerHeight), 0.5, 0.45, 0.9); // fuerza, radio, umbral
     composer.addPass(bloomPass);
+    /* EL ACABADO DE CÁMARA. Tres cosas que toda lente y todo sensor hacen y
+       el render crudo no: VIÑETA (las esquinas pierden luz), GRANO fino que
+       respira, y ABERRACIÓN cromática leve en los bordes. Más una curva S de
+       contraste y +8%% de saturación. Juntas son la diferencia entre «render»
+       y «imagen de cámara», y van en UNA pasada de GPU. */
+    const SP=await import('three/addons/postprocessing/ShaderPass.js');
+    gradePass=new SP.ShaderPass({
+      uniforms:{ tDiffuse:{value:null}, uT:{value:0} },
+      vertexShader:'varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
+      fragmentShader:[
+        'uniform sampler2D tDiffuse; uniform float uT; varying vec2 vUv;',
+        'float hash(vec2 p){ return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }',
+        'void main(){',
+        '  vec2 c=vUv-0.5; float r2=dot(c,c);',
+        '  vec2 ab=c*r2*0.045;',                                    // aberracion: crece al borde
+        '  vec3 col; col.r=texture2D(tDiffuse,vUv+ab).r; col.g=texture2D(tDiffuse,vUv).g; col.b=texture2D(tDiffuse,vUv-ab).b;',
+        '  col*=1.0-r2*0.55;',                                      // vineta
+        '  float g=luminance_aprox(col); col=mix(vec3(g),col,1.08);', // saturacion +8
+        '  col=col*col*(3.0-2.0*col)*0.22+col*0.78;',               // curva S suave
+        '  col+=(hash(vUv*vec2(1287.0,711.0)+uT)*2.0-1.0)*0.012;',  // grano que respira
+        '  gl_FragColor=vec4(col,1.0);',
+        '}'].join('\n').replace('luminance_aprox(col)','dot(col,vec3(0.299,0.587,0.114))')
+    });
+    composer.addPass(gradePass);
     composer.addPass(new OP.OutputPass());
     composer.setPixelRatio(Math.min(devicePixelRatio||1,2));
     composer.setSize(innerWidth, innerHeight);
@@ -1914,6 +1938,7 @@ function actualizarSombra(){
 }
 function renderScene(){ if(!RENDER_ON) return;
   if(skyMesh) skyMesh.material.uniforms.uT.value=missionTime;
+  if(gradePass) gradePass.uniforms.uT.value=missionTime%37;
   actualizarSombra();
   if(useComposer && composer) composer.render(); else if(renderer&&scene) renderer.render(scene, camera); }
 
@@ -1924,6 +1949,27 @@ function renderScene(){ if(!RENDER_ON) return;
    cobertura la pone el clima, y ESTRELLAS de noche por hash, con la línea del
    horizonte que un piloto nocturno usa como referencia de actitud. Todo en la
    GPU, sobre los píxeles del cielo: costo cero para la lógica. */
+/* ⚠ EL CIELO ILUMINA EL MUNDO (IBL). Hasta ahora los materiales PBR se
+   iluminaban con dos luces y nada más: los metales reflejaban NEGRO (por eso
+   los ríos salían como brea y los vehículos como plástico). scene.environment
+   con un PMREM generado DEL PROPIO CIELO da a cada material el reflejo y el
+   ambiente que le corresponde — y como se regenera al cambiar clima u hora,
+   un atardecer baña el mundo de naranja él solo. Es el cambio de imagen más
+   grande por línea de este proyecto. Se regenera solo al cambiar el clima
+   (~10 ms una vez), no por cuadro. */
+let _pmrem=null, _envScene=null, _envMesh=null, _envRT=null;
+function regenerarEntorno(){
+  if(!renderer || !skyMesh) return;
+  if(!_pmrem){ _pmrem=new THREE.PMREMGenerator(renderer); _pmrem.compileEquirectangularShader(); }
+  if(!_envScene){ _envScene=new THREE.Scene();
+    _envMesh=new THREE.Mesh(new THREE.SphereGeometry(50,24,12), skyMesh.material);
+    _envScene.add(_envMesh); }
+  const rtViejo=_envRT;
+  _envRT=_pmrem.fromScene(_envScene, 0.04);
+  scene.environment=_envRT.texture;
+  if(rtViejo) rtViejo.dispose();
+  /* con el cielo iluminando, la hemisferica baja o el ambiente se duplica */
+}
 function initSky(){
   const mat=new THREE.ShaderMaterial({ side:THREE.BackSide, depthWrite:false, fog:false,
     uniforms:{ top:{value:new THREE.Color(0x2b6cb0)}, bot:{value:new THREE.Color(0xcfe0ef)},
@@ -2038,7 +2084,11 @@ function applyEnvironment(){
   SOL_BASE.copy(t.sunPos);
   sun.position.copy(t.sunPos); sun.target.position.set(0,0,0);
   sun.color.setHex(t.sunCol); sun.intensity=t.sunInt*w.sunMul;
-  hemi.color.setHex(t.hemiTop); hemi.groundColor.setHex(worldBase.amb); hemi.intensity=t.hemiInt*w.hemiMul;
+  /* con el cielo iluminando (IBL), la hemisférica baja SIEMPRE aquí — no en
+     la regeneración — o el ambiente se duplica en las llamadas sin cambio de
+     clima (mojar materiales también pasa por esta función). */
+  hemi.color.setHex(t.hemiTop); hemi.groundColor.setHex(worldBase.amb);
+  hemi.intensity=t.hemiInt*w.hemiMul*(scene.environment?0.6:1);
   renderer.toneMappingExposure=t.exposure;
   setSky((t.skyTop!=null)?t.skyTop:worldBase.skyTop, (t.skyBot!=null)?t.skyBot:worldBase.fog, t.sunCol);
   const fogCol=(w.fogCol!=null)?w.fogCol:((t.fogCol!=null)?t.fogCol:worldBase.fog);
@@ -2050,6 +2100,10 @@ function applyEnvironment(){
     u.uNubeCol.value.setHex((w.nubeCol!=null)?w.nubeCol:0xffffff);
     u.uNoche.value = NIGHT?1:0;
   }
+  /* el entorno se regenera SOLO si cambio el clima o la hora: la clave evita
+     regenerar en cada applyEnvironment (se llama tambien al mojar materiales) */
+  const claveEnv=TOD+'|'+WX;
+  if(scene && scene._envClave!==claveEnv){ scene._envClave=claveEnv; regenerarEntorno(); }
   /* ⚠ LA LLUVIA MOJA. El 80%% de «está lloviendo» en pantalla es el suelo
      brillante: la rugosidad de asfalto, terreno y edificios baja cuando
      llueve y vuelve cuando escampa. roughness es un uniform: cambiarlo no
@@ -6179,6 +6233,53 @@ function mostrarPorQue(){
 function cerrarPorQue(){ const el=$('porqueBox'); if(el&&el.classList.contains('on')){ el.classList.remove('on'); paused=false; return true; } return false; }
 
 /* =====================================================================
+   HUELLAS DE ORUGAS
+   ---------------------------------------------------------------------
+   El rastro que todo instructor usa para revisar la trazada del alumno: dos
+   filas de parches oscuros que las orugas van dejando. Una InstancedMesh de
+   700 parches en anillo — cuando se acaba, el más viejo se recicla, así que
+   las huellas PERSISTEN (como en tierra real) sin crecer en memoria ni en
+   draw calls: todo el rastro es UNA llamada de dibujo. */
+let HUELLAS=null, _huellaIdx=0, _huellaAcum=0;
+const _hm4=new THREE.Matrix4(), _hq=new THREE.Quaternion(), _hv=new THREE.Vector3(), _he=new THREE.Euler();
+function initHuellas(){
+  const geo=new THREE.PlaneGeometry(0.28*M*4, 0.5*M*4);   // parche ~0,21x0,38 u
+  const mat=new THREE.MeshBasicMaterial({ color:0x14100c, transparent:true, opacity:0.32,
+    depthWrite:false, polygonOffset:true, polygonOffsetFactor:-1, polygonOffsetUnits:-1 });
+  HUELLAS=new THREE.InstancedMesh(geo, mat, 700);
+  HUELLAS.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  HUELLAS.count=0; HUELLAS.frustumCulled=false;
+  _hm4.makeScale(0,0,0);
+  for(let i=0;i<700;i++) HUELLAS.setMatrixAt(i,_hm4);
+  scene.add(HUELLAS);
+}
+function dejarHuellas(dt){
+  if(mode==='drone' || !player.alive || !playing) return;
+  if(!HUELLAS) initHuellas();
+  const paso=Math.abs(player.speed)*dt;
+  _huellaAcum+=paso;
+  if(_huellaAcum<0.12) return;      // un par de parches cada ~0,6 m recorridos
+  _huellaAcum=0;
+  if(WX==='lluvia' && Math.random()<0.35) return;   // en barro la huella se encharca y se pierde a ratos
+  const fX=Math.sin(player.yaw), fZ=Math.cos(player.yaw);
+  const rX=Math.cos(player.yaw), rZ=-Math.sin(player.yaw);
+  for(const lado of [1,-1]){
+    const x=player.pos.x - fX*0.35 + rX*lado*0.32*M*4;
+    const z=player.pos.z - fZ*0.35 + rZ*lado*0.32*M*4;
+    const y=terrainHeight(x,z)+0.02;
+    _he.set(-Math.PI/2, player.yaw, 0, 'YXZ'); _hq.setFromEuler(_he);
+    _hm4.compose(_hv.set(x,y,z), _hq, new THREE.Vector3(1,1,1));
+    HUELLAS.setMatrixAt(_huellaIdx%700, _hm4);
+    _huellaIdx++;
+  }
+  HUELLAS.count=Math.min(700,_huellaIdx);
+  HUELLAS.instanceMatrix.needsUpdate=true;
+}
+function limpiarHuellas(){ if(HUELLAS){ HUELLAS.count=0; _huellaIdx=0; _huellaAcum=0;
+  _hm4.makeScale(0,0,0); for(let i=0;i<700;i++) HUELLAS.setMatrixAt(i,_hm4);
+  HUELLAS.instanceMatrix.needsUpdate=true; } }
+
+/* =====================================================================
    OSD DEL VIDEO FPV — lo que pinta la controladora de un dron real
    ---------------------------------------------------------------------
    Un piloto FPV no mira un HUD de videojuego: mira el OSD que su controladora
@@ -7435,7 +7536,7 @@ function cycleCam(){
    ===================================================================== */
 let currentReal=null;
 function resetPlay(){
-  limpiarEscuela();
+  limpiarEscuela(); limpiarHuellas();
   /* ⚠ EL CLIMA DE LA ESCUELA SE QUEDABA PEGADO. La lección del estacionario
      pone lluvia para enseñar el viento, y nadie la quitaba: desde ese momento
      TODAS las misiones tenían rachas invisibles empujando el dron. Joan lo
@@ -8171,6 +8272,7 @@ function simulate(dt){
   F('aliados');  updateAllies(dt);
   F('escuela');  updateEscuela(dt);
   F('agua');     updateWater(dt);
+  F('huellas');  dejarHuellas(dt);
   F('duelo');    if(duelo.active) dueloTick(dt, inp);
   F('proyectiles'); updateProjectiles(dt);
   F('efectos');  updateEffects(dt);
@@ -10304,6 +10406,8 @@ if(location.search.indexOf('dbg')>=0) window.DRONES={
     const pf=palancaFacial(); return pf?{yaw:+pf.yaw.toFixed(2), pitch:+pf.pitch.toFixed(2)}:null; },
   caraOff:()=>{ gaze.piloto=false; gaze.active=false; CFA.activo=false; return true; },
   osdInfo:()=>OSD_ULT,
+  gfx:()=>({ entorno:!!scene.environment, acabado:!!gradePass, huellas:HUELLAS?HUELLAS.count:0,
+    olas: !!(water&&water.visible), hemi:+hemi.intensity.toFixed(2) }),
   forzarSenal:(v)=>{ SENAL_DBG=(v==null)?null:clamp(v,0,1); return SENAL_DBG; },
   /* Lee la palanca con la BASE GANADA por el centrado (caraPrueba la resetea;
      esto no): es la comprobación de que «cara recta = palanca en cero». */
