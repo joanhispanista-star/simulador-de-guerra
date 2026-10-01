@@ -428,6 +428,27 @@
     background:rgba(10,13,19,.97);border:1px solid var(--linea);border-radius:16px;
     box-shadow:0 24px 70px rgba(0,0,0,.7)}
   #porqueBox.on{display:block}
+  #mandoBox{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:41;display:none;
+    width:min(520px,94vw);max-height:88vh;overflow:auto;padding:16px 18px;
+    background:rgba(10,13,19,.97);border:1px solid var(--linea);border-radius:16px;box-shadow:0 24px 70px rgba(0,0,0,.7)}
+  #mandoBox.on{display:block}
+  #mandoBox h4{margin:0 0 8px;font-size:12px;letter-spacing:.09em;text-transform:uppercase;color:var(--hud)}
+  #mandoBox .mEst{font-size:12px;color:var(--hueso);margin-bottom:8px}
+  #mandoBox .mPaso{font-size:13px;line-height:1.5;color:#ffd24a;min-height:20px;margin:8px 0}
+  #mandoBox .mBtns{display:flex;gap:6px;flex-wrap:wrap}
+  #mandoBox button{background:#1b2230;color:var(--hueso);border:1px solid var(--linea);border-radius:9px;padding:7px 10px;font-weight:700;font-size:12px;cursor:pointer}
+  #mandoBox .mFila{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--gris);margin:5px 0}
+  #mandoBox .mFila label{width:92px}
+  #mandoBox .mFila input[type=range]{flex:1}
+  #mandoBox .mFila span{width:46px;text-align:right;color:var(--hueso);font-variant-numeric:tabular-nums}
+  #mandoBox select{flex:1;background:#141926;color:var(--hueso);border:1px solid var(--linea);border-radius:8px;padding:5px}
+  #mandoBox canvas{display:block;width:100%;max-width:300px;margin:6px auto;background:rgba(255,255,255,.03);border-radius:8px}
+  #mandoBox .mNota{font-size:11px;line-height:1.5;color:var(--gris);margin:6px 0}
+  #mandoBox .cerrar{margin-top:8px;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--gris-2);cursor:pointer;text-align:center}
+  .mBar{display:flex;align-items:center;gap:6px;font-size:10px;color:var(--gris);margin:2px 0}
+  .mBar b{width:56px;font-weight:700}
+  .mBar i{flex:1;height:8px;border-radius:4px;background:rgba(255,255,255,.07);position:relative;overflow:hidden}
+  .mBar i u{position:absolute;top:0;bottom:0;background:var(--hud)}
   #porqueBox h4{margin:0 0 10px;font-size:13px;letter-spacing:.09em;text-transform:uppercase;color:var(--hud)}
   #porqueBox h4.mal{color:var(--ambar)}
   #porqueBox p{margin:0 0 10px;font-size:12.5px;line-height:1.62;color:var(--hueso);white-space:pre-wrap}
@@ -555,6 +576,39 @@
     </div>
     <!-- La explicación de lo que está pasando, con los números de ese momento -->
     <div id="porqueBox"></div>
+    <!-- EMISORA RC / MANDO: calibracion, rates y camara FPV -->
+    <div id="mandoBox">
+      <h4>🎮 Emisora RC y mando</h4>
+      <div id="mandoEstado" class="mEst">Buscando…</div>
+      <div id="mandoBarras"></div>
+      <div id="mandoPaso" class="mPaso"></div>
+      <div class="mBtns">
+        <button id="mBtnCal">Calibrar emisora</button>
+        <button id="mBtnStd">Mando de consola (Modo 2)</button>
+        <button id="mBtnSig" style="display:none">Siguiente ▶</button>
+        <button id="mBtnSal" style="display:none">Saltar</button>
+      </div>
+      <h4 style="margin-top:14px">Rates (modo ACRO)</h4>
+      <div class="mFila"><label>Perfil</label>
+        <select id="mPerfil">
+          <option value="escuela">Escuela — suaves</option>
+          <option value="clasico">Clásico del juego</option>
+          <option value="betaflight">Betaflight 4.3+ (de fábrica)</option>
+          <option value="personal">Personal</option>
+        </select></div>
+      <div class="mFila"><label>Centro °/s</label><input id="mC" type="range" min="20" max="400" step="5"><span id="mCv"></span></div>
+      <div class="mFila"><label>Máx °/s</label><input id="mM" type="range" min="200" max="1200" step="10"><span id="mMv"></span></div>
+      <div class="mFila"><label>Expo</label><input id="mE" type="range" min="0" max="0.9" step="0.01"><span id="mEv"></span></div>
+      <canvas id="mCurva" width="300" height="110"></canvas>
+      <h4 style="margin-top:14px">Cámara FPV</h4>
+      <div class="mFila"><label>Inclinación</label><input id="mUp" type="range" min="0" max="50" step="1"><span id="mUpv"></span></div>
+      <div class="mFila"><label>Lente</label><select id="mLente"><option value="0">Recta</option><option value="0.12">Gran angular (suave)</option><option value="0.25">Ojo de pez</option></select></div>
+      <div class="mFila"><label>Zona muerta</label><input id="mDz" type="range" min="0" max="0.12" step="0.005"><span id="mDzv"></span></div>
+      <h4 style="margin-top:14px">Simulación</h4>
+      <div class="mFila"><label>Sin daño</label><input id="mDios" type="checkbox"><span style="width:auto;text-align:left;color:var(--gris)">los choques no rompen hélices (practicar sin castigo)</span></div>
+      <p class="mNota">En ACRO la cámara va ATORNILLADA al chasis, inclinada hacia arriba como en un FPV real: a más inclinación, más rápido vuelas mirando al horizonte. Carreras 35-45°, freestyle 20-35°, cine 10-20°.</p>
+      <div class="cerrar" id="mBtnCerrar">cerrar</div>
+    </div>
     <!-- Instrumentos de entrenamiento: horizonte artificial y visor de palancas.
          Salen en la escuela y en modo técnico. -->
     <!-- La tarjeta de controles: 9 segundos al desplegar, porque «no son
@@ -603,6 +657,7 @@
     <button class="tbtn util" id="btnGaze"><span class="ic">👁️</span>MIRADA</button>
     <button class="tbtn util" id="btnCara"><span class="ic">🧑‍✈️</span>PILOTO FACIAL</button>
     <button class="tbtn util" id="btnTec"><span class="ic">🔧</span>TÉCNICO</button>
+    <button class="tbtn util" id="btnMando"><span class="ic">🎮</span>EMISORA</button>
     <button class="tbtn util" id="btnPorQue"><span class="ic">?</span>POR QUÉ</button>
     <button class="tbtn util" id="btnVoice"><span class="ic">🎤</span>VOZ</button>
     <button class="tbtn util" id="btnVol"><span class="ic">🔊</span>SONIDO</button>
@@ -830,8 +885,11 @@
           <span><kbd>Espacio</kbd> subir · <kbd>Shift</kbd> bajar</span>
           <span><kbd>Q</kbd><kbd>R</kbd> o <b>rueda del ratón</b>: inclinar la cámara (gimbal)</span>
           <span>La cámara <b>baja sola al subir</b>, para que veas la ciudad</span>
-          <span><kbd>B</kbd> modo de vuelo: <b>FÁCIL</b> (sueltas y se para, mantiene la altura)
-            o <b>ACRO</b> (dron de carreras: sigue avanzando al soltar)</span>
+          <span><kbd>B</kbd> modo de vuelo, en el orden en que se aprende: <b>FÁCIL</b> (sueltas y se frena, mantiene la altura)
+            → <b>ÁNGULO</b> (se nivela al soltar pero no frena) → <b>ACRO</b> (la palanca pide °/s, sin ayudas)</span>
+          <span><kbd>X</kbd> en la escuela: repetir el intento · fuera: <b>modo tortuga</b> (enderezar el dron volcado)</span>
+          <span>🎮 <b>EMISORA</b>: conecta tu emisora RC por USB (modo joystick) o un mando de consola; calibra, elige rates, inclinación de cámara y lente</span>
+          <span>💥 Chocar cuenta: los golpes rompen hélices (25% por golpe) y a 9 m/s el dron se pierde — en la escuela vuelves al último aro</span>
           <span><b>Clic</b> / DISPARAR: soltar carga o marcar</span>
           <span>💥 <b>KAMIKAZE</b> (botón) o <kbd>K</kbd> = picar y explotar</span>
           <span><b>Barriles rojos</b> explotan en cadena — física real</span>
@@ -1012,14 +1070,18 @@ const M=1/MPU;                     // un metro, en unidades
 
 /* ---------- Persistencia ---------- */
 const SKEY='drones_v1';
-const store={ prog:{}, loadout:null, best:{}, env:{tod:'dia',wx:'despejado'}, vol:0.7 };
+const MUDO_PRUEBAS=/[?&](dbg|mudo)(=|&|$)/.test(location.search);   // las pruebas no suenan (ver despertar)
+const store={ prog:{}, loadout:null, best:{}, env:{tod:'dia',wx:'despejado'}, vol:0.7,
+  mando:null, rates:{perfil:'clasico', uptilt:25, dz:0.03} };
 function load(){ try{ const s=JSON.parse(localStorage.getItem(SKEY)||'{}');
   store.prog=s.prog||{}; store.loadout=s.loadout||null; store.best=s.best||{};
   store.vol=(typeof s.vol==='number')?s.vol:0.7;
   store.faccion=(s.faccion==='azul'||s.faccion==='rojo')?s.faccion:null;   // guerra
   store.campana=s.campana&&typeof s.campana==='object'?s.campana:{modo:null,nacion:null,ganadas:{}};
   store.cronos=s.cronos&&typeof s.cronos==='object'?s.cronos:{};   // récords de circuito, en segundos
-  store.env=Object.assign({tod:'dia',wx:'despejado'}, s.env||{}); }catch(e){} }
+  store.env=Object.assign({tod:'dia',wx:'despejado'}, s.env||{});
+  store.mando=s.mando&&typeof s.mando==='object'?s.mando:null;          // calibración de la emisora
+  store.rates=Object.assign({perfil:'clasico', uptilt:25, dz:0.03}, s.rates||{}); }catch(e){} }
 function save(){ try{ localStorage.setItem(SKEY, JSON.stringify(store)); }catch(e){} }
 load();
 
@@ -1544,6 +1606,11 @@ const SONIDO=(()=>{
   const _p=new THREE.Vector3();
 
   function despertar(){
+    /* ⚠ LAS PRUEBAS NO SUENAN. Joan, 1-oct-2026: «está sonando e
+       invadiendo mi computador con este juego» — era el sintetizador del
+       juego durante una verificación con ?dbg. Con ?dbg (o ?mudo) el audio no
+       arranca jamás: `listo` queda en false y todo SONIDO.* sale sin hacer nada. */
+    if(MUDO_PRUEBAS) return;
     if(ac){ if(ac.state==='suspended') ac.resume(); return; }
     try{
       ac=new (window.AudioContext||window.webkitAudioContext)();
@@ -1863,15 +1930,18 @@ async function initPostFX(){
        y «imagen de cámara», y van en UNA pasada de GPU. */
     const SP=await import('three/addons/postprocessing/ShaderPass.js');
     gradePass=new SP.ShaderPass({
-      uniforms:{ tDiffuse:{value:null}, uT:{value:0} },
+      uniforms:{ tDiffuse:{value:null}, uT:{value:0}, uBarril:{value:0} },
       vertexShader:'varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
       fragmentShader:[
-        'uniform sampler2D tDiffuse; uniform float uT; varying vec2 vUv;',
+        'uniform sampler2D tDiffuse; uniform float uT; uniform float uBarril; varying vec2 vUv;',
         'float hash(vec2 p){ return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }',
         'void main(){',
         '  vec2 c=vUv-0.5; float r2=dot(c,c);',
-        '  vec2 ab=c*r2*0.045;',                                    // aberracion: crece al borde
-        '  vec3 col; col.r=texture2D(tDiffuse,vUv+ab).r; col.g=texture2D(tDiffuse,vUv).g; col.b=texture2D(tDiffuse,vUv-ab).b;',
+        // BARRIL de lente FPV (ojo de pez): el centro se acerca, los bordes se
+        // comprimen; las esquinas caen en su sitio (normalizado a r2=0,5)
+        '  vec2 uvb=0.5+c*(1.0+uBarril*r2)/(1.0+uBarril*0.5);',
+        '  vec2 ab=c*r2*(0.045+uBarril*0.05);',                     // aberracion: crece al borde
+        '  vec3 col; col.r=texture2D(tDiffuse,uvb+ab).r; col.g=texture2D(tDiffuse,uvb).g; col.b=texture2D(tDiffuse,uvb-ab).b;',
         '  col*=1.0-r2*0.55;',                                      // vineta
         '  float g=luminance_aprox(col); col=mix(vec3(g),col,1.08);', // saturacion +8
         '  col=col*col*(3.0-2.0*col)*0.22+col*0.78;',               // curva S suave
@@ -1938,7 +2008,9 @@ function actualizarSombra(){
 }
 function renderScene(){ if(!RENDER_ON) return;
   if(skyMesh) skyMesh.material.uniforms.uT.value=missionTime;
-  if(gradePass) gradePass.uniforms.uT.value=missionTime%37;
+  if(gradePass){ gradePass.uniforms.uT.value=missionTime%37;
+    /* la lente FPV es un ojo de pez: solo en la cámara a bordo del dron */
+    gradePass.uniforms.uBarril.value=(mode==='drone' && drone.active && droneCam===0)?(store.rates.lente??0.12):0; }
   actualizarSombra();
   if(useComposer && composer) composer.render(); else if(renderer&&scene) renderer.render(scene, camera); }
 
@@ -2326,7 +2398,11 @@ function buildProps(b){
       box.position.set(x, terrainHeight(x,z)+ht/2-1, z);
       box.rotation.y=Math.round(h2(i,29)*4)*Math.PI/8;
       propGroup.add(box);
-      colliders.push({x,z,r:Math.max(w,dpt)*0.55, h:ht});
+      /* la FORMA va aparte del radio: el radio (circulo) lo sigue usando el
+         blindado; el dron choca contra la CAJA girada. Con el circulo, una
+         ruina de 16x6 chocaba a 30 m de su cara corta. */
+      colliders.push({x,z,r:Math.max(w,dpt)*0.55, h:ht, base:terrainHeight(x,z)-1,
+        caja:{hw:w/2, hd:dpt/2, rot:box.rotation.y}, rx:Math.hypot(w,dpt)/2});
     }
   }
 }
@@ -3603,7 +3679,8 @@ async function buildOSM(tok){
       const gp=geomPretil(e.pts, e.cx, e.cz, baseY+hU, 0.85*M2U, escalaTecho);
       if(gp){ pintarMalla(gp, rgbTecho, 0.08); geosTecho.push(gp); nPretil++; }
     }
-    colliders.push({ x:e.cx, z:e.cz, r:Math.max(1.2,Math.sqrt(e.areaU/Math.PI)*0.85), h:hU });
+    colliders.push({ x:e.cx, z:e.cz, r:Math.max(1.2,Math.sqrt(e.areaU/Math.PI)*0.85), h:hU,
+      base:baseY, pts:e.pts, rx:e.pts.reduce((m,q)=>Math.max(m,Math.hypot(q.x-e.cx,q.z-e.cz)),0) });   // el poligono OSM real
     /* Trastos de azotea SOLO donde hay azotea. Se estaban plantando también en
        las casas con tejado, y a la altura del alero: el tanque de agua salía
        atravesando el faldón, medio dentro y medio fuera. Una casa de teja no
@@ -5543,8 +5620,9 @@ function ensureGrid(){
   const n=Math.ceil(WORLD/CELL)+1, buckets=new Array(n*n).fill(null);
   for(let i=0;i<colliders.length;i++){
     const c=colliders[i];
-    const x0=clamp(Math.floor((c.x-c.r+HALF)/CELL),0,n-1), x1=clamp(Math.floor((c.x+c.r+HALF)/CELL),0,n-1);
-    const z0=clamp(Math.floor((c.z-c.r+HALF)/CELL),0,n-1), z1=clamp(Math.floor((c.z+c.r+HALF)/CELL),0,n-1);
+    const rr=Math.max(c.r, c.rx||0);   // la forma entera, no solo el circulo del blindado
+    const x0=clamp(Math.floor((c.x-rr+HALF)/CELL),0,n-1), x1=clamp(Math.floor((c.x+rr+HALF)/CELL),0,n-1);
+    const z0=clamp(Math.floor((c.z-rr+HALF)/CELL),0,n-1), z1=clamp(Math.floor((c.z+rr+HALF)/CELL),0,n-1);
     for(let zz=z0;zz<=z1;zz++) for(let xx=x0;xx<=x1;xx++){
       const k=zz*n+xx; (buckets[k]||(buckets[k]=[])).push(i); }
   }
@@ -5629,21 +5707,12 @@ addEventListener('keydown',e=>{ keys[e.code]=true;
      Estaban las dos atadas al mismo keydown, así que una sola pulsación abría
      el panel Y congelaba la escena a la vez. */
   if(e.code==='KeyU' && playing){ if(!cerrarPorQue()) mostrarPorQue(); }
+  if(e.code==='KeyX' && playing && !paused) reiniciarIntento();
   if(e.code==='KeyG' && gaze.ready){ if(gaze.piloto) iniciarCentradoFacial(); else calibrateGaze(); }
   if(e.code==='KeyH' && gaze.ready){ gaze.invertYaw=!gaze.invertYaw; feed('Mirada '+(gaze.invertYaw?'normal':'invertida')); }
-  if(e.code==='KeyB' && playing && mode==='drone'){ drone.acro=!drone.acro;
-    if(drone.acro){
-      /* Se entra NIVELADO y con el rumbo actual: el cuaternión arranca de cero
-         cada vez, porque heredar la actitud de un vuelo anterior es aparecer
-         de espaldas sin haber hecho nada. */
-      drone.quat=new THREE.Quaternion().setFromEuler(new THREE.Euler(0,drone.yaw,0,'YXZ'));
-      drone.wx=drone.wy=drone.wz=0;
-      feed('Vuelo: ACRO REAL (rate) — la palanca pide GRADOS/SEGUNDO, sin tope: flips y loops. Espacio = gas a fondo, Shift = cortar');
-    } else {
-      drone.pitch=0; drone.roll=0; drone.quat=null;
-      feed('Vuelo: FÁCIL — sueltas y se para, mantiene la altura');
-    }
-    updateChips(); }
+  /* B recorre los tres modos en el orden en que se aprenden */
+  if(e.code==='KeyB' && playing && mode==='drone'){
+    fijarModoVuelo({facil:'angulo', angulo:'acro', acro:'facil'}[modoVuelo()]); }
   if(['Space','KeyW','KeyA','KeyS','KeyD','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code)) e.preventDefault();
 });
 addEventListener('keyup',e=>{ keys[e.code]=false; });
@@ -5963,7 +6032,7 @@ function mostrarControles(){
   el.innerHTML='<div class="tt">'+(facial?'🧑‍✈️ PILOTO FACIAL':'CONTROLES DEL DRON')+'</div>'+
     (facial
       ? 'Cabeza a los lados → <b>girar</b><br>Mirar abajo → <b>avanzar</b> · arriba → <b>retroceder</b><br><b>ESPACIO</b> subir · <b>SHIFT</b> bajar · 💋 disparar<br><b>G</b> o clic en la diana → recentrar<br><b>H</b> → espejo (si gira al revés)'
-      : '<b>W</b> adelante · <b>S</b> atrás<br><b>A</b>/<b>D</b> girar<br><b>ESPACIO</b> subir · <b>SHIFT</b> bajar<br><b>R</b>/<b>Q</b> cámara arriba/abajo<br><b>B</b> acro · <b>C</b> vista · <b>F</b> recoger');
+      : '<b>W</b> adelante · <b>S</b> atrás<br><b>A</b>/<b>D</b> girar<br><b>ESPACIO</b> subir · <b>SHIFT</b> bajar<br><b>R</b>/<b>Q</b> cámara arriba/abajo<br><b>B</b> modo (fácil·ángulo·acro) · <b>X</b> reintentar · <b>C</b> vista · <b>F</b> recoger');
   el.classList.add('on');
   clearTimeout(el._t); el._t=setTimeout(()=>el.classList.remove('on'), 9000);
 }
@@ -6292,6 +6361,7 @@ function limpiarHuellas(){ if(HUELLAS){ HUELLAS.count=0; _huellaIdx=0; _huellaAc
    débil se pinta aquí también: franjas de estática horizontales, como rompe
    de verdad el analógico. */
 let OSD_ULT={};
+const _osdF=new THREE.Vector3();
 function dibujarOSD(){
   const cv=$('osdCv'); if(!cv) return;
   const activo = playing && mode==='drone' && drone.active && droneCam===0;
@@ -6317,7 +6387,32 @@ function dibujarOSD(){
   texto(((volt/6).toFixed(2))+'V/c', W*0.03, H*0.95-H/38);
   texto(mm+':'+ss, W*0.97, H*0.95, 'right');
   texto('RSSI '+rssi, W*0.97, H*0.07, 'right', rssi<40?'#ff9a4a':undefined);
-  texto(drone.acro?'ACRO':'ANGL', W*0.03, H*0.07);
+  texto({facil:'GPS',angulo:'ANGL',acro:'ACRO'}[modoVuelo()], W*0.03, H*0.07);
+  /* NAVEGACIÓN, lo que trae a casa: altura sobre el suelo, velocidad,
+     flecha y distancia al puesto, mAh gastados. La flecha se calcula con
+     productos escalares contra los ejes del aparato (no con ángulos sueltos:
+     la trampa de signos de la casa). */
+  {
+    const agl=Math.max(0,(drone.pos.y-terrainHeight(drone.pos.x,drone.pos.z))*MPU-((drone.suelo||0)*MPU));
+    texto('ALT '+Math.round(agl)+'m', W*0.03, H*0.50);
+    texto(Math.round(drone.vel.length()*MPU*3.6)+'km/h', W*0.97, H*0.50, 'right');
+    const hx=cmdPost.x-drone.pos.x, hz=cmdPost.z-drone.pos.z, hd=Math.hypot(hx,hz)||1;
+    /* en acro el yaw de Euler se voltea al ir invertido: el rumbo sale del
+       morro del cuaternion proyectado al suelo */
+    let fx=Math.sin(drone.yaw), fz=Math.cos(drone.yaw);
+    if(drone.acro && drone.quat){ _osdF.set(0,0,1).applyQuaternion(drone.quat); const l=Math.hypot(_osdF.x,_osdF.z); if(l>0.05){ fx=_osdF.x/l; fz=_osdF.z/l; } }
+    const rx=-fz, rz=fx;
+    const ang=Math.atan2((hx*rx+hz*rz)/hd, (hx*fx+hz*fz)/hd);
+    const ax=W/2, ay=H*0.075, L=H*0.022;
+    g.save(); g.translate(ax,ay); g.rotate(ang);
+    g.fillStyle='rgba(0,0,0,.6)'; g.beginPath(); g.moveTo(1,-L+1); g.lineTo(L*0.6+1,L*0.6+1); g.lineTo(1,L*0.25+1); g.lineTo(-L*0.6+1,L*0.6+1); g.closePath(); g.fill();
+    g.fillStyle='#e8f4e8'; g.beginPath(); g.moveTo(0,-L); g.lineTo(L*0.6,L*0.6); g.lineTo(0,L*0.25); g.lineTo(-L*0.6,L*0.6); g.closePath(); g.fill();
+    g.restore();
+    texto('⌂ '+Math.round(hd*MPU)+'m', W/2, H*0.075+L*2.2, 'center');
+    const CAP=(stats.drone.mah)||5000;   // coherente con los 20 min de bateria del juego
+    texto(Math.round((1-drone.batt)*CAP)+'mAh', W*0.97, H*0.95-H/38, 'right');
+    OSD_ULT.alt=Math.round(agl); OSD_ULT.casa_m=Math.round(hd*MPU); OSD_ULT.flecha_grados=Math.round(ang*180/Math.PI);
+  }
   if(stats.carga&&stats.carga.id!=='ninguna') texto(stats.carga.tipo==='granada'?('GRAN x'+(drone.muni|0)):'CARGA', W*0.03, H*0.07+H/38);
   // avisos que PARPADEAN: el parpadeo es el lenguaje del OSD
   const blink=(missionTime%0.8)<0.45;
@@ -6329,7 +6424,7 @@ function dibujarOSD(){
   if(aviso && blink){ g.font='800 '+Math.round(H/26)+'px ui-monospace,Consolas,monospace'; g.textAlign='center';
     g.fillStyle='rgba(0,0,0,.8)'; g.fillText(aviso, W/2+2, H*0.68+2);
     g.fillStyle=col; g.fillText(aviso, W/2, H*0.68); }
-  OSD_ULT={volt:+volt.toFixed(1), rssi, timer:mm+':'+ss, modo:drone.acro?'ACRO':'ANGL', aviso};
+  Object.assign(OSD_ULT,{volt:+volt.toFixed(1), rssi, timer:mm+':'+ss, modo:{facil:'GPS',angulo:'ANGL',acro:'ACRO'}[modoVuelo()], aviso});
   /* RASGADO DE VIDEO. El analógico no se degrada uniforme: rompe en FRANJAS
      horizontales de estática. Cuantas más, peor la señal. */
   if(signal<0.55){
@@ -6388,15 +6483,403 @@ function dibujarInstrumentos(){
     s2.arc(x0+39+clamp(ex,-1,1)*34, 43-clamp(ey,-1,1)*30, 5, 0, TAU); s2.fill();
     s2.fillStyle='#8c93a3'; s2.font='700 8px system-ui'; s2.textAlign='center'; s2.fillText(eti, x0+39, h2-2);
   };
-  const gas=(inp.up?1:0)-(inp.down?1:0);
+  const gas=(inp.throttle!=null)? inp.throttle*2-1 : (inp.up?1:0)-(inp.down?1:0);
   caja(6,  clamp(inp.dr_yaw||0,-1,1), gas, 'GAS · GUIÑADA');
   caja(104,clamp(inp.dr_roll||inp.dr_yaw||0,-1,1), clamp(inp.dr_pitch||0,-1,1), 'CABECEO · ALABEO');
 }
 
+/* =====================================================================
+   🎮 EMISORA RC Y MANDOS — la Gamepad API
+   ---------------------------------------------------------------------
+   ⚠ La brecha número uno contra cualquier simulador de referencia. Liftoff,
+   Velocidrone, DRL y Uncrashed se vuelan con la EMISORA REAL enchufada por
+   USB: EdgeTX/OpenTX la presentan como joystick HID y el navegador la ve por
+   la Gamepad API. Sin esto, el simulador entrenaba los dedos para un teclado
+   y no para la radio con la que el alumno va a volar de verdad.
+   El orden de los ejes NO es estándar (AETR, TAER, y cada driver los numera
+   a su manera), así que no se adivina: se CALIBRA, como en Liftoff — mueves
+   el acelerador y el asistente descubre qué eje es y hacia dónde crece.
+   El acelerador de una emisora NO vuelve al centro: es analógico, y por eso
+   la física de vuelo lee ahora `inp.throttle` (0..1) cuando hay emisora:
+   en ACRO es empuje directo (como en la realidad), en FÁCIL el centro
+   mantiene la altura (como el modo altitud de una controladora). */
+let MANDO_DBG=null;                 // ?dbg: un mando falso para probar sin hardware
+const MANDO={ ultId:'', ultBtn:[], modoPrev:null };
+const ASIS={ activo:false, paso:0, min:[], max:[], rest:[], map:{}, sost:0, cand:-1 };
+const ASIS_PASOS=[
+  {k:'extremos', t:'1/6 · Mueve TODAS las palancas en círculo hasta los topes, dos o tres vueltas. Luego pulsa Siguiente.', manual:true},
+  {k:'centro',   t:'2/6 · Suelta las palancas en el centro y deja el ACELERADOR ABAJO del todo. Pulsa Siguiente.', manual:true},
+  {k:'thr',   t:'3/6 · Sube el ACELERADOR a fondo y mantenlo.'},
+  {k:'yaw',   t:'4/6 · Timón (guiñada) a la DERECHA a fondo y mantén.'},
+  {k:'pitch', t:'5/6 · Elevador ADELANTE a fondo (palanca hacia arriba) y mantén.'},
+  {k:'roll',  t:'6/6 · Alerón a la DERECHA a fondo y mantén.'},
+  {k:'fuego', t:'Opcional · Pulsa el botón o mueve el interruptor que quieras para DISPARAR (o Saltar).', opcional:true},
+  {k:'modo',  t:'Opcional · Mueve el interruptor que quieras para ACRO / FÁCIL (o Saltar).', opcional:true},
+];
+function padActual(){
+  if(MANDO_DBG) return MANDO_DBG;
+  const ps=navigator.getGamepads?navigator.getGamepads():[];
+  const id=store.mando&&store.mando.id;
+  let primero=null;
+  for(const g of ps){ if(!g||!g.connected) continue; if(!primero) primero=g; if(id && g.id===id) return g; }
+  return primero;
+}
+const zm=(v,dz)=>{ const a=Math.abs(v); return a<dz?0:Math.sign(v)*(a-dz)/(1-dz); };
+/* normaliza un eje centrado con su calibración: c = reposo, pos = tope en el
+   sentido "positivo" del juego, neg = el otro tope */
+function ejeCentrado(m, ax){
+  const a=ax[m.eje]; if(a==null) return 0;
+  const d=(a-m.c)*Math.sign(m.pos-m.c||1);
+  const v=d>=0 ? d/Math.max(1e-3,Math.abs(m.pos-m.c)) : d/Math.max(1e-3,Math.abs(m.c-m.neg));
+  return clamp(v,-1,1);
+}
+function leerMando(){
+  const g=padActual(), map=store.mando&&store.mando.map;
+  if(!g || !map || !map.thr || !map.yaw || !map.pitch || !map.roll) return null;
+  const ax=g.axes||[], dz=store.rates.dz;
+  let thr;
+  if(map.thr.centrado){ thr=0.5+0.5*ejeCentrado(map.thr, ax); }
+  else { const a=ax[map.thr.eje]; thr=clamp((a-map.thr.lo)/((map.thr.hi-map.thr.lo)||1),0,1); }
+  const lee=(k)=>zm(ejeCentrado(map[k],ax),dz);
+  const btn=(b)=>{ if(!b) return false;
+    if(b.tipo==='boton'){ const x=g.buttons&&g.buttons[b.i]; return !!(x&&(x.pressed||x.value>0.5)); }
+    const a=ax[b.i]; return a!=null && (a-b.rest)*Math.sign(b.sent||1) > 0.5; };
+  return { thr, yaw:lee('yaw'), pitch:lee('pitch'), roll:lee('roll'),
+           fuego:btn(map.fuego), modo:map.modo?btn(map.modo):null,
+           sec: !!(map.std && g.buttons && g.buttons[1] && g.buttons[1].pressed),
+           cam: !!(map.std && g.buttons && g.buttons[2] && g.buttons[2].pressed),
+           acroBtn: !!(map.std && g.buttons && g.buttons[3] && g.buttons[3].pressed) };
+}
+/* Los tres modos, en el orden en que se aprenden (Velocidrone, Liftoff, DJI):
+   FÁCIL (posición retenida, como un DJI en P-GPS) → ÁNGULO (autonivelado sin
+   retener posición) → ACRO (rates, sin autonivelado). */
+function modoVuelo(){ return drone.acro ? (drone.angulo?'angulo':'acro') : 'facil'; }
+function esMultirrotor(){ const d=stats&&stats.drone; return !!d && !d.ala && !d.ave && !['surface','sub','amph'].includes(d.domain); }
+function fijarModoVuelo(m){
+  if(modoVuelo()===m) return;
+  /* un casco, un ala o un ave no tienen ÁNGULO ni ACRO: con la B la lancha
+     volaba como un cuadricóptero de 2,2 g */
+  if(m!=='facil' && !esMultirrotor()){ feed('Este aparato no tiene modo ángulo ni acro: se gobierna como lo que es'); return; }
+  if(m!=='facil' && drone.rescate){ feed('Rescate en curso: espera a recuperar el enlace'); return; }
+  const eraFisico=!!drone.acro;
+  drone.acro=(m!=='facil'); drone.angulo=(m==='angulo');
+  if(drone.acro && !eraFisico){ drone.quat=new THREE.Quaternion().setFromEuler(new THREE.Euler(0,drone.yaw,0,'YXZ')); drone.wx=drone.wy=drone.wz=0; drone.thrG=1; }
+  if(!drone.acro){ drone.pitch=0; drone.roll=0; drone.quat=null; }
+  feed(m==='facil'?'Vuelo: FÁCIL — sueltas y se frena solo, mantiene la altura (el viento fuerte lo desplaza un poco)'
+     : m==='angulo'?'Vuelo: ÁNGULO — la palanca inclina y al soltar se nivela, pero NO frena: la inercia es tuya'
+     : 'Vuelo: ACRO — la palanca pide GRADOS/SEGUNDO, sin autonivelado');
+  updateChips();
+}
+function fijarAcro(on){ fijarModoVuelo(on?'acro':'facil'); }
+/* El mando de consola estándar (Xbox/PlayStation en Chrome: mapping
+   'standard') tiene ejes conocidos: no hace falta asistente. Modo 2, el de
+   casi todos los pilotos: izquierda = gas/guiñada, derecha = cabeceo/alabeo.
+   Su gas vuelve al centro, así que el centro es "mantener". */
+function usarMandoEstandar(){
+  const g=padActual(); if(!g){ $('mandoPaso').textContent='No hay mando: mueve una palanca o pulsa un botón (el navegador no lo muestra hasta que lo tocas).'; return; }
+  store.mando={ id:g.id, map:{ std:true,
+    thr:{eje:1,c:0,pos:-1,neg:1,centrado:true}, yaw:{eje:0,c:0,pos:1,neg:-1},
+    pitch:{eje:3,c:0,pos:-1,neg:1}, roll:{eje:2,c:0,pos:1,neg:-1},
+    fuego:{tipo:'boton',i:0} } };
+  save(); $('mandoPaso').textContent='✔ Mando estándar en Modo 2: A dispara · B secundaria · X cámara · Y acro/fácil.';
+  SONIDO.ui&&SONIDO.ui('ok');
+}
+function asistIniciar(){
+  const g=padActual();
+  if(!g){ $('mandoPaso').textContent='No veo la emisora. Enchúfala por USB en modo JOYSTICK (EdgeTX: "USB Joystick (HID)") y mueve una palanca.'; return; }
+  const ax=g.axes||[];
+  ASIS.activo=true; ASIS.paso=0; ASIS.sost=0; ASIS.cand=-1;
+  ASIS.min=ax.slice(); ASIS.max=ax.slice(); ASIS.rest=ax.slice();
+  ASIS.btnRest=(g.buttons||[]).map(b=>!!(b&&b.pressed));
+  ASIS.map={}; ASIS.id=g.id;
+  pintarPaso();
+}
+function pintarPaso(){
+  const P=ASIS_PASOS[ASIS.paso];
+  $('mandoPaso').textContent=ASIS.activo&&P?P.t:'';
+  $('mBtnSig').style.display=(ASIS.activo&&P&&P.manual)?'':'none';
+  $('mBtnSal').style.display=(ASIS.activo&&P&&P.opcional)?'':'none';
+}
+function asistAvanzar(){
+  ASIS.paso++; ASIS.sost=0; ASIS.cand=-1;
+  if(ASIS.paso>=ASIS_PASOS.length){
+    ASIS.activo=false; store.mando={ id:ASIS.id, map:ASIS.map }; save();
+    $('mandoPaso').textContent='✔ Emisora calibrada. Gas, guiñada, cabeceo y alabeo asignados — ya puedes volar con ella.';
+    $('mBtnSig').style.display='none'; $('mBtnSal').style.display='none';
+    SONIDO.ui&&SONIDO.ui('ok'); return;
+  }
+  pintarPaso();
+}
+function asistSiguiente(){
+  const P=ASIS_PASOS[ASIS.paso]; if(!ASIS.activo||!P) return;
+  const g=padActual(); if(!g) return;
+  if(P.k==='centro'){ ASIS.rest=(g.axes||[]).slice(); ASIS.btnRest=(g.buttons||[]).map(b=>!!(b&&b.pressed)); }
+  asistAvanzar();
+}
+function asistTick(dt){
+  if(!ASIS.activo) return;
+  const g=padActual(); if(!g) return;
+  const ax=g.axes||[], P=ASIS_PASOS[ASIS.paso];
+  for(let i=0;i<ax.length;i++){ ASIS.min[i]=Math.min(ASIS.min[i]??ax[i],ax[i]); ASIS.max[i]=Math.max(ASIS.max[i]??ax[i],ax[i]); }
+  if(P.manual) return;
+  const usados=new Set(['thr','yaw','pitch','roll'].filter(k=>ASIS.map[k]).map(k=>ASIS.map[k].eje));
+  if(P.opcional){
+    // un BOTÓN que cambió desde el reposo...
+    const bs=g.buttons||[];
+    for(let i=0;i<bs.length;i++){ const pr=!!(bs[i]&&bs[i].pressed);
+      if(pr!==!!ASIS.btnRest[i]){ ASIS.map[P.k]={tipo:'boton',i}; asistAvanzar(); return; } }
+    // ...o un eje libre que se movió (los interruptores de emisora son ejes)
+    for(let i=0;i<ax.length;i++){ if(usados.has(i)) continue;
+      if(Math.abs(ax[i]-ASIS.rest[i])>0.6){ ASIS.map[P.k]={tipo:'eje',i,rest:ASIS.rest[i],sent:Math.sign(ax[i]-ASIS.rest[i])}; asistAvanzar(); return; } }
+    return;
+  }
+  // el eje que más se aleja de su reposo, en proporción a su recorrido
+  let mejor=-1, rmax=0;
+  for(let i=0;i<ax.length;i++){ if(usados.has(i)) continue;
+    const rango=Math.max(0.05,(ASIS.max[i]-ASIS.min[i])/2);
+    const r=Math.abs(ax[i]-ASIS.rest[i])/rango;
+    if(r>rmax){ rmax=r; mejor=i; } }
+  if(mejor<0 || rmax<0.6){ ASIS.sost=0; ASIS.cand=-1; return; }
+  if(mejor!==ASIS.cand){ ASIS.cand=mejor; ASIS.sost=0; }
+  ASIS.sost+=dt;
+  if(ASIS.sost<0.4) return;     // sostenido: un roce no asigna un eje
+  const i=mejor, c=ASIS.rest[i], a=ax[i];
+  const tope = a>c ? ASIS.max[i] : ASIS.min[i];
+  const otro = a>c ? ASIS.min[i] : ASIS.max[i];
+  if(P.k==='thr'){
+    // ¿vuelve al centro? (mando de consola) o se queda abajo (emisora)
+    const mid=(ASIS.max[i]+ASIS.min[i])/2, rango=(ASIS.max[i]-ASIS.min[i])||1;
+    ASIS.map.thr = Math.abs(c-mid)<0.25*rango ? {eje:i,c,pos:tope,neg:otro,centrado:true} : {eje:i,lo:c,hi:tope};
+  } else ASIS.map[P.k]={eje:i,c,pos:tope,neg:otro};
+  asistAvanzar();
+}
+/* RATES — las fórmulas EXACTAS de Betaflight (rc.c), para que lo que el
+   alumno ajusta aquí sea lo que va a escribir en su controladora real.
+   "Actual rates": centro (°/s por unidad de palanca en el centro), máximo
+   (°/s a fondo) y expo. */
+const RATES_PERFILES={
+  escuela:   { c:[100,100,100], m:[400,400,300], e:[0.30,0.30,0.20] },
+  clasico:   { c:[189,189,140], m:[540,540,280], e:[0.54,0.54,0.53] },   // el tacto que tenía el juego
+  betaflight:{ c:[70,70,70],    m:[670,670,670], e:[0,0,0] },            // BF 4.3+ de fábrica
+};
+function ratesActuales(){
+  const r=store.rates;
+  if(r.perfil==='personal' && r.c) return { c:[r.c,r.c,r.c*0.8], m:[r.m,r.m,r.m*0.7], e:[r.e,r.e,r.e*0.7] };
+  return RATES_PERFILES[r.perfil]||RATES_PERFILES.clasico;
+}
+function tasaActual(x, c, m, e){
+  x=clamp(x,-1,1); const ax=Math.abs(x);
+  const expof=ax*(Math.pow(x,5)*e + x*(1-e));
+  return x*c + Math.max(0,m-c)*expof;        // °/s
+}
+function pintarCurva(){
+  const cv=$('mCurva'); if(!cv) return; const g=cv.getContext('2d'), W=cv.width, H=cv.height;
+  const R=ratesActuales(); g.clearRect(0,0,W,H);
+  g.strokeStyle='rgba(255,255,255,.12)'; g.beginPath(); g.moveTo(0,H-10); g.lineTo(W,H-10); g.stroke();
+  const top=Math.max(R.m[0],200)*1.05;
+  g.strokeStyle='#37b6ff'; g.lineWidth=2; g.beginPath();
+  for(let i=0;i<=60;i++){ const x=i/60, y=tasaActual(x,R.c[0],R.m[0],R.e[0]);
+    const px=x*(W-10)+5, py=H-10-(y/top)*(H-20); i?g.lineTo(px,py):g.moveTo(px,py); } g.stroke();
+  g.fillStyle='#8c93a3'; g.font='700 10px system-ui'; g.fillText(Math.round(R.m[0])+'°/s a fondo', 8, 14);
+  g.fillText('½ palanca: '+Math.round(tasaActual(0.5,R.c[0],R.m[0],R.e[0]))+'°/s', 8, 28);
+}
+function sincronizarRatesUI(){
+  const r=store.rates, R=ratesActuales();
+  $('mPerfil').value=r.perfil;
+  $('mC').value=R.c[0]; $('mM').value=R.m[0]; $('mE').value=R.e[0];
+  $('mCv').textContent=Math.round(R.c[0]); $('mMv').textContent=Math.round(R.m[0]); $('mEv').textContent=(+R.e[0]).toFixed(2);
+  $('mUp').value=r.uptilt; $('mUpv').textContent=r.uptilt+'°';
+  $('mDz').value=r.dz; $('mDzv').textContent=Math.round(r.dz*100)+'%';
+  $('mDios').checked=!!store.env.sinDano;
+  $('mLente').value=String(store.rates.lente??0.12);
+  pintarCurva();
+}
+function pintarBarras(){
+  const g=padActual(), el=$('mandoBarras'); if(!el) return;
+  $('mandoEstado').textContent = g ? ('Conectado: '+g.id.slice(0,60)+(store.mando?' · calibrado ✔':' · sin calibrar')) :
+    'Sin emisora ni mando. Enchufa la emisora por USB (modo joystick) y mueve una palanca.';
+  if(!g){ el.innerHTML=''; return; }
+  const v=leerMando(); let h='';
+  if(v){ const bar=(n,x,cen)=>'<div class="mBar"><b>'+n+'</b><i><u style="'+(cen?
+      ('left:'+(50+Math.min(0,x)*50)+'%;width:'+(Math.abs(x)*50)+'%'):('left:0;width:'+(x*100)+'%'))+'"></u></i></div>';
+    h+=bar('GAS',v.thr,false)+bar('GUIÑADA',v.yaw,true)+bar('CABECEO',v.pitch,true)+bar('ALABEO',v.roll,true);
+  } else {
+    (g.axes||[]).slice(0,8).forEach((a,i)=>{ h+='<div class="mBar"><b>eje '+i+'</b><i><u style="left:'+(50+Math.min(0,a)*50)+'%;width:'+(Math.abs(a)*50)+'%"></u></i></div>'; });
+  }
+  el.innerHTML=h;
+}
+let _mandoRAF=0, _mandoT=0, _mandoPausaba=false;
+function abrirMando(){
+  const el=$('mandoBox'); el.classList.add('on');
+  if(playing && !paused){ paused=true; _mandoPausaba=true; }
+  sincronizarRatesUI();
+  const bucle=(t)=>{ if(!el.classList.contains('on')) return;
+    const dt=Math.min(0.1,(t-(_mandoT||t))/1000); _mandoT=t;
+    asistTick(dt); pintarBarras(); _mandoRAF=requestAnimationFrame(bucle); };
+  cancelAnimationFrame(_mandoRAF); _mandoT=0; _mandoRAF=requestAnimationFrame(bucle);
+}
+function cerrarMando(){ $('mandoBox').classList.remove('on'); ASIS.activo=false;
+  if(_mandoPausaba){ paused=false; _mandoPausaba=false; } }
+function cablearMando(){
+  $('btnMando').onclick=(e)=>{ e.stopPropagation(); abrirMando(); };
+  $('mBtnCerrar').onclick=cerrarMando;
+  $('mBtnCal').onclick=asistIniciar; $('mBtnStd').onclick=usarMandoEstandar;
+  $('mBtnSig').onclick=asistSiguiente; $('mBtnSal').onclick=asistAvanzar;
+  $('mPerfil').onchange=()=>{ const v=$('mPerfil').value;
+    if(v==='personal'){ const R=ratesActuales(); store.rates.c=R.c[0]; store.rates.m=R.m[0]; store.rates.e=R.e[0]; }
+    store.rates.perfil=v; save(); sincronizarRatesUI(); };
+  const personal=()=>{ store.rates.perfil='personal';
+    store.rates.c=+$('mC').value; store.rates.m=Math.max(+$('mM').value, store.rates.c); store.rates.e=+$('mE').value;
+    save(); sincronizarRatesUI(); };
+  $('mC').oninput=personal; $('mM').oninput=personal; $('mE').oninput=personal;
+  $('mUp').oninput=()=>{ store.rates.uptilt=+$('mUp').value; save(); sincronizarRatesUI(); };
+  $('mDz').oninput=()=>{ store.rates.dz=+$('mDz').value; save(); sincronizarRatesUI(); };
+  $('mDios').onchange=()=>{ store.env.sinDano=!!$('mDios').checked; save(); };
+  $('mLente').onchange=()=>{ store.rates.lente=+$('mLente').value; save(); };
+  addEventListener('gamepadconnected', e=>{
+    feed('🎮 '+((e.gamepad&&e.gamepad.id)||'Mando').slice(0,40)+' conectado'+(store.mando?'':' — calíbralo en EMISORA'),'good'); });
+}
+
+/* =====================================================================
+   💥 CHOQUES DEL DRON
+   ---------------------------------------------------------------------
+   Todos los simuladores de referencia castigan el choque: Velocidrone y
+   Liftoff rompen hélices por pasos, Zephyr suspende la lección. Aquí el dron
+   atravesaba los edificios OSM reales, y el suelo era un piso sin fricción.
+   Regla: un roce (menos de 2,5 m/s) rebota; un golpe rompe un 25% de hélice
+   (menos empuje y más temblor); a 9 m/s o con las hélices deshechas, se
+   estrella. En la ESCUELA no se rompe nada: vuelves al último aro, como el
+   reinicio en puerta de Velocidrone, y el choque cuenta. "Sin daño" (modo
+   dios) desactiva todo eso para practicar sin castigo. */
+/* el punto mas cercano de la FORMA del colisionador al punto (px,pz):
+   devuelve {d, nx, nz, dentro} con la normal hacia FUERA */
+function _cercaForma(c, px, pz){
+  if(c.caja){
+    const co=Math.cos(c.caja.rot), si=Math.sin(c.caja.rot), dx=px-c.x, dz=pz-c.z;
+    const lx=dx*co - dz*si, lz=dx*si + dz*co;              // al marco local de la caja
+    const hw=c.caja.hw, hd=c.caja.hd;
+    let nlx, nlz, d, dentro=false;
+    if(Math.abs(lx)<=hw && Math.abs(lz)<=hd){             // dentro: sale por la cara mas cercana
+      dentro=true; const gx=hw-Math.abs(lx), gz=hd-Math.abs(lz);
+      if(gx<gz){ nlx=Math.sign(lx)||1; nlz=0; d=gx; } else { nlx=0; nlz=Math.sign(lz)||1; d=gz; }
+    } else {
+      const qx=clamp(lx,-hw,hw), qz=clamp(lz,-hd,hd); d=Math.hypot(lx-qx,lz-qz);
+      nlx=(lx-qx)/(d||1); nlz=(lz-qz)/(d||1);
+    }
+    return { d, dentro, nx:nlx*co + nlz*si, nz:-nlx*si + nlz*co };
+  }
+  if(c.pts && c.pts.length>2){
+    let dentro=false, best=1e9, bx=0, bz=0;
+    const P=c.pts;
+    for(let k=0, m=P.length-1; k<P.length; m=k++){
+      const a=P[m], b=P[k];
+      if(((a.z>pz)!==(b.z>pz)) && (px < (b.x-a.x)*(pz-a.z)/((b.z-a.z)||1e-9)+a.x)) dentro=!dentro;
+      const ex=b.x-a.x, ez=b.z-a.z, L2=ex*ex+ez*ez||1e-9;
+      const t=clamp(((px-a.x)*ex+(pz-a.z)*ez)/L2,0,1), qx=a.x+ex*t, qz=a.z+ez*t;
+      const dd=Math.hypot(px-qx,pz-qz); if(dd<best){ best=dd; bx=qx; bz=qz; }
+    }
+    let nx=(px-bx)/(best||1), nz=(pz-bz)/(best||1);
+    if(dentro){ nx=-nx; nz=-nz; }
+    return { d:best, dentro, nx, nz };
+  }
+  const dx=px-c.x, dz=pz-c.z, d0=Math.hypot(dx,dz);
+  return { d:Math.abs(d0-c.r), dentro:d0<c.r, nx:dx/(d0||1), nz:dz/(d0||1) };
+}
+function chocarDron(){
+  drone.techoBajo=null;
+  if(!colliders.length || !drone.active) return;
+  const list=bucketAt(drone.pos.x, drone.pos.z); if(!list){ drone._yPrev=drone.pos.y; return; }
+  const rD=0.45*M, sueloD=drone.suelo||0, gracia=missionTime<(drone._gracia||0);
+  for(const i of list){ const c=colliders[i];
+    if(Math.hypot(drone.pos.x-c.x, drone.pos.z-c.z) > Math.max(c.r,c.rx||0)+rD) continue;   // prefiltro
+    const f=_cercaForma(c, drone.pos.x, drone.pos.z);
+    if(!f.dentro && f.d>=rD) continue;
+    const base=(c.base!=null)?c.base:terrainHeight(c.x,c.z), top=base+(c.h||6*M);
+    if(f.dentro) drone.techoBajo=Math.max(drone.techoBajo??-1e9, top);
+    if(drone.pos.y-sueloD >= top) continue;                       // por encima: libre
+    if(drone.diving){ detonateDrone(); return; }                  // kamikaze contra un muro
+    /* TECHO: si el cuadro anterior estaba por encima y la huella esta debajo,
+       es posarse en la azotea, no chocar con la pared (una tactica real). */
+    if(f.dentro && (drone._yPrev??-1e9)-sueloD >= top-0.05*M){
+      const vBaja=-drone.vel.y*MPU;
+      drone.pos.y=top+sueloD;
+      if(vBaja>4.5 && !gracia) golpeDron(vBaja,'una azotea');
+      if(drone.vel.y<0) drone.vel.y=0;
+      drone.enTecho=true; continue;
+    }
+    const push = f.dentro ? f.d+rD : rD-f.d;
+    drone.pos.x+=f.nx*push; drone.pos.z+=f.nz*push;
+    const vn=-(drone.vel.x*f.nx+drone.vel.z*f.nz);                // >0: entrando
+    if(vn<=0) continue;
+    drone.vel.x+=f.nx*vn*1.3; drone.vel.z+=f.nz*vn*1.3;            // rebote con restitucion 0,3
+    const vImp=vn*MPU;
+    if(vImp>2.5 && !gracia) golpeDron(vImp, (c.h||0)>12*M?'un edificio':'un obstaculo');
+    if(!drone.active) return;
+  }
+  drone._yPrev=drone.pos.y;
+}
+/* perder el dron por un choque: sin marcar al jugador como detectado (eso es
+   de los disparos enemigos) */
+function perderDron(motivo){
+  spawnExplosion(drone.pos, 3, 0xffb030); spawnSmoke(drone.pos);
+  drone.active=false; drone.kamikaze=false; drone.diving=false;
+  if(drone.mesh) drone.mesh.visible=false;
+  feed('💥 '+motivo+' · vuelves al blindado','bad');
+  mode='tank'; updateChips();
+  $('btnUp').style.display='none'; $('btnDown').style.display='none';
+}
+function golpeDron(vImp, contra){
+  if((drone._golpeT??-9)>missionTime-0.35) return;
+  drone._golpeT=missionTime;
+  drone.choques=(drone.choques||0)+1; drone.sacudida=0.35;
+  SONIDO.ui&&SONIDO.ui('dano');
+  const v=vImp.toFixed(1);
+  if(store.env.sinDano){ feed('💥 Choque a '+v+' m/s contra '+contra+' (sin daño activado)'); return; }
+  if(ESC.activa){ feed('💥 Te estrellaste a '+v+' m/s contra '+contra+' — vuelves al último aro','bad');
+    setTimeout(reaparecerEscuela, 700); return; }
+  if(vImp>=9 || (drone.helices??1)<=0.25){
+    if(duelo.active){ dueloDerribado(); return; }
+    perderDron('Estrellado a '+v+' m/s contra '+contra); return; }
+  drone.helices=Math.max(0,(drone.helices??1)-0.25);
+  feed('🛞 Golpe a '+v+' m/s contra '+contra+' — hélices al '+Math.round(drone.helices*100)+'%','bad');
+}
+/* vuelve al último aro superado (o a la salida), quieto y nivelado */
+function reaparecerEscuela(){
+  if(!ESC.activa || !drone.active) return;
+  const ult = ESC.idx>0 && ESC.aros[ESC.idx-1] ? ESC.aros[ESC.idx-1].m.position : ESC.salida;
+  if(!ult) return;
+  drone.pos.copy(ult); drone.vel.set(0,0,0); drone.yawVel=0;
+  if(ESC.idx===0 && ESC.salidaYaw!=null) drone.yaw=ESC.salidaYaw;
+  if(drone.acro){ drone.quat=new THREE.Quaternion().setFromEuler(new THREE.Euler(0,drone.yaw,0,'YXZ')); drone.wx=drone.wy=drone.wz=0; drone.thrG=1; }
+}
+/* X: en la escuela, repetir el intento desde cero sin recargar el mundo
+   (0,3 s frente a los 2-10 s de reconstruirlo); fuera, MODO TORTUGA: darle la
+   vuelta al dron volcado en el suelo, como Betaflight con su interruptor. */
+function reiniciarIntento(){
+  if(!playing || mode!=='drone' || !drone.active) return;
+  if(ESC.activa && ESC.salida){
+    ESC.idx=0; ESC.aros.forEach(a=>a.hecho=false); ESC.tIni=null; ESC.tFin=null; ESC.tHover=0; ESC.aterrizado=false;
+    for(const st of (objState||[])) st.done=false;
+    if(typeof updateObjText==='function') updateObjText();
+    if(typeof marcarAro==='function') marcarAro();
+    drone.pos.copy(ESC.salida); drone.vel.set(0,0,0); drone.yawVel=0;
+    if(ESC.salidaYaw!=null) drone.yaw=ESC.salidaYaw;
+    if(drone.acro){ drone.quat=new THREE.Quaternion().setFromEuler(new THREE.Euler(0,drone.yaw,0,'YXZ')); drone.wx=drone.wy=drone.wz=0; drone.thrG=1; }
+    feed('↻ Intento reiniciado','good'); return;
+  }
+  if(drone.acro && drone.quat && drone.enSuelo){
+    _deu.setFromQuaternion(drone.quat,'YXZ');
+    drone.quat.setFromEuler(new THREE.Euler(0,_deu.y,0,'YXZ')); drone.wx=drone.wy=drone.wz=0;
+    feed('🐢 Modo tortuga: dron enderezado');
+  }
+}
+
 /* lee la intención del jugador (unificado) */
 let PALANCA_DBG=null;   // la pone DRONES.palanca(); null = mandan los controles reales
+const _camQ=new THREE.Quaternion(), _qUp=new THREE.Quaternion(), _camOff=new THREE.Vector3();
+const _ejeX=new THREE.Vector3(1,0,0), _qGiroY=new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), Math.PI);
 function readInput(dt){
-  const inp={ moveF:0, moveT:0, dyaw:0, dpitch:0, dr_yaw:0, dr_pitch:0, dr_roll:0, gimbal:0, fire:false, sec:false, up:false, down:false, boost:false };
+  const inp={ moveF:0, moveT:0, dyaw:0, dpitch:0, dr_yaw:0, dr_pitch:0, dr_roll:0, gimbal:0, fire:false, sec:false, up:false, down:false, boost:false, throttle:null };
   // teclado (casco)
   inp.moveF=((keys.KeyW||keys.ArrowUp)?1:0)-((keys.KeyS||keys.ArrowDown)?1:0);
   inp.moveT=((keys.KeyD||keys.ArrowRight)?1:0)-((keys.KeyA||keys.ArrowLeft)?1:0);
@@ -6432,6 +6915,19 @@ function readInput(dt){
     if(mode==='drone'){ inp.dr_pitch=hand.moveF; inp.dr_yaw=hand.moveT; } }
   // BESO (gesto de boca) -> dispara el cañón
   if(gaze.kiss) inp.fire=true;
+  /* 🎮 EMISORA / MANDO calibrado: manda sobre teclado, cara y mano. El
+     acelerador llega ANALÓGICO en inp.throttle y la física lo usa tal cual. */
+  const mv=leerMando();
+  if(mv){
+    if(mode==='drone'){ inp.dr_yaw=mv.yaw; inp.dr_pitch=mv.pitch; inp.dr_roll=mv.roll; inp.throttle=mv.thr; inp.up=false; inp.down=false; }
+    else { inp.moveF=mv.pitch; inp.moveT=mv.roll||mv.yaw; inp.dyaw += -mv.yaw*1.5*dt; }
+    if(mv.fuego) inp.fire=true; if(mv.sec) inp.sec=true;
+    // flancos: el interruptor de modo fija ACRO/FÁCIL; los botones de consola alternan
+    if(mode==='drone' && mv.modo!==null && mv.modo!==MANDO.modoPrev){ if(MANDO.modoPrev!==null) fijarAcro(mv.modo); MANDO.modoPrev=mv.modo; }
+    if(mv.acroBtn && !MANDO.acroPrev && mode==='drone') fijarAcro(!drone.acro);
+    if(mv.cam && !MANDO.camPrev) cycleCam();
+    MANDO.acroPrev=mv.acroBtn; MANDO.camPrev=mv.cam;
+  }
   // MANDO REMOTO (host): el celular pilota el dron y tiene prioridad
   if(remote.active && remote.role==='host' && remote.connected){
     inp.dr_yaw=remote.in.yaw||0; inp.dr_pitch=remote.in.pitch||0; inp.dr_roll=remote.in.roll||0;
@@ -6451,18 +6947,34 @@ function readInput(dt){
      controladora seria trae RTH, y el alumno debe aprender a confiar en él.
      Sin enlace (y sin fibra), el aparato ignora tus palancas, se orienta al
      puesto de mando y navega solo; al recuperar señal, te lo devuelve. */
-  if(mode==='drone' && drone.active && linkLost && !stats.drone.fiber && !drone.diving){
+  /* ⚠ RESCATE (el GPS Rescue de Betaflight, el RTH de DJI), con HISTÉRESIS:
+     entra al perder el enlace y solo devuelve el mando con señal > 0,25
+     durante 1,5 s — si no, el control salta entre piloto y automático en el
+     borde del alcance. Autonivela (en acro, dr_pitch=0,6 era una voltereta
+     sin fin), SUBE a 40 m antes de volver (ahora los edificios chocan) y al
+     llegar baja a 3 m y espera. Al recuperar, restaura el modo que tenías. */
+  if(mode==='drone' && drone.active && !stats.drone.fiber && !drone.diving){
+    if(linkLost && !drone.rescate){ drone.rescate=true; drone._modoPrev=modoVuelo(); drone._recupT=0;
+      if(drone.acro){ drone.rescate=false; fijarModoVuelo('facil'); drone.rescate=true; }
+      feed('📡 FAILSAFE: sin enlace — el dron sube y vuelve solo a casa','bad'); }
+    else if(drone.rescate && !linkLost){
+      drone._recupT = signal>0.25 ? (drone._recupT||0)+dt : 0;
+      if(drone._recupT>1.5){ drone.rescate=false;
+        if(drone._modoPrev && drone._modoPrev!=='facil') fijarModoVuelo(drone._modoPrev);
+        feed('📡 Enlace recuperado: vuelves a tener el mando','good'); }
+    }
+  }
+  if(mode==='drone' && drone.active && drone.rescate){
     const dx=cmdPost.x-drone.pos.x, dz=cmdPost.z-drone.pos.z, dist=Math.hypot(dx,dz);
     const rumbo=Math.atan2(dx,dz);
     let err=rumbo-drone.yaw; while(err>Math.PI)err-=TAU; while(err<-Math.PI)err+=TAU;
+    const agl=(drone.pos.y-terrainHeight(drone.pos.x,drone.pos.z))*MPU;
     /* signo NEGATIVO: en el modo fácil el yaw integra `drone.yaw -= yawVel`
-       (la trampa de signos de la casa) — dr_yaw positivo gira a la DERECHA de
-       pantalla pero DECRECE el ángulo. Comprobado: con +err el failsafe volaba
-       alejándose del puesto. */
-    inp.dr_yaw=clamp(-err*1.4,-1,1); inp.dr_pitch=dist>12?0.6:0; inp.dr_roll=0;
-    inp.up=false; inp.down=false;
-    if((drone._rthT||0)<missionTime-3){ drone._rthT=missionTime;
-      feed('📡 FAILSAFE: sin enlace — el dron vuelve solo a casa','bad'); }
+       (la trampa de signos de la casa). Comprobado midiendo la distancia. */
+    inp.dr_yaw=clamp(-err*1.4,-1,1); inp.dr_roll=0; inp.throttle=null; inp.up=false; inp.down=false;
+    const navalR=['surface','sub'].includes(stats.drone.domain);   // NAVAL vive en updateDrone, no aqui
+    if(dist>12*M){ if(agl<38 && !navalR){ inp.up=true; inp.dr_pitch=0; } else inp.dr_pitch=0.6; }
+    else { inp.dr_pitch=0; if(agl>3) inp.down=true; }
   }
   if(signal<0.42){ const j=(1-signal)*0.03; inp.dyaw+=(Math.random()-0.5)*j; inp.dpitch+=(Math.random()-0.5)*j*0.6; }
   if(linkLost){ inp.fire=false; inp.sec=false; }
@@ -6745,7 +7257,22 @@ function deployDrone(){
     drone.meshTipo=stats.drone.id;
     // el ave casi no da firma térmica: medio kilo de plástico con un motor diminuto
     addHeat(drone.mesh, 0.4, stats.drone.ave?0.8:(stats.drone.ala?3.0:2.2)); }
-  drone.active=true; drone.hp=60; drone.kamikaze=false; drone.diving=false; drone.acro=false;
+  drone.active=true; drone.hp=60; drone.kamikaze=false; drone.diving=false; drone.acro=false; drone.angulo=false;
+  drone.helices=1; drone.choques=0; drone.enSuelo=false; drone.sacudida=0;
+  drone._gracia=missionTime+1; drone._yPrev=null; drone.rescate=false;   // un segundo para salir de entre los edificios
+  if(drone.mesh.userData.suelo==null){
+    /* el punto más bajo de la malla, con el aparato nivelado: patas, batería
+       o casco. Solo mallas (los sprites térmicos inflarían la caja). */
+    const q0=drone.mesh.quaternion.clone(), p0=drone.mesh.position.clone();
+    drone.mesh.quaternion.identity(); drone.mesh.position.set(0,0,0); drone.mesh.updateMatrixWorld(true);
+    const bb=new THREE.Box3(), tmp=new THREE.Box3();
+    drone.mesh.traverse(o=>{ if(o.isMesh && o.geometry && !o.isSprite){
+      if(!o.geometry.boundingBox) o.geometry.computeBoundingBox();
+      tmp.copy(o.geometry.boundingBox).applyMatrix4(o.matrixWorld); bb.union(tmp); } });
+    drone.mesh.quaternion.copy(q0); drone.mesh.position.copy(p0);
+    drone.mesh.userData.suelo = bb.isEmpty() ? 1.2*M : Math.max(0.04*M, -bb.min.y+0.02*M);
+  }
+  drone.suelo=drone.mesh.userData.suelo;
   drone.muni=(stats.carga&&stats.carga.muni)||0;      // las granadas se rearman al recoger
   drone.tVuelo=0; drone.beepT=0;
   mostrarControles();
@@ -6888,7 +7415,9 @@ function updateDrone(dt, inp){
     if(gr!==_gimbalVisto){ _gimbalVisto=gr; updateChips(); }
   }
   const mBase=stats.drone.kg||1.0, mCarga=(stats.carga&&stats.carga.kg)||0;
-  const mTot=mBase+mCarga, TWR=2.2*mBase/mTot;
+  /* hélices rotas: cada 25% perdido resta ~9% de empuje (una pala mellada
+     empuja menos y vibra) */
+  const mTot=mBase+mCarga, TWR=2.2*mBase/mTot*(1-0.35*(1-(drone.helices??1)));
   /* Batería: 20 MINUTOS de vuelo (decisión de Joan, 15-ago-2026; antes eran
      55 segundos). Subir sigue gastando 60 % más. Con esto la batería deja de
      ser el reloj de la misión y pasa a ser lo que es en un dron real: el
@@ -6896,7 +7425,8 @@ function updateDrone(dt, inp){
   /* Sostener más peso pide más potencia SIEMPRE, no solo al subir: la teoría
      del rotor dice potencia ∝ peso^1,5, y es la razón de que un dron cargado
      vuelva con la batería a la mitad del tiempo. */
-  drone.batt=clamp(drone.batt - dt*0.000833*(1+(inp.up?0.6:0))*Math.pow(mTot/mBase,1.5), 0, 1);
+  const esfuerzo=(inp.throttle!=null)? Math.max(0,inp.throttle-0.45)*1.2 : (inp.up?0.6:0);
+  drone.batt=clamp(drone.batt - dt*0.000833*(1+esfuerzo)*Math.pow(mTot/mBase,1.5), 0, 1);
   drone.tVuelo=(drone.tVuelo||0)+dt;
   /* PITIDOS DE BATERÍA, el idioma de toda controladora: al 30%% dos bips
      tranquilos cada dos segundos y medio; al 15%%, bip rápido continuo. Un
@@ -6926,7 +7456,9 @@ function updateDrone(dt, inp){
   drone.yawVel=damp(drone.yawVel||0, (inp.dr_yaw||0)*2.6, 7, dt);
   drone.yaw -= drone.yawVel*dt;
   const inPitch=clamp(inp.dr_pitch||0,-1,1), inRoll=clamp(inp.dr_roll||0,-1,1);
-  const lift=(inp.up?1:0)-(inp.down?1:0);
+  /* con emisora, el gas es analógico: el CENTRO mantiene la altura (el modo
+     altitud de una controladora), arriba sube y abajo baja, proporcional */
+  const lift=(inp.throttle!=null) ? zm((inp.throttle-0.5)*2, 0.08) : (inp.up?1:0)-(inp.down?1:0);
   const vx0=drone.vel.x, vz0=drone.vel.z;   // para medir la aceleración de este cuadro
   /* Qué es este aparato decide CÓMO se mueve, y hay que saberlo antes de
      elegir el modelo: un casco en el agua no obedece a las mismas ecuaciones
@@ -7024,7 +7556,7 @@ function updateDrone(dt, inp){
       while(err>Math.PI)err-=TAU; while(err<-Math.PI)err+=TAU;
       drone.roll=damp(drone.roll, clamp(err*1.6,-FI_MAX,FI_MAX), 2.2, dt);
     }
-  } else if(drone.acro){
+  } else if(drone.acro && !NAVAL){
     /* =================== ACRO REAL: MODO RATE ===================
        Lo que antes se llamaba acro era MODO ÁNGULO: la palanca pedía una
        inclinación y un tope de 60° la frenaba. Eso en un simulador serio se
@@ -7048,13 +7580,26 @@ function updateDrone(dt, inp){
        carga, las tasas bajan. Raíz de la razón de masas: 3 kg encima de un
        aparato de 1,1 baja de 540 a ~290 °/s, que es lo que se siente. */
     const mk=Math.sqrt(mBase/mTot);
-    const RATE=540*Math.PI/180*mk, RYAW=280*Math.PI/180*mk;
-    /* Expo: fino en el centro (precisión), entero en la punta (agilidad).
-       r' = x³·e + x·(1−e) — la curva estándar de las emisoras. */
-    const expo=(x,e)=>x*x*x*e + x*(1-e);
-    const pQ=expo(clamp(inPitch,-1,1),0.65)*RATE;
-    const rQ=expo(clamp(inRoll ,-1,1),0.65)*RATE;
-    const yQ=expo(clamp(inp.dr_yaw||0,-1,1),0.5)*RYAW;
+    /* RATES con la fórmula EXACTA de Betaflight ("actual rates"): lo que el
+       alumno ajusta en EMISORA es lo que escribirá en su controladora. El
+       perfil "clásico" reproduce el tacto que tenía el juego (540 °/s). */
+    const RT=ratesActuales(), D2R=Math.PI/180;
+    let pQ=tasaActual(inPitch, RT.c[1],RT.m[1],RT.e[1])*D2R*mk;
+    let rQ=tasaActual(inRoll,  RT.c[0],RT.m[0],RT.e[0])*D2R*mk;
+    const yQ=tasaActual(inp.dr_yaw||0, RT.c[2],RT.m[2],RT.e[2])*D2R*mk;
+    /* ⚠ MODO ÁNGULO (el "angle" de Betaflight, el "ATTI" de DJI): el escalón
+       que faltaba entre FÁCIL y ACRO, y el que todos los simuladores de
+       referencia enseñan primero. La palanca pide un ÁNGULO (hasta 55°) y al
+       soltarla se NIVELA — pero no frena ni mantiene la posición: la
+       inercia y el viento se los come el piloto. Mismo motor físico que el
+       acro (empuje por el eje, arrastre, gas analógico); solo cambia quién
+       pide la rotación: un regulador de actitud en vez de los rates. */
+    if(drone.angulo){
+      const MAXA=55*D2R*mk, K=7;
+      _deu.setFromQuaternion(drone.quat,'YXZ');
+      const ex=clamp(inPitch,-1,1)*MAXA - _deu.x, ez=-clamp(inRoll,-1,1)*MAXA - _deu.z;
+      pQ=clamp(ex*K,-6,6); rQ=-clamp(ez*K,-6,6);
+    }
     /* Los motores no saltan a la tasa pedida: la persiguen (τ≈55 ms). Es lo
        que separa "girar" de "teletransportar el horizonte". */
     drone.wx=damp(drone.wx||0, pQ, 18, dt);
@@ -7065,7 +7610,17 @@ function updateDrone(dt, inp){
     /* El gas: por el eje del aparato y SOLO positivo, como los motores reales
        (no hay empuje negativo — por eso volar invertido exige picar).
        Subir = a fondo (2,2 g) · nada = colgado (1 g) · bajar = cortar. */
-    const thr=(inp.up?TWR : inp.down?0.12 : Math.min(1.0,TWR))*9.81*M*power;
+    /* Con emisora el gas es EMPUJE DIRECTO, como en la realidad: 0 = ralentí
+       de motor (5%, el "airmode" que deja controlar sin gas), 1 = todo el
+       empuje. El motor no salta al valor pedido: lo persigue con τ≈55 ms. */
+    _up3.set(0,1,0).applyQuaternion(drone.quat);
+    const gObj = (inp.throttle!=null) ? TWR*(0.05+0.95*inp.throttle)
+               : (inp.up?TWR : inp.down?0.12
+               /* con teclado, ÁNGULO sostiene la altura al inclinarse (1/cos);
+                  en ACRO no: ahí perder altura al inclinar ES la lección */
+               : drone.angulo ? Math.min(TWR, 1/Math.max(0.35,_up3.y)) : Math.min(1.0,TWR));
+    drone.thrG=damp(drone.thrG==null?1:drone.thrG, gObj, 18, dt);
+    const thr=drone.thrG*9.81*M*power;
     _up3.set(0,1,0).applyQuaternion(drone.quat);
     drone.vel.addScaledVector(_up3, thr*dt);
     drone.vel.y -= 9.81*M*dt;
@@ -7204,6 +7759,14 @@ function updateDrone(dt, inp){
     _dv3.set(0,0,0).addScaledVector(fwd, inPitch*velEf*power)
                    .addScaledVector(right, inRoll*velEf*power);
     _dv3.y = lift*subeEf*power;
+    /* PROTECCIÓN DE ATERRIZAJE, como un dron comercial: no baja a más de
+       6 m/s (más rápido entra en anillo de vórtice) y cerca del suelo frena
+       solo, para que el modo fácil siga siendo fácil con el suelo de verdad. */
+    if(_dv3.y<0 && !NAVAL){
+      const pisoF=Math.max(terrainHeight(drone.pos.x,drone.pos.z), drone.techoBajo??-1e9);   // suelo o azotea
+      const aglF=Math.max(0,(drone.pos.y-pisoF)*MPU-((drone.suelo||0)*MPU));
+      _dv3.y=Math.max(_dv3.y, -Math.min(6, 0.4+aglF*0.6)*M);
+    }
     /* ⚠ SOBRECARGADO NO VUELA. Si el empuje no llega al peso (TWR<1), la
        controladora no puede sostener la altura por mucho modo fácil que haya:
        el aparato se hunde. Sin esto, montar 3 kg en un FPV «funcionaba»
@@ -7265,14 +7828,41 @@ function updateDrone(dt, inp){
   let minY;
   if(dom==='sub'||dom==='amph') minY=gy+0.4*M;                     // se sumergen hasta el fondo
   else if(dom==='surface') minY=Math.max(gy+0.4*M, wl+0.3*M);      // flota en el mar
-  else minY=Math.max(gy+1.2*M, wl+1*M);                            // aéreos no se sumergen
+  /* ⚠ EL SUELO DEL DRON ES SU TREN DE ATERRIZAJE, no 1,2 m de aire. Con el
+     piso a 1,2 m el aparato "aterrizado" flotaba a la altura de una persona y
+     la lección de aterrizaje (agl<0,5 m) era IMPOSIBLE de completar. El
+     piso se mide de la malla de cada aparato al desplegarlo (drone.suelo). */
+  else minY=Math.max(gy+(drone.suelo||1.2*M), wl+1*M);             // aéreos no se sumergen
   // impacto kamikaze
   if(drone.diving){
     let boom = drone.pos.y<=minY;
     for(const e of enemies){ if(e.alive && e.pos.distanceTo(drone.pos)<4*M){ boom=true; drone.contacto=e; break; } }
     if(boom){ detonateDrone(); return; }
   }
-  if(drone.pos.y<minY){ drone.pos.y=minY; if(drone.vel.y<0)drone.vel.y=0; }
+  /* CHOQUES contra edificios y árboles: antes el dron los atravesaba (solo
+     el blindado, los enemigos y los aliados consultaban los colisionadores). */
+  chocarDron();
+  if(!drone.active) return;
+  if(drone.pos.y<minY){
+    /* ⚠ TOCAR SUELO TIENE CONSECUENCIAS. Antes el suelo era un piso sin
+       fricción: en acro, invertido y a 150 km/h, el dron resbalaba y seguía.
+       Ahora: bajar a más de 4,5 m/s, o arrastrarse en acro a más de 7 m/s, es
+       estrellarse; por debajo es posarse, y el roce frena lo horizontal. */
+    const vBaja=-drone.vel.y*MPU, vHor=Math.hypot(drone.vel.x,drone.vel.z)*MPU;
+    const aereo=!NAVAL && !stats.drone.ala && !stats.drone.ave;
+    if(aereo && !drone.diving){
+      if(vBaja>4.5) golpeDron(vBaja,'el suelo');
+      else if(drone.acro && vHor>7) golpeDron(vHor,'el suelo');
+      else if(drone.acro){ const f=Math.max(0,1-8*dt); drone.vel.x*=f; drone.vel.z*=f; }
+    }
+    /* la velocidad del TOQUE, antes de anularla: sin esto un golpe a 4 m/s
+       se juzgaba en el cuadro siguiente como un posado suave */
+    if(!drone.enSuelo) drone.vImpacto=Math.max(drone.vImpacto||0, vBaja);
+    drone.pos.y=minY; if(drone.vel.y<0)drone.vel.y=0;
+  }
+  if(drone.pos.y>minY+0.05*M && !drone.enTecho) drone.vImpacto=0;
+  drone.enTecho=false;
+  drone.enSuelo = drone.pos.y <= minY+0.03*M;
   /* ⚠ El techo del dron se mide desde el punto MÁS ALTO DEL MAPA, no desde el
      cero del mundo. Antes era una altura absoluta y en una montaña eso dejaba
      al dron ENTERRADO: en el Nevado del Ruiz el terreno sube a 145 unidades y
@@ -7300,7 +7890,7 @@ function updateDrone(dt, inp){
      también trabaja, y uno cayendo casi no. Por eso el gas mezcla la inclinación
      con el mando de subir, que es lo que de verdad pide potencia.
      (Se calcula antes del aspecto porque los rotores y el balanceo lo usan.) */
-  const gasR=clamp(Math.abs(drone.pitch)+Math.abs(drone.roll)+(inp.up?0.55:0)+0.28, 0, 1)*power;
+  const gasR=clamp(Math.abs(drone.pitch)+Math.abs(drone.roll)+((inp.throttle!=null)?inp.throttle*0.7:(inp.up?0.55:0))+0.28, 0, 1)*power;
   /* RESPIRACIÓN DE VUELO. Un dron quieto en el aire no está quieto: la
      controladora corrige sin parar y el aparato respira — se mece unos
      centímetros y cabecea décimas de grado, más cuanto más viento. Es SOLO
@@ -7308,7 +7898,7 @@ function updateDrone(dt, inp){
      kamikaze y la cámara (que siguen a drone.pos) no se enteran. Quitarlo
      era lo que hacía que el dron pareciera COLGADO de un hilo. */
   const tv=missionTime, wv=Math.min(1, windVec.length()*0.35);
-  const meceo=(drone.diving?0:1)*(0.05+0.25*wv)*M;
+  const meceo=((drone.diving||drone.enSuelo)?0:1)*(0.05+0.25*wv)*M;   // posado no se mece
   drone.mesh.position.set(
     drone.pos.x + Math.sin(tv*1.7)*meceo*0.6,
     drone.pos.y + Math.sin(tv*2.3)*meceo,
@@ -7440,6 +8030,22 @@ function updateCamera(dt){
       V2.copy(camera.position).addScaledVector(_dv1, 30*M);
       camera.lookAt(V2);
       camera.up.set(0,1,0);              // las demás cámaras cuentan con el arriba del mundo
+    } else if(drone.acro && drone.quat){
+      /* ⚠ EN ACRO LA CÁMARA VA ATORNILLADA AL CHASIS. Antes seguía el rumbo
+         más un gimbal y copiaba solo el 60% del alabeo: dabas un flip y la
+         imagen no giraba contigo — justo lo que el alumno de acro tiene que
+         aprender a leer. Ahora la orientación ES la del cuaternión del
+         aparato, con la inclinación hacia arriba (uptilt) de un FPV real:
+         la cámara mira -Z, el chasis avanza por +Z → media vuelta en Y, y
+         luego el uptilt sobre su X. */
+      const up=(store.rates.uptilt||0)*Math.PI/180;
+      _camQ.copy(drone.quat).multiply(_qGiroY).multiply(_qUp.setFromAxisAngle(_ejeX, up));
+      _camOff.set(0, 0.05*M, 0.2*M).applyQuaternion(drone.quat);
+      camera.position.set(drone.pos.x+_camOff.x, drone.pos.y+_camOff.y, drone.pos.z+_camOff.z);
+      camera.quaternion.copy(_camQ);
+      drone.sacudida=Math.max(0,(drone.sacudida||0)-dt);
+      const vv=missionTime, gv=0.0009+0.0018*clamp(drone.vel.length()/VEL_DRON,0,1)+(1-(drone.helices??1))*0.004+drone.sacudida*0.05;
+      camera.rotateX(Math.sin(vv*47.3)*gv); camera.rotateY(Math.sin(vv*61.7)*gv*0.8); camera.rotateZ(Math.sin(vv*53.1)*gv*0.6);
     } else { // FPV: la cámara VA EN EL DRON, mirando a donde apunta el gimbal
       const cy=Math.cos(drone.yaw), sy=Math.sin(drone.yaw);
       /* En fácil manda el gimbal, que es lo que hace un dron comercial y lo que
@@ -7460,7 +8066,8 @@ function updateCamera(dt){
          40-70 Hz con los motores. Son 0,05-0,15°: imperceptibles cuadro a
          cuadro, pero a esa frecuencia el ojo lee "cámara de verdad".
          Va DESPUÉS del lookAt para que no arrastre a la puntería. */
-      const vv=missionTime, gv=0.0009+0.0018*clamp(Math.hypot(drone.vel.x,drone.vel.z)/VEL_DRON+Math.abs(drone.pitch),0,1);
+      drone.sacudida=Math.max(0,(drone.sacudida||0)-dt);
+      const vv=missionTime, gv=0.0009+0.0018*clamp(Math.hypot(drone.vel.x,drone.vel.z)/VEL_DRON+Math.abs(drone.pitch),0,1)+(1-(drone.helices??1))*0.004+drone.sacudida*0.05;
       camera.rotateX(Math.sin(vv*47.3)*gv);
       camera.rotateY(Math.sin(vv*61.7)*gv*0.8);
       camera.rotateZ(Math.sin(vv*53.1)*gv*0.6);
@@ -7474,7 +8081,9 @@ function updateCamera(dt){
        hace que el suelo corra por los bordes. En 360° y cenital se deja normal,
        que ahí la cámara es de observación. */
     const marcha=Math.min(1, Math.hypot(drone.vel.x,drone.vel.z)/VEL_DRON);
-    const fovT=(droneCam===0?95:62)+marcha*8;
+    /* en ÁNGULO/ACRO la cámara es una cámara FPV real: no "respira" con la
+       velocidad (ese truco es de cine y del modo fácil) */
+    const fovT=(droneCam===0?95:62)+((drone.acro&&droneCam===0)?0:marcha*8);
     if(Math.abs(camera.fov-fovT)>0.05){ camera.fov=damp(camera.fov, fovT, 3.5, dt); camera.updateProjectionMatrix(); }
     return;
   }
@@ -7682,7 +8291,15 @@ function deployMission(m){
   if(!drone.active) toggleDrone();
   if(duelo.active) dueloColocar();   // en duelo, cada uno a su esquina
 }
+/* ⚠ QUÉ SE REPITE Y QUÉ SIGUE. Reiniciar, Reintentar y Siguiente llamaban a
+   startMission(missionIdx), pero la escuela y las épocas dejan missionIdx=-1:
+   startMission(-1) vaciaba el mundo y reventaba con MISSIONS[-1].biome, y
+   Siguiente lanzaba la PRIMERA MISIÓN DE COMBATE en vez de la lección
+   siguiente. Ahora cada forma de empezar deja dicho cómo repetirse y qué
+   viene después. */
+let RELANZAR=null, SIGUIENTE=null;
 function startMission(idx){
+  RELANZAR=()=>startMission(idx); SIGUIENTE = idx<MISSIONS.length-1 ? ()=>startMission(idx+1) : null;
   currentReal=null; missionIdx=idx;
   resetPlay();
   buildWorld(MISSIONS[idx].biome);
@@ -7694,6 +8311,7 @@ function realMissionFor(map){
     objs: map.objs||[{type:'destroy',tag:'enemy',n:6,text:'Limpia la zona (6)'}] };
 }
 async function startRealMission(map){
+  RELANZAR=()=>startRealMission(map); SIGUIENTE=null;
   /* El mundo real es lo ÚNICO que no puede funcionar sin conexión: el relieve,
      la imagen satelital y los edificios se descargan del lugar elegido. Vale
      más decirlo de frente que dejar que falle con un error de red que no
@@ -7760,6 +8378,12 @@ function updateObjText(){
   const parts=objState.map(st=>{ const done=st.done?'✔ ':'○ '; return (st.done?'<span style="color:var(--verde)">':'<span>')+done+st.def.text+'</span>'; });
   $('objText').innerHTML=parts.join('<br>');
 }
+function relanzar(){
+  if(RELANZAR) return RELANZAR();
+  if(currentReal) return startRealMission(currentReal);
+  if(missionIdx>=0) return startMission(missionIdx);
+  toMenu();
+}
 function endMission(win, reason){
   if(missionResult) return; missionResult=win;
   playing=false; if(document.exitPointerLock)document.exitPointerLock();
@@ -7788,7 +8412,7 @@ function endMission(win, reason){
                                  : (win? '¡Operación completada, comandante!' : (reason||'Vuelve a intentarlo.'));
     duelo.ultimo=null;   // se consume: la próxima misión normal no debe salir como duelo
     $('resStats').innerHTML='Enemigos destruidos: <b>'+killCount.enemy+'</b><br>Blindaje restante: <b>'+Math.max(0,Math.round(player.hp))+'</b>'+(store.best[mission.id]?'<br>Mejor puntaje: <b style="color:var(--ambar)">'+store.best[mission.id]+'</b>':'');
-    $('rNext').style.display = (win && !mission.real && missionIdx<MISSIONS.length-1)?'block':'none';
+    $('rNext').style.display = (win && SIGUIENTE)?'block':'none';
     $('result').classList.add('on');
   }, win?900:1400);
 }
@@ -8051,7 +8675,7 @@ function updateChips(){
   if(mode==='drone' && droneCam===0 && drone.active)
     cam+=' '+Math.round((drone.gimbal||0)*180/Math.PI)+'°'+(drone.gimbalManual?'':' auto');
   $('chipCam').textContent='CÁMARA · '+cam;
-  $('chipMode').textContent= mode==='drone'?('DRON · '+(drone.acro?'ACRO':'FÁCIL')):'UGV TERRESTRE';
+  $('chipMode').textContent= mode==='drone'?('DRON · '+({facil:'FÁCIL (GPS)',angulo:'ÁNGULO',acro:'ACRO'}[modoVuelo()])):'UGV TERRESTRE';
   $('chipMode').className='chip '+(mode==='drone'?'hot':'');
   let w;
   if(mode==='drone') w = drone.kamikaze?'⚠ KAMIKAZE' : (stats.drone.armed?'CARGA EXPL.':'RECON/MARCA');
@@ -9569,7 +10193,7 @@ const ESCUELA=[
     desc:'Cinco aros en orden. Sin cronómetro y sin viento: la lección es PLANEAR la entrada — llegar alineado vale más que llegar rápido.',
     objs:[{type:'aros', n:5, text:'Cruza los 5 aros en orden'}] },
   { id:'e3', name:'3 · Aterrizaje de precisión', bioma:'canon', equipo:{dron:'recon'},
-    desc:'Posa el dron sobre la plataforma a menos de 1,5 m/s. Cerca del suelo notarás el colchón del efecto suelo: el aparato flota justo cuando quieres bajar. Todos los aterrizajes reales pelean con eso.',
+    desc:'Posa el dron sobre la plataforma a menos de 1,5 m/s. En FÁCIL la controladora frena sola los últimos metros, como la protección de aterrizaje de un dron comercial. Pasa a ÁNGULO (tecla B) y el freno es tuyo: ahí notarás el colchón del efecto suelo, que hace flotar el aparato justo cuando quieres bajar.',
     objs:[{type:'aterriza', vmax:1.5, text:'Aterriza en la plataforma, suave (< 1,5 m/s)'}] },
   { id:'e4', name:'4 · Primer rate', bioma:'desierto', equipo:{dron:'ataque'}, modo:'acro',
     desc:'ACRO REAL: la palanca pide grados por segundo, nada te endereza, y el gas empuja por el eje del aparato. Tres aros amplios. Vas a estrellarte — para eso existe el simulador.',
@@ -9607,6 +10231,8 @@ function limpiarEscuela(){
 }
 
 function startEscuela(m){
+  RELANZAR=()=>startEscuela(m);
+  { const i=ESCUELA.indexOf(m); SIGUIENTE = (i>=0 && i<ESCUELA.length-1) ? ()=>startEscuela(ESCUELA[i+1]) : null; }
   const l=currentLoadout();
   if(m.equipo){ for(const k in m.equipo) l[k]=m.equipo[k]; store.loadout=l; save(); }
   currentReal=null; missionIdx=-1;
@@ -9615,10 +10241,12 @@ function startEscuela(m){
   if(m.wx){ WX=m.wx; applyEnvironment(); }
   deployMission({ id:'esc_'+m.id, name:m.name, survive:0, enemies:m.enemies||[], objs:m.objs, escuela:true });
   crearEscenarioEscuela(m);
+  ESC.salida=null;   // se fija en cuanto el dron está desplegado (abajo)
   /* La escuela va EN EL DRON desde el primer segundo, y si la lección es de
      rate, el modo se pone solo — pedirle a un alumno que pulse B antes de su
      primera clase de acro es perder al alumno. */
   if(mode!=='drone') toggleDrone();
+  ESC.salida=drone.pos.clone(); ESC.salidaYaw=drone.yaw;
   if(m.modo==='acro'){ drone.acro=true;
     drone.quat=new THREE.Quaternion().setFromEuler(new THREE.Euler(0,drone.yaw,0,'YXZ'));
     drone.wx=drone.wy=drone.wz=0;
@@ -9709,10 +10337,11 @@ function updateEscuela(dt){
   if(o.type==='aterriza' && ESC.padPos && !ESC.aterrizado){
     const agl=(drone.pos.y-terrainHeight(drone.pos.x,drone.pos.z))*MPU;
     const distH=Math.hypot(drone.pos.x-ESC.padPos.x, drone.pos.z-ESC.padPos.z)*MPU;
-    if(agl<0.5 && distH<8){
-      const v=drone.vel.length()*MPU;
+    if(agl-((drone.suelo||0)*MPU)<0.35 && distH<8){
+      const v=Math.max(drone.vel.length()*MPU, drone.vImpacto||0);
       if(v<=o.vmax){ ESC.aterrizado=true; feed('✔ Posado a '+v.toFixed(1)+' m/s — de manual','good'); checkObjectives(); }
-      else if(drone.vel.y<-0.3){ feed('⚠ '+v.toFixed(1)+' m/s: aterrizaje DURO. Frena antes con el efecto suelo','bad');
+      else if(drone.vel.y<-0.3 || (drone.vImpacto||0)>o.vmax){ feed('⚠ '+v.toFixed(1)+' m/s: aterrizaje DURO. Baja más despacio los últimos metros','bad');
+        drone.vImpacto=0;
         drone.vel.y=Math.abs(drone.vel.y)*0.4; }   // rebota: en la escuela no se rompe, se repite
     }
   }
@@ -9776,7 +10405,9 @@ async function startEra(era){
     /* misionFija: que ni la campaña ni la ficha de la zona pisen la misión de
        época — la época manda. */
     await startRealMission(Object.assign({}, zona, {misionFija:misionObj}));
+    RELANZAR=()=>startEra(era); SIGUIENTE=null;
   } else {
+    RELANZAR=()=>startEra(era); SIGUIENTE=null;
     currentReal=null; missionIdx=-1;
     resetPlay();
     buildWorld(m.bioma||'desierto');
@@ -9886,12 +10517,11 @@ function wireUI(){
   /* paused=false ANTES de recargar: si no, la descarga del mundo real corre con
      el juego en pausa y al volver todo sigue congelado. Y se cierra el duelo:
      reiniciar una misión arrastrando una sala viva no tiene sentido. */
-  $('pRestart').onclick=()=>{ $('pause').classList.remove('on'); paused=false; dueloCerrar();
-    currentReal?startRealMission(currentReal):startMission(missionIdx); };
+  $('pRestart').onclick=()=>{ $('pause').classList.remove('on'); paused=false; dueloCerrar(); relanzar(); };
   $('pMenu').onclick=toMenu;
   // resultado
-  $('rRetry').onclick=()=>{ currentReal?startRealMission(currentReal):startMission(missionIdx); }; $('rMenu').onclick=toMenu;
-  $('rNext').onclick=()=>{ if(!currentReal && missionIdx<MISSIONS.length-1) startMission(missionIdx+1); else toMenu(); };
+  $('rRetry').onclick=relanzar; $('rMenu').onclick=toMenu;
+  $('rNext').onclick=()=>{ if(SIGUIENTE) SIGUIENTE(); else toMenu(); };
   // táctil
   bindStick('zoneL','stickL','L'); bindStick('zoneR','stickR','R');
   bindHold('btnFire','fire'); bindHold('btnSec','sec'); bindHold('btnUp','up'); bindHold('btnDown','down');
@@ -9918,6 +10548,7 @@ function wireUI(){
   $('cmNacionSel').onchange=(e)=>CAMPANA.empezar('nacion', e.target.value);
   $('btnCara').onclick=(e)=>{ e.stopPropagation(); toggleCara(); };
   $('caraCal').onclick=()=>{ if(gaze.piloto && !CFA.activo) iniciarCentradoFacial(); };
+  cablearMando();
   $('btnTec').onclick=(e)=>{ e.stopPropagation(); toggleTecnico(); };
   $('btnPorQue').onclick=(e)=>{ e.stopPropagation(); if(!cerrarPorQue()) mostrarPorQue(); };
   $('porqueBox').onclick=()=>cerrarPorQue();
@@ -10406,6 +11037,29 @@ if(location.search.indexOf('dbg')>=0) window.DRONES={
     const pf=palancaFacial(); return pf?{yaw:+pf.yaw.toFixed(2), pitch:+pf.pitch.toFixed(2)}:null; },
   caraOff:()=>{ gaze.piloto=false; gaze.active=false; CFA.activo=false; return true; },
   osdInfo:()=>OSD_ULT,
+  /* EMISORA sin hardware: un mando falso con los ejes que se quieran. */
+  mandoFalso:(axes,buttons,mapping)=>{ MANDO_DBG = axes==null ? null :
+    { id:'Mando de pruebas', connected:true, mapping:mapping||'', axes:axes.slice(),
+      buttons:(buttons||[]).map(b=>({pressed:!!b, value:b?1:0})) }; return !!MANDO_DBG; },
+  mandoEjes:(axes)=>{ if(MANDO_DBG) MANDO_DBG.axes=axes.slice(); return !!MANDO_DBG; },
+  mandoBotones:(bs)=>{ if(MANDO_DBG) MANDO_DBG.buttons=bs.map(b=>({pressed:!!b,value:b?1:0})); return !!MANDO_DBG; },
+  mandoInfo:()=>({ pad:!!padActual(), calibrado:!!store.mando, map:store.mando&&store.mando.map, lectura:leerMando(),
+    asistente:ASIS.activo?ASIS_PASOS[ASIS.paso].k:null }),
+  mandoBorrar:()=>{ store.mando=null; save(); return true; },
+  asist:(accion,dt)=>{ if(accion==='iniciar') asistIniciar(); else if(accion==='siguiente') asistSiguiente();
+    else if(accion==='saltar') asistAvanzar(); else asistTick(dt||0.1);
+    return ASIS.activo?ASIS_PASOS[ASIS.paso].k:'fin'; },
+  rates:(perfil)=>{ if(perfil){ store.rates.perfil=perfil; } const R=ratesActuales();
+    return { perfil:store.rates.perfil, a_fondo:Math.round(tasaActual(1,R.c[0],R.m[0],R.e[0])),
+      media:Math.round(tasaActual(0.5,R.c[0],R.m[0],R.e[0])), centro:R.c[0] }; },
+  uptilt:(g)=>{ if(g!=null) store.rates.uptilt=g; return store.rates.uptilt; },
+  camDir:()=>{ const d=new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion);
+    const u=new THREE.Vector3(0,1,0).applyQuaternion(camera.quaternion);
+    return { dir:[+d.x.toFixed(3),+d.y.toFixed(3),+d.z.toFixed(3)], arriba:[+u.x.toFixed(3),+u.y.toFixed(3),+u.z.toFixed(3)],
+      elev_grados:+(Math.asin(clamp(d.y,-1,1))*180/Math.PI).toFixed(1) }; },
+  barril:()=>gradePass?gradePass.uniforms.uBarril.value:null,
+  velY:()=>+(drone.vel.y*MPU).toFixed(3),            // m/s vertical, sin redondeo grueso
+  alturaM:()=>+(drone.pos.y*MPU).toFixed(2),
   gfx:()=>({ entorno:!!scene.environment, acabado:!!gradePass, huellas:HUELLAS?HUELLAS.count:0,
     olas: !!(water&&water.visible), hemi:+hemi.intensity.toFixed(2) }),
   forzarSenal:(v)=>{ SENAL_DBG=(v==null)?null:clamp(v,0,1); return SENAL_DBG; },
@@ -10436,7 +11090,36 @@ if(location.search.indexOf('dbg')>=0) window.DRONES={
     vel_kmh:+(drone.vel.length()*MPU*3.6).toFixed(0), power:+((drone.batt>0.5?0.93+0.07*(drone.batt-0.5)/0.5:drone.batt>0.2?0.80+0.13*(drone.batt-0.2)/0.3:drone.batt>0.05?0.62+0.18*(drone.batt-0.05)/0.15:0.30)).toFixed(2),
     batt:+drone.batt.toFixed(2) }; },
   setBatt:(b)=>{ drone.batt=clamp(b,0,1); return drone.batt; },
-  acroOn:(on)=>{ drone.acro=!!on; if(on){ drone.quat=new THREE.Quaternion().setFromEuler(new THREE.Euler(0,drone.yaw,0,'YXZ')); drone.wx=drone.wy=drone.wz=0; } else { drone.quat=null; drone.pitch=0; drone.roll=0; } return drone.acro; },
+  modo:(m)=>{ if(m) fijarModoVuelo(m); return modoVuelo(); },
+  choques:()=>({ choques:drone.choques||0, helices:drone.helices??1, enSuelo:!!drone.enSuelo, suelo_m:+((drone.suelo||0)*MPU).toFixed(2), activo:drone.active }),
+  sinDano:(on)=>{ store.env.sinDano=!!on; return store.env.sinDano; },
+  relanzarInfo:()=>({ relanzar:!!RELANZAR, siguiente:!!SIGUIENTE, missionIdx, escuela:ESC.activa }),
+  /* escuela y choques, para las pruebas */
+  escuelaIr:(id)=>{ const m=ESCUELA.find(x=>x.id===id); if(m) startEscuela(m); return !!m; },
+  escuelaEstado:()=>({ activa:ESC.activa, idx:ESC.idx, aros:ESC.aros.length, aterrizado:!!ESC.aterrizado,
+    pad:ESC.padPos?[+ESC.padPos.x.toFixed(2),+ESC.padPos.y.toFixed(2),+ESC.padPos.z.toFixed(2)]:null,
+    objs:(objState||[]).map(st=>({tipo:st.def.type, hecho:!!st.done})), jugando:playing,
+    resultado:document.getElementById('result').classList.contains('on') }),
+  /* coloca el dron a 3 m de la cara del edificio más cercano, apuntando a él, a v m/s */
+  choque:(v)=>{ let best=null, bd=1e9;
+    for(const c of colliders){ if(!(c.caja||c.pts)) continue; const d=Math.hypot(c.x-drone.pos.x,c.z-drone.pos.z); if(d<bd){bd=d;best=c;} }
+    if(!best) return null;
+    const f0=_cercaForma(best, drone.pos.x, drone.pos.z);
+    const ox=best.x+(drone.pos.x-best.x), oz=best.z+(drone.pos.z-best.z);
+    // punto en la cara mas cercana desde la posicion actual, y salir 3 m por la normal
+    const px=drone.pos.x - f0.nx*(f0.dentro?-f0.d:f0.d), pz=drone.pos.z - f0.nz*(f0.dentro?-f0.d:f0.d);
+    const base=(best.base!=null)?best.base:terrainHeight(best.x,best.z);
+    drone.pos.set(px+f0.nx*3*M, base+Math.min(best.h*0.4, 6*M), pz+f0.nz*3*M);
+    drone._yPrev=drone.pos.y; drone._gracia=0;
+    drone.vel.set(-f0.nx*v*M, 0, -f0.nz*v*M);
+    return { distancia_m:3, normal:[+f0.nx.toFixed(2),+f0.nz.toFixed(2)] }; },
+  edificioCercano:()=>{ let best=null, bd=1e9;
+    for(const c of colliders){ if((c.h||0)<12*M) continue; const d=Math.hypot(c.x-drone.pos.x,c.z-drone.pos.z); if(d<bd){bd=d;best=c;} }
+    return best?{x:best.x,z:best.z,r:best.r,h:best.h,suelo:terrainHeight(best.x,best.z),dist_m:+(bd*MPU).toFixed(0)}:null; },
+  relanzar:()=>{ relanzar(); return true; },
+  siguiente:()=>{ if(SIGUIENTE){ SIGUIENTE(); return true; } return false; },
+  reiniciarIntento:()=>{ reiniciarIntento(); return true; },
+  acroOn:(on)=>{ drone.acro=!!on; drone.angulo=false; if(on){ drone.quat=new THREE.Quaternion().setFromEuler(new THREE.Euler(0,drone.yaw,0,'YXZ')); drone.wx=drone.wy=drone.wz=0; } else { drone.quat=null; drone.pitch=0; drone.roll=0; } return drone.acro; },
   viento:()=>({ medio:+windVec.length().toFixed(2), ahora:+vientoAhora().length().toFixed(2) }),
   /* Los documentales, para poder probarlos en frío: dibuja cada beat a dos
      tiempos y compara. Con rAF no se puede medir en un panel oculto (no corre
