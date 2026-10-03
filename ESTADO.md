@@ -915,6 +915,32 @@ Velocidrone, DJI, Zephyr, RealFlight, VBS4… y 70 brechas verificadas en el có
 - En la misión 10 las pruebas navales deben fijar el loadout (`setLoadout`) y recordar
   que persiste entre pruebas.
 
+
+## 3-oct-2026: viento honesto y estación del instructor
+
+- **Viento con rumbo por misión** (FNV-1a del id: el mismo cada vez que se repite;
+  antes soplaba siempre hacia el mismo lado) y **arrastre sobre el aire relativo**
+  en ÁNGULO/ACRO (antes el viento era una aceleración y el arrastre frenaba contra el
+  suelo). Medido con 8 m/s: la deriva sube 2,9 → 5,9 m/s en 5 s; la punta no cambia.
+  El ala fija va con la masa de aire entera (×1,0, antes ×0,6). Flecha de viento en
+  el OSD. `VIENTO_INST` se borra en resetPlay (la trampa del viento pegado).
+- **🎓 INSTRUCTOR** (panel nuevo): viento (velocidad, de dónde viene, rachas,
+  turbulencia), una ráfaga ya, y FALLAS: motor (cuadri al 45 % y girando: se hunde
+  5 m en 2 s; hexa al 83 %: aguanta), GPS (FÁCIL pasa a ATTI: deriva 6,2 m/s frente a
+  1,2 con GPS; el rescate sin GPS solo aterriza), brújula, vídeo, enlace, celda
+  (−2,6 V y vacía al doble). «Avisar» desmarcado = falla sin aviso.
+- **Anillo de vórtice** en los modos físicos: bajar en vertical a más de 4 m/s y dar
+  gas → empuje −45 % y bamboleo; el OSD dice «VÓRTICE: AVANZA».
+- **VUELVE YA** en el OSD: la batería apenas alcanza para volver (con 25 % de
+  margen). Con 20 min de batería y mapas de 2,4 km solo salta con carga pesada lejos
+  o una celda dañada — es honesto que sea raro.
+- **Parada segura del UGV** sin enlace.
+
+### Trampa nueva
+- Estado de un modo que no se recalcula en otro (drone.vrs solo vive en los modos
+  físicos): reiniciarlo al desplegar y al salir del modo, o se arrastra de una prueba
+  a otra y da avisos falsos.
+
 ## Trampas que ya costaron tiempo
 
 - **La rama de este repo es `main`, no `master`.** Otros proyectos de Joan usan

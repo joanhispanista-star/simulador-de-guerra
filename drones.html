@@ -442,6 +442,20 @@
     width:min(520px,94vw);max-height:88vh;overflow:auto;padding:16px 18px;
     background:rgba(10,13,19,.97);border:1px solid var(--linea);border-radius:16px;box-shadow:0 24px 70px rgba(0,0,0,.7)}
   #mandoBox.on{display:block}
+  #instrBox{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:41;display:none;
+    width:min(520px,94vw);max-height:88vh;overflow:auto;padding:16px 18px;
+    background:rgba(10,13,19,.97);border:1px solid var(--linea);border-radius:16px;box-shadow:0 24px 70px rgba(0,0,0,.7)}
+  #instrBox.on{display:block}
+  #instrBox h4{margin:0 0 8px;font-size:12px;letter-spacing:.09em;text-transform:uppercase;color:var(--hud)}
+  #instrBox .mBtns{display:flex;gap:6px;flex-wrap:wrap}
+  #instrBox button{background:#1b2230;color:var(--hueso);border:1px solid var(--linea);border-radius:9px;padding:7px 10px;font-weight:700;font-size:12px;cursor:pointer}
+  #instrBox button.on{background:rgba(216,30,44,.35);border-color:rgba(255,59,70,.9)}
+  #instrBox .mFila{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--gris);margin:5px 0}
+  #instrBox .mFila label{width:92px}
+  #instrBox .mFila input[type=range]{flex:1}
+  #instrBox .mFila span{width:56px;text-align:right;color:var(--hueso);font-variant-numeric:tabular-nums}
+  #instrBox .mNota{font-size:11px;line-height:1.5;color:var(--gris);margin:6px 0}
+  #instrBox .cerrar{margin-top:8px;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--gris-2);cursor:pointer;text-align:center}
   #mandoBox h4{margin:0 0 8px;font-size:12px;letter-spacing:.09em;text-transform:uppercase;color:var(--hud)}
   #mandoBox .mEst{font-size:12px;color:var(--hueso);margin-bottom:8px}
   #mandoBox .mPaso{font-size:13px;line-height:1.5;color:#ffd24a;min-height:20px;margin:8px 0}
@@ -596,6 +610,27 @@
       </div>
       <div class="dvrNota">←/→ velocidad · Espacio pausa · C cámara · Esc salir · solo se graba tu aparato: lo demás queda congelado</div>
     </div>
+    <!-- ESTACION DEL INSTRUCTOR: viento y fallas -->
+    <div id="instrBox">
+      <h4>🎓 Estación del instructor</h4>
+      <p class="mNota">Lo que hacen RealFlight, Zephyr o el simulador de DJI: el instructor cambia el viento y provoca FALLAS en pleno vuelo para entrenar emergencias. Todo es simulado; nada toca tu aparato real.</p>
+      <h4 style="margin-top:10px">Viento</h4>
+      <div class="mFila"><label>Velocidad</label><input id="iVel" type="range" min="0" max="15" step="0.5"><span id="iVelv"></span></div>
+      <div class="mFila"><label>Viene del</label><input id="iDir" type="range" min="0" max="359" step="5"><span id="iDirv"></span></div>
+      <div class="mFila"><label>Rachas</label><input id="iRaf" type="range" min="0" max="1" step="0.05"><span id="iRafv"></span></div>
+      <div class="mFila"><label>Turbulencia</label><input id="iTur" type="range" min="0" max="1" step="0.05"><span id="iTurv"></span></div>
+      <div class="mBtns"><button id="iClima">Viento del clima</button><button id="iRafaga">💨 Una ráfaga ahora</button></div>
+      <h4 style="margin-top:12px">Fallas en vuelo</h4>
+      <div class="mBtns" id="iFallas">
+        <button data-f="motor">⚙ Motor</button><button data-f="gps">🛰 GPS</button>
+        <button data-f="brujula">🧭 Brújula</button><button data-f="video">📺 Vídeo</button>
+        <button data-f="enlace">📡 Enlace</button><button data-f="celda">🔋 Celda</button>
+      </div>
+      <div class="mFila"><label>Avisar</label><input id="iAvisar" type="checkbox" checked><span style="width:auto;text-align:left;color:var(--gris)">desmárcalo para que la falla llegue sin aviso, como en la realidad</span></div>
+      <div class="mBtns"><button id="iLimpiar">Quitar todas las fallas</button></div>
+      <p class="mNota" id="iEstado"></p>
+      <div class="cerrar" id="iCerrar">cerrar</div>
+    </div>
     <!-- EMISORA RC / MANDO: calibracion, rates y camara FPV -->
     <div id="mandoBox">
       <h4>🎮 Emisora RC y mando</h4>
@@ -679,6 +714,7 @@
     <button class="tbtn util" id="btnCara"><span class="ic">🧑‍✈️</span>PILOTO FACIAL</button>
     <button class="tbtn util" id="btnTec"><span class="ic">🔧</span>TÉCNICO</button>
     <button class="tbtn util" id="btnMando"><span class="ic">🎮</span>EMISORA</button>
+    <button class="tbtn util" id="btnInstr"><span class="ic">🎓</span>INSTRUCTOR</button>
     <button class="tbtn util" id="btnPorQue"><span class="ic">?</span>POR QUÉ</button>
     <button class="tbtn util" id="btnVoice"><span class="ic">🎤</span>VOZ</button>
     <button class="tbtn util" id="btnVol"><span class="ic">🔊</span>SONIDO</button>
@@ -2219,7 +2255,7 @@ function applyEnvironment(){
      punta son 20 m/s, y las rampas de `min(1, |viento|*0,35)` saturadas a tope
      con CUALQUIER clima. Es el mismo reescalado a medias del 18-ago: esta línea
      se saltó por un pelo (la de al lado, la lluvia, sí se corrigió). */
-  const wv=(w.wind||0)*M; windVec.set(wv*0.8, 0, -wv*0.5);
+  aplicarViento(w);
   setWeatherParticles(w.part);
   aplicarLucesCiudad();
 }
@@ -4487,6 +4523,20 @@ let gunAim={range:0, impact:new THREE.Vector3(), hit:false, valid:false};
 let SENAL_DBG=null;   // ?dbg: fuerza la señal para probar el OSD y el rasgado
 let TIRO_DBG=null;   // lo enciende DRONES.tiro(); null = apagado, coste cero
 let windVec=new THREE.Vector3();
+/* ⚠ EL VIENTO TIENE RUMBO. Antes soplía SIEMPRE hacia el mismo lado
+   (0,8 / −0,5) en todas las misiones: el alumno aprendía a corregir un único
+   viento. Ahora cada misión trae su rumbo (determinista: el mismo cada vez que
+   se repite) y el instructor puede imponer velocidad, rumbo, rachas y
+   turbulencia. VIENTO_INST se borra en resetPlay: un viento invisible que se
+   queda pegado entre misiones ya costó un día entero en este proyecto. */
+let VIENTO_RUMBO=2.1;                                        // de DÓNDE sopla, en radianes
+const VIENTO_INST={ vel:null, dir:null, rafaga:null, turb:null };
+function aplicarViento(w){
+  w=w||WEATHER[WX]||WEATHER.despejado;
+  const vel=(VIENTO_INST.vel!=null)?VIENTO_INST.vel:(w.wind||0);   // m/s
+  const dir=(VIENTO_INST.dir!=null)?VIENTO_INST.dir:VIENTO_RUMBO;
+  windVec.set(-Math.sin(dir), 0, -Math.cos(dir)).multiplyScalar(vel*M);   // sopla HACIA el lado contrario
+}
 
 /* pools de efectos simples */
 /* ⚠ AQUÍ 'size' ES EL DIÁMETRO DE LA EXPLOSIÓN EN METROS. Lo era en la cabeza
@@ -6389,6 +6439,16 @@ function limpiarHuellas(){ if(HUELLAS){ HUELLAS.count=0; _huellaIdx=0; _huellaAc
    débil se pinta aquí también: franjas de estática horizontales, como rompe
    de verdad el analógico. */
 let OSD_ULT={};
+/* VUELVE YA: la batería que queda apenas alcanza para regresar (con 25 % de
+   margen) a velocidad de crucero, con el peso que llevas. */
+function vuelveYa(){
+  const casa=drone.base||cmdPost, d=Math.hypot(casa.x-drone.pos.x, casa.z-drone.pos.z)*MPU;
+  if(d<60) return false;
+  const mB=stats.drone.kg||1, mC=(stats.carga&&stats.carga.kg)||0;
+  const crucero=Math.max(4, VEL_DRON*MPU*0.8);
+  const necesita=(d/crucero)*0.000833*Math.pow((mB+mC)/mB,1.5)*(FALLAS.celda?2.2:1);
+  return drone.batt < necesita*1.25+0.03;
+}
 const _osdF=new THREE.Vector3();
 function dibujarOSD(){
   const cv=$('osdCv'); if(!cv) return;
@@ -6407,7 +6467,7 @@ function dibujarOSD(){
   g.beginPath(); g.moveTo(W/2-18,H/2); g.lineTo(W/2-6,H/2); g.moveTo(W/2+6,H/2); g.lineTo(W/2+18,H/2); g.stroke();
   g.fillStyle='rgba(232,244,232,.95)'; g.fillRect(W/2-1.5,H/2-1.5,3,3);
   // la LiPo 6S: 3,3-4,2 V por celda segun carga
-  const volt=(19.8+5.4*drone.batt);
+  const volt=(19.8+5.4*drone.batt) - (FALLAS.celda?2.6:0);   // una celda muerta: 6S que rinde como 5S
   drone.tVuelo=(drone.tVuelo||0);
   const mm=String(Math.floor(drone.tVuelo/60)).padStart(2,'0'), ss=String(Math.floor(drone.tVuelo%60)).padStart(2,'0');
   const rssi=Math.round(signal*99);
@@ -6415,7 +6475,7 @@ function dibujarOSD(){
   texto(((volt/6).toFixed(2))+'V/c', W*0.03, H*0.95-H/38);
   texto(mm+':'+ss, W*0.97, H*0.95, 'right');
   texto('RSSI '+rssi, W*0.97, H*0.07, 'right', rssi<40?'#ff9a4a':undefined);
-  texto({facil:'GPS',angulo:'ANGL',acro:'ACRO'}[modoVuelo()], W*0.03, H*0.07);
+  texto(FALLAS.gps && !drone.acro ? 'ATTI · SIN GPS' : {facil:'GPS',angulo:'ANGL',acro:'ACRO'}[modoVuelo()], W*0.03, H*0.07, 'left', FALLAS.gps?'#ff9a4a':undefined);
   /* NAVEGACIÓN, lo que trae a casa: altura sobre el suelo, velocidad,
      flecha y distancia al puesto, mAh gastados. La flecha se calcula con
      productos escalares contra los ejes del aparato (no con ángulos sueltos:
@@ -6441,6 +6501,18 @@ function dibujarOSD(){
     const CAP=(stats.drone.mah)||5000;   // coherente con los 20 min de bateria del juego
     texto(Math.round((1-drone.batt)*CAP)+'mAh', W*0.97, H*0.95-H/38, 'right');
     OSD_ULT.alt=Math.round(agl); OSD_ULT.casa_m=Math.round(hd*MPU); OSD_ULT.flecha_grados=Math.round(ang*180/Math.PI);
+    /* el VIENTO en el OSD: hacia dónde empuja, relativo al morro, y cuánto.
+       Un viento que no se ve es el que más enseña mal. */
+    const wv=windVec.length()*MPU;
+    if(wv>0.5){
+      const wx=windVec.x/(windVec.length()||1), wz=windVec.z/(windVec.length()||1);
+      const angW=Math.atan2(wx*rx+wz*rz, wx*fx+wz*fz);
+      const bx=W*0.03+H*0.012, by=H*0.50+H/28, Lw=H*0.016;
+      g.save(); g.translate(bx,by); g.rotate(angW); g.strokeStyle='#e8f4e8'; g.lineWidth=2;
+      g.beginPath(); g.moveTo(0,Lw); g.lineTo(0,-Lw); g.moveTo(-Lw*0.5,-Lw*0.4); g.lineTo(0,-Lw); g.lineTo(Lw*0.5,-Lw*0.4); g.stroke(); g.restore();
+      texto(Math.round(wv)+'m/s', bx+H*0.02, by+H*0.008);
+      OSD_ULT.viento_ms=Math.round(wv); OSD_ULT.viento_rel_grados=Math.round(angW*180/Math.PI);
+    }
   }
   if(stats.carga&&stats.carga.id!=='ninguna') texto(stats.carga.tipo==='granada'?('GRAN x'+(drone.muni|0)):'CARGA', W*0.03, H*0.07+H/38);
   // avisos que PARPADEAN: el parpadeo es el lenguaje del OSD
@@ -6448,17 +6520,19 @@ function dibujarOSD(){
   let aviso=null, col='#ffd24a';
   if(linkLost){ aviso='FAILSAFE'; col='#ff5a4a'; }
   else if(drone.batt<0.15){ aviso='ATERRIZA YA'; col='#ff5a4a'; }
+  else if(drone.acro && (drone.vrs||0)>0.3){ aviso='VÓRTICE: AVANZA'; col='#ff5a4a'; }   // solo existe en los modos físicos
+  else if(vuelveYa()){ aviso='VUELVE YA'; col='#ff9a4a'; }
   else if(drone.batt<0.30){ aviso='BATERIA BAJA'; }
   else if(signal<0.40){ aviso='RSSI CRITICO'; }
   if(aviso && blink){ g.font='800 '+Math.round(H/26)+'px ui-monospace,Consolas,monospace'; g.textAlign='center';
     g.fillStyle='rgba(0,0,0,.8)'; g.fillText(aviso, W/2+2, H*0.68+2);
     g.fillStyle=col; g.fillText(aviso, W/2, H*0.68); }
-  Object.assign(OSD_ULT,{volt:+volt.toFixed(1), rssi, timer:mm+':'+ss, modo:{facil:'GPS',angulo:'ANGL',acro:'ACRO'}[modoVuelo()], aviso});
+  Object.assign(OSD_ULT,{volt:+volt.toFixed(1), rssi, timer:mm+':'+ss, modo:(FALLAS.gps && !drone.acro)?'ATTI':{facil:'GPS',angulo:'ANGL',acro:'ACRO'}[modoVuelo()], aviso});
   /* RASGADO DE VIDEO. El analógico no se degrada uniforme: rompe en FRANJAS
      horizontales de estática. Cuantas más, peor la señal. */
   /* corte de vídeo: nieve OPACA a pantalla completa. Con una capa
      translúcida el alumno seguía viendo el mundo, y eso no es un corte. */
-  if(ESC.activa && ESC.enCorte){
+  if((ESC.activa && ESC.enCorte) || FALLAS.video){
     for(let k=0;k<160;k++){ const y=Math.random()*H, h=2+Math.random()*10, v=Math.floor(30+Math.random()*120);
       g.fillStyle='rgb('+v+','+v+','+v+')'; g.fillRect(0,y,W,h); }
     g.fillStyle='rgba(20,20,20,.86)'; g.fillRect(0,0,W,H);
@@ -6619,7 +6693,7 @@ function fijarModoVuelo(m){
   const eraFisico=!!drone.acro;
   drone.acro=(m!=='facil'); drone.angulo=(m==='angulo');
   if(drone.acro && !eraFisico){ drone.quat=new THREE.Quaternion().setFromEuler(new THREE.Euler(0,drone.yaw,0,'YXZ')); drone.wx=drone.wy=drone.wz=0; drone.thrG=1; }
-  if(!drone.acro){ drone.pitch=0; drone.roll=0; drone.quat=null; }
+  if(!drone.acro){ drone.pitch=0; drone.roll=0; drone.quat=null; drone.vrs=0; }
   feed(m==='facil'?'Vuelo: FÁCIL — sueltas y se frena solo, mantiene la altura (el viento fuerte lo desplaza un poco)'
      : m==='angulo'?'Vuelo: ÁNGULO — la palanca inclina y al soltar se nivela, pero NO frena: la inercia es tuya'
      : 'Vuelo: ACRO — la palanca pide GRADOS/SEGUNDO, sin autonivelado');
@@ -7028,7 +7102,7 @@ function aplicarMuestraDVR(t){
 }
 function entrarDVR(){
   if(DVR.on) return;
-  cerrarMando(); cerrarPorQue();      // los paneles que pausan se cierran ANTES de guardar la pausa
+  cerrarMando(); cerrarPorQue(); cerrarInstr();      // los paneles que pausan se cierran ANTES de guardar la pausa
   if(duelo.active){ feed('En duelo no hay repetición: el rival sigue en vivo','bad'); return; }
   if(DVR.cuenta<30){ feed('Todavía no hay vuelo grabado: se graba el dron en el aire'); return; }
   DVR.guard={ mode, active:drone.active, vis:drone.mesh?drone.mesh.visible:false, pos:drone.pos.clone(), vel:drone.vel.clone(),
@@ -7049,7 +7123,7 @@ function salirDVR(){
   signal=g.signal; droneCam=g.droneCam; missionTime=g.missionTime;
   /* la pausa se recalcula de lo que de verdad queda abierto: copiar la vieja
      podía dejar el juego congelado sin pantalla de pausa */
-  paused = g.pauseOn || $('mandoBox').classList.contains('on') || $('porqueBox').classList.contains('on');
+  paused = g.pauseOn || $('mandoBox').classList.contains('on') || $('porqueBox').classList.contains('on') || $('instrBox').classList.contains('on');
   $('dvrBar').classList.remove('on');
   if(g.resultOn) $('result').classList.add('on');
   if(g.pauseOn) $('pause').classList.add('on');
@@ -7138,9 +7212,73 @@ function fantasmaGuardar(){
   }catch(e){ /* sin sitio: se pierde el fantasma, nunca el progreso (va en otra clave) */ }
 }
 
+/* =====================================================================
+   🎓 ESTACIÓN DEL INSTRUCTOR — fallas inyectadas
+   ---------------------------------------------------------------------
+   Lo que ninguno de los simuladores FPV de carreras tiene y todos los de
+   formación sí (RealFlight, Zephyr, DJI, Quantum3D): provocar la emergencia.
+   Cada falla hace lo que haría la real, no un adorno:
+     MOTOR   un cuadricóptero que pierde un motor NO se sostiene: empuje al 45%
+             y giro sobre sí mismo — la lección es cortar y aterrizar ya.
+             Un hexáptero sí aguanta (83%) con una deriva de guiñada.
+     GPS     FÁCIL deja de retener la posición: el viento lo arrastra entero y
+             frena tarde (pasa a ATTI). El rescate sin GPS solo puede aterrizar.
+     BRÚJULA el rumbo deriva solo: el aparato gira sin que lo pidas.
+     VÍDEO   nieve opaca, pero con mando: volar a ciegas.
+     ENLACE  se pierde el mando: salta el rescate.
+     CELDA   una celda muerta: 2,6 V menos y la batería se vacía al doble. */
+const FALLAS={ motor:false, gps:false, brujula:false, video:false, enlace:false, celda:false };
+const FALLA_TXT={ motor:'⚙ FALLA DE MOTOR', gps:'🛰 GPS PERDIDO: modo ATTI', brujula:'🧭 ERROR DE BRÚJULA', video:'📺 SIN VÍDEO', enlace:'📡 ENLACE PERDIDO', celda:'🔋 CELDA DAÑADA' };
+let _instrPausaba=false;
+function fallaToggle(f){
+  FALLAS[f]=!FALLAS[f];
+  if(FALLAS[f] && $('iAvisar').checked) feed(FALLA_TXT[f],'bad');
+  if(f==='brujula') drone._brujulaSigno=Math.random()<0.5?-1:1;
+  pintarInstr();
+}
+function limpiarFallas(){ for(const k in FALLAS) FALLAS[k]=false; if($('iFallas')) pintarInstr(); }
+function pintarInstr(){
+  const w=WEATHER[WX]||WEATHER.despejado;
+  const vel=(VIENTO_INST.vel!=null)?VIENTO_INST.vel:(w.wind||0), dir=(VIENTO_INST.dir!=null)?VIENTO_INST.dir:VIENTO_RUMBO;
+  const raf=(VIENTO_INST.rafaga!=null)?VIENTO_INST.rafaga:0.45, tur=(VIENTO_INST.turb!=null)?VIENTO_INST.turb:0;
+  const gd=Math.round(((dir*180/Math.PI)%360+360)%360), card=['N','NE','E','SE','S','SO','O','NO'][Math.round(gd/45)%8];
+  $('iVel').value=vel; $('iVelv').textContent=vel.toFixed(1)+' m/s';
+  $('iDir').value=gd; $('iDirv').textContent=gd+'° '+card;
+  $('iRaf').value=raf; $('iRafv').textContent=Math.round(raf*100)+'%';
+  $('iTur').value=tur; $('iTurv').textContent=Math.round(tur*100)+'%';
+  $('iFallas').querySelectorAll('button').forEach(b=>b.classList.toggle('on', !!FALLAS[b.dataset.f]));
+  const act=Object.keys(FALLAS).filter(k=>FALLAS[k]);
+  $('iEstado').textContent = act.length ? 'Activas: '+act.map(k=>FALLA_TXT[k]).join(' · ') : 'Sin fallas activas.';
+}
+function abrirInstr(){
+  if(DVR.on) return;
+  $('instrBox').classList.add('on'); pintarInstr();
+  if(playing && !paused && !(duelo.active && !duelo.fin)){ paused=true; _instrPausaba=true; }
+}
+function cerrarInstr(){ $('instrBox').classList.remove('on'); if(_instrPausaba){ paused=false; _instrPausaba=false; } }
+function cablearInstr(){
+  $('btnInstr').onclick=(e)=>{ e.stopPropagation(); abrirInstr(); };
+  $('iCerrar').onclick=cerrarInstr;
+  const viento=()=>{ VIENTO_INST.vel=+$('iVel').value; VIENTO_INST.dir=(+$('iDir').value)*Math.PI/180;
+    VIENTO_INST.rafaga=+$('iRaf').value; VIENTO_INST.turb=+$('iTur').value; aplicarViento(); pintarInstr(); };
+  ['iVel','iDir','iRaf','iTur'].forEach(id=>$(id).oninput=viento);
+  $('iClima').onclick=()=>{ VIENTO_INST.vel=VIENTO_INST.dir=VIENTO_INST.rafaga=VIENTO_INST.turb=null; aplicarViento(); pintarInstr(); };
+  $('iRafaga').onclick=()=>{ instrRafaga(); };
+  $('iFallas').querySelectorAll('button').forEach(b=>b.onclick=()=>fallaToggle(b.dataset.f));
+  $('iLimpiar').onclick=()=>{ limpiarFallas(); feed('Fallas retiradas'); };
+}
+/* una ráfaga de 7 m/s de costado, ya: la que tumba al que vuela al límite */
+function instrRafaga(){
+  if(mode!=='drone' || !drone.active) return;
+  const lado=Math.random()<0.5?1:-1, cy=Math.cos(drone.yaw), sy=Math.sin(drone.yaw);
+  drone.vel.x+=(-cy)*lado*7*M; drone.vel.z+=(sy)*lado*7*M;
+  if($('iAvisar').checked) feed('💨 Ráfaga','bad');
+}
+
 /* lee la intención del jugador (unificado) */
 let PALANCA_DBG=null;   // la pone DRONES.palanca(); null = mandan los controles reales
 const _mirPil=new THREE.Vector3(); let _vlosT=0;     // vista del piloto en tierra
+const _ejeYw=new THREE.Vector3(0,1,0);               // eje vertical del mundo (giro por motor perdido)
 const _camQ=new THREE.Quaternion(), _qUp=new THREE.Quaternion(), _camOff=new THREE.Vector3();
 const _ejeX=new THREE.Vector3(1,0,0), _qGiroY=new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), Math.PI);
 function readInput(dt){
@@ -7221,7 +7359,7 @@ function readInput(dt){
   if(mode==='drone' && drone.active && !stats.drone.fiber && !drone.diving){
     if(linkLost && !drone.rescate){ drone.rescate=true; drone._modoPrev=modoVuelo(); drone._recupT=0;
       if(drone.acro){ drone.rescate=false; fijarModoVuelo('facil'); drone.rescate=true; }
-      feed('📡 FAILSAFE: sin enlace — el dron sube y vuelve solo a casa','bad'); }
+      feed(FALLAS.gps ? '📡 FAILSAFE sin GPS: no sabe volver — aterriza donde está' : '📡 FAILSAFE: sin enlace — el dron sube y vuelve solo a casa','bad'); }
     else if(drone.rescate && !linkLost){
       drone._recupT = signal>0.25 ? (drone._recupT||0)+dt : 0;
       if(drone._recupT>1.5){ drone.rescate=false;
@@ -7239,10 +7377,16 @@ function readInput(dt){
        (la trampa de signos de la casa). Comprobado midiendo la distancia. */
     inp.dr_yaw=clamp(-err*1.4,-1,1); inp.dr_roll=0; inp.throttle=null; inp.up=false; inp.down=false;
     const navalR=['surface','sub'].includes(stats.drone.domain);   // NAVAL vive en updateDrone, no aqui
-    if(stats.drone.domain==='sub'){ inp.up=true; inp.dr_pitch=0.4; }      // un sumergible sin radio EMERGE
+    if(FALLAS.gps && !['surface','sub'].includes(stats.drone.domain)){ inp.dr_pitch=0; inp.dr_yaw=0; if(agl>1) inp.down=true; }   // sin GPS no sabe volver: aterriza
+    else if(stats.drone.domain==='sub'){ inp.up=true; inp.dr_pitch=0.4; }      // un sumergible sin radio EMERGE
     else if(dist>12*M){ if(agl<38 && !navalR){ inp.up=true; inp.dr_pitch=0; } else inp.dr_pitch=0.6; }
     else { inp.dr_pitch=0; if(agl>3) inp.down=true; }
   }
+  /* ⚠ PARADA SEGURA del UGV: sin enlace, un vehículo terrestre real se detiene
+     (no sigue con la última orden ni avanza a ciegas). Antes conservaba un 12 %
+     del mando. */
+  if(mode==='tank' && linkLost){ inp.moveF=0; inp.moveT=0; inp.boost=false;
+    if((player._paradaT||0)<missionTime-3){ player._paradaT=missionTime; feed('🛑 PARADA SEGURA: sin enlace, el vehículo se detiene','bad'); } }
   if(signal<0.42){ const j=(1-signal)*0.03; inp.dyaw+=(Math.random()-0.5)*j; inp.dpitch+=(Math.random()-0.5)*j*0.6; }
   if(linkLost){ inp.fire=false; inp.sec=false; }
   // ÓPTICA dañada: puntería temblorosa
@@ -7530,7 +7674,7 @@ function deployDrone(){
   /* ⚠ el reloj del último golpe vuelve con la misión: missionTime arranca en 0 y
      un _golpeT viejo (80 s) dejaba sin consecuencias los choques de los
      primeros 80 s del intento siguiente (la nota salía inflada) */
-  drone._golpeT=-9; drone._estrellado=false; drone.varado=false; drone.vImpacto=0;
+  drone._golpeT=-9; drone._estrellado=false; drone.varado=false; drone.vImpacto=0; drone.vrs=0;
   if(ESC.activa) ESC.prev=null;   // recoger y redesplegar no es cruzar un aro   // un segundo para salir de entre los edificios
   if(drone.mesh.userData.suelo==null){
     /* el punto más bajo de la malla, con el aparato nivelado: patas, batería
@@ -7610,11 +7754,18 @@ const _rafa=new THREE.Vector3();
 function vientoAhora(){
   const w=windVec.length(); if(w<1e-4) return _rafa.set(0,0,0);
   const t=missionTime;
-  const g=1 + 0.45*Math.sin(t*0.9) * Math.sin(t*0.23+1.7);        // rachas de fuerza
+  const RAF=(VIENTO_INST.rafaga!=null)?VIENTO_INST.rafaga:0.45, TURB=(VIENTO_INST.turb!=null)?VIENTO_INST.turb:0;
+  const g=1 + RAF*Math.sin(t*0.9) * Math.sin(t*0.23+1.7);         // rachas de fuerza
   const giro=Math.sin(t*0.11)*0.5;                                 // deriva de dirección
   const c=Math.cos(giro), s2=Math.sin(giro);
   _rafa.set(windVec.x*c - windVec.z*s2, 0, windVec.x*s2 + windVec.z*c).multiplyScalar(g);
   _rafa.y=w*0.18*Math.sin(t*1.7)*Math.sin(t*0.41);                 // térmicas leves
+  /* TURBULENCIA del instructor: tres frecuencias que no comparten múltiplos
+     por eje, proporcional al viento medio (con calma no hay turbulencia) */
+  if(TURB>0){ const k=w*TURB*0.6;
+    _rafa.x+=k*(Math.sin(t*2.3)*0.6+Math.sin(t*5.7+1.3)*0.4);
+    _rafa.z+=k*(Math.sin(t*2.9+0.7)*0.6+Math.sin(t*6.1)*0.4);
+    _rafa.y+=k*0.5*Math.sin(t*4.3+2.1); }
   /* GRADIENTE DE ALTURA (capa límite): pegado al suelo la vegetación y las
      construcciones frenan el viento; a cien metros sopla entero. Ley de
      potencia aproximada: 55%% a ras, 100%% desde ~60 m. Es media lección de
@@ -7710,7 +7861,14 @@ function updateDrone(dt, inp){
   const mBase=stats.drone.kg||1.0, mCarga=(stats.carga&&stats.carga.kg)||0;
   /* hélices rotas: cada 25% perdido resta ~9% de empuje (una pala mellada
      empuja menos y vibra) */
-  const mTot=mBase+mCarga, TWR=2.2*mBase/mTot*(1-0.35*(1-(drone.helices??1)));
+  const hexa=stats.drone.id==='cargero';
+  const mTot=mBase+mCarga, TWR=2.2*mBase/mTot*(1-0.35*(1-(drone.helices??1)))*(FALLAS.motor ? (hexa?0.83:0.45) : 1);
+  /* motor perdido: el par de los otros tres hace girar el aparato sobre sí
+     mismo (en un hexáptero, apenas una deriva) */
+  if(FALLAS.motor && !['surface','sub'].includes(stats.drone.domain) && !stats.drone.ala){
+    const giroM=(hexa?0.4:4.0)*dt;
+    drone.yaw+=giroM; if(drone.quat){ _dq.setFromAxisAngle(_ejeYw, giroM); drone.quat.premultiply(_dq); } }
+  if(FALLAS.brujula && !drone.acro && !['surface','sub'].includes(stats.drone.domain)) drone.yaw+=0.15*(drone._brujulaSigno||1)*dt;
   /* Batería: 20 MINUTOS de vuelo (decisión de Joan, 15-ago-2026; antes eran
      55 segundos). Subir sigue gastando 60 % más. Con esto la batería deja de
      ser el reloj de la misión y pasa a ser lo que es en un dron real: el
@@ -7719,7 +7877,7 @@ function updateDrone(dt, inp){
      del rotor dice potencia ∝ peso^1,5, y es la razón de que un dron cargado
      vuelva con la batería a la mitad del tiempo. */
   const esfuerzo=(inp.throttle!=null)? Math.max(0,inp.throttle-0.45)*1.2 : (inp.up?0.6:0);
-  drone.batt=clamp(drone.batt - dt*0.000833*(1+esfuerzo)*Math.pow(mTot/mBase,1.5), 0, 1);
+  drone.batt=clamp(drone.batt - dt*0.000833*(1+esfuerzo)*Math.pow(mTot/mBase,1.5)*(FALLAS.celda?2.2:1), 0, 1);
   drone.tVuelo=(drone.tVuelo||0)+dt;
   /* PITIDOS DE BATERÍA, el idioma de toda controladora: al 30%% dos bips
      tranquilos cada dos segundos y medio; al 15%%, bip rápido continuo. Un
@@ -7840,7 +7998,7 @@ function updateDrone(dt, inp){
     // y la velocidad se convierte en movimiento por donde apunta el morro
     const cp=Math.cos(drone.pitch), sp=Math.sin(drone.pitch);
     drone.vel.set(sy*cp, sp, cy*cp).multiplyScalar(drone.vAire*power);
-    drone.vel.addScaledVector(vientoAhora(), 0.6);       // el viento (racheado) arrastra de verdad
+    drone.vel.addScaledVector(vientoAhora(), 1.0);       // el ala va CON la masa de aire: el piloto corrige la deriva (crab)
     if(enPerdida) drone.vel.y-=9.81*M*dt*2.2;            // sin sustentación, cae
     /* PILOTO AUTOMÁTICO DE ÓRBITA (tecla O). Un ala fija no puede quedarse
        mirando un punto: tiene que darle vueltas. Es como se vigila de verdad
@@ -7925,15 +8083,29 @@ function updateDrone(dt, inp){
                   en ACRO no: ahí perder altura al inclinar ES la lección */
                : drone.angulo ? Math.min(TWR, 1/Math.max(0.35,_up3.y)) : Math.min(1.0,TWR));
     drone.thrG=damp(drone.thrG==null?1:drone.thrG, gObj, 18, dt);
-    const thr=drone.thrG*9.81*M*power;
+    /* ⚠ ANILLO DE VÓRTICE (VRS). Bajar en VERTICAL deprisa mete al rotor en
+       su propia estela: el empuje se desploma y el aparato se sacude. Es la
+       causa clásica de que un dron "se caiga solo" en un descenso. La salida
+       es la de verdad: avanzar (aire limpio), no dar más gas. */
+    const vBaja=-drone.vel.y*MPU, vHor=Math.hypot(drone.vel.x,drone.vel.z)*MPU;
+    drone.vrs = (vBaja>4 && vHor<3 && drone.thrG>0.5) ? clamp((vBaja-4)/3,0,1)*(1-vHor/3) : damp(drone.vrs||0, 0, 4, dt);
+    /* la sacudida: un bamboleo de 2-3 Hz con picos de ~70 °/s sobre cabeceo y
+       alabeo, aplicado a la actitud (no a la orden: los motores no lo corrigen) */
+    if(drone.vrs>0.05){ const tq=missionTime, a=1.2*drone.vrs*dt;
+      _dq.setFromEuler(_deu.set(Math.sin(tq*13.1)*a, 0, Math.sin(tq*17.3+1.1)*a)); drone.quat.multiply(_dq); }
+    const thr=drone.thrG*9.81*M*power*(1-0.45*(drone.vrs||0));
     _up3.set(0,1,0).applyQuaternion(drone.quat);
     drone.vel.addScaledVector(_up3, thr*dt);
     drone.vel.y -= 9.81*M*dt;
-    drone.vel.addScaledVector(vientoAhora(), dt*0.9);
-    /* Resistencia cuadrática a = −k·v²: la punta sale de empuje = resistencia,
-       no de un tope escrito. k=0,064 → 2,2 g dan ~150 km/h. */
-    const vv=drone.vel.length();
-    drone.vel.multiplyScalar(Math.max(0, 1-0.064*vv*dt));
+    /* ⚠ EL VIENTO ES AIRE, NO UN EMPUJÓN. Antes se sumaba como una aceleración
+       y el arrastre frenaba la velocidad respecto al SUELO: el dron no se
+       dejaba llevar por el aire, lo empujaban. Ahora el arrastre actúa sobre
+       la velocidad respecto al AIRE (v − viento): parado, la deriva converge
+       al viento en ~3 s, como un dron real sin GPS. Lineal (arrastre de rotor,
+       manda a poca velocidad) + cuadrático (fuselaje, manda a fondo); la punta
+       sigue en ~150 km/h con 2,2 g. */
+    const vAire=_dv3.copy(drone.vel).sub(vientoAhora()), vr=vAire.length();
+    drone.vel.addScaledVector(vAire, -Math.min(1, (0.2+0.038*vr)*dt));
     /* Efecto suelo: a menos de metro y medio, el colchón de aire devuelve
        parte del empuje. Es lo que hace flotar el final del aterrizaje. */
     const aglE=(drone.pos.y-terrainHeight(drone.pos.x,drone.pos.z))*MPU;
@@ -8091,7 +8263,9 @@ function updateDrone(dt, inp){
        flotando a media potencia — mentira cómoda que enseña mal. */
     if(TWR<1.03) _dv3.y -= VEL_SUBE*(1.03-TWR)*6*power;
     const _vg=vientoAhora();
-    _dv3.x += _vg.x*0.18; _dv3.z += _vg.z*0.18;   // el viento (racheado) se nota, no manda
+    /* sin GPS no hay retención de posición: el viento arrastra entero (ATTI) */
+    const fV=FALLAS.gps?1.0:0.18;
+    _dv3.x += _vg.x*fV; _dv3.z += _vg.z*fV;   // el viento (racheado) se nota, no manda
     /* ⚠ ESTOS DOS NÚMEROS SON LA MASA DEL APARATO. damp(a,b,λ,dt) es un retardo
        con constante τ=1/λ, y la aceleración de pico es λ·(velocidad máxima).
        Estuvieron en 5,5 y 6,5, que a 30 m/s son 165 m/s² = 16,8 g horizontales
@@ -8101,8 +8275,9 @@ function updateDrone(dt, inp){
        Con 1,1 y 1,6: 3,4 g y 2,4 g, frenada de 27 m. Sigue siendo un dron
        fácil —la palanca pide VELOCIDAD y se mantiene solo en el aire, que es lo
        que Joan pidió— pero ahora hay que anticipar, como en el mundo real. */
-    drone.vel.x=damp(drone.vel.x, _dv3.x, 1.1, dt);
-    drone.vel.z=damp(drone.vel.z, _dv3.z, 1.1, dt);
+    const lamH=FALLAS.gps?0.35:1.1;     // sin GPS frena tarde: solo la actitud, sin posición
+    drone.vel.x=damp(drone.vel.x, _dv3.x, lamH, dt);
+    drone.vel.z=damp(drone.vel.z, _dv3.z, lamH, dt);
     drone.vel.y=damp(drone.vel.y, _dv3.y, 1.6, dt);
     /* Y el tope duro: un cuadricóptero inclina el disco de los rotores y nada
        más, así que su aceleración horizontal no puede pasar de g·tan(θ). Con el
@@ -8510,6 +8685,7 @@ let currentReal=null;
 function resetPlay(){
   if(DVR.on) salirDVR();
   player._golpeT=-9;
+  limpiarFallas(); VIENTO_INST.vel=VIENTO_INST.dir=VIENTO_INST.rafaga=VIENTO_INST.turb=null;
   limpiarEscuela(); limpiarHuellas(); limpiarDVR();
   if(FANT.mesh) FANT.mesh.visible=false;
   /* ⚠ EL CLIMA DE LA ESCUELA SE QUEDABA PEGADO. La lección del estacionario
@@ -8576,6 +8752,10 @@ function enemySpot(air){
 }
 function deployMission(m){
   mission=m; surviveTimer=m.survive||0;
+  /* FNV-1a: con (h*31+c) los ids vecinos (m1, m3) daban rumbos a 2° uno del otro */
+  { let h=2166136261; const id=String(m.id||''); for(let i=0;i<id.length;i++){ h^=id.charCodeAt(i); h=Math.imul(h,16777619); }
+    h^=h>>>13; h=Math.imul(h,0x5bd1e995); h^=h>>>15;
+    VIENTO_RUMBO=((h>>>0)%360)*Math.PI/180; aplicarViento(); }
   player.hp=stats.hp; player.hpMax=stats.hpMax;
   /* ⚠ EN UN MAPA DE MAR HAY QUE ARRANCAR SOBRE EL AGUA. El centro del mapa es
      el punto que se pidió, y en San Andrés o Galápagos ese punto es la ISLA:
@@ -9010,7 +9190,9 @@ function computeSignal(dt){
   /* en un corte de la e7 la señal cae a 0,2: sin vídeo pero SIN failsafe —
      el alumno sigue al mando, que es justo lo que se entrena */
   if(ESC.activa && ESC.enCorte) signal=Math.min(signal,0.2);
-  linkLost=signal<0.14;
+  if(FALLAS.video) signal=Math.min(signal,0.2);
+  if(FALLAS.enlace && mode==='drone' && drone.active && !(stats.drone && stats.drone.fiber)){ signal=0.05; enlaceMotivo=''; }
+  linkLost=signal<0.14;   // (tras las fallas del instructor: la de ENLACE lo dispara)
   linkAuth=signal<0.14?0.12:(signal<0.4?0.6:1);
 }
 let enlaceMotivo='', _atenT=0, _atenUlt={f:1,edif:0,arb:0};
@@ -11082,7 +11264,7 @@ function wireUI(){
   $('cmNacionSel').onchange=(e)=>CAMPANA.empezar('nacion', e.target.value);
   $('btnCara').onclick=(e)=>{ e.stopPropagation(); toggleCara(); };
   $('caraCal').onclick=()=>{ if(gaze.piloto && !CFA.activo) iniciarCentradoFacial(); };
-  cablearMando(); cablearDVR();
+  cablearMando(); cablearDVR(); cablearInstr();
   $('btnTec').onclick=(e)=>{ e.stopPropagation(); toggleTecnico(); };
   $('btnPorQue').onclick=(e)=>{ e.stopPropagation(); if(!cerrarPorQue()) mostrarPorQue(); };
   $('porqueBox').onclick=()=>cerrarPorQue();
@@ -11641,6 +11823,10 @@ if(location.search.indexOf('dbg')>=0) window.DRONES={
   malla:()=>{ drone.mesh.updateMatrixWorld(true); const q=new THREE.Quaternion(); drone.mesh.getWorldQuaternion(q);
     const der=new THREE.Vector3(-1,0,0).applyQuaternion(q), morro=new THREE.Vector3(0,0,1).applyQuaternion(q);
     return { derecha_y:+der.y.toFixed(3), morro_y:+morro.y.toFixed(3) }; },
+  falla:(f,on)=>{ if(f && on!=null){ FALLAS[f]=!!on; if(f==='brujula') drone._brujulaSigno=1; } return Object.assign({},FALLAS); },
+  vientoInst:(o)=>{ if(o){ Object.assign(VIENTO_INST,o); aplicarViento(); }
+    return { vector:[+(windVec.x*MPU).toFixed(2),+(windVec.z*MPU).toFixed(2)], ms:+(windVec.length()*MPU).toFixed(2), rumbo_grados:Math.round(((VIENTO_RUMBO*180/Math.PI)%360+360)%360) }; },
+  vel:()=>({ x:+(drone.vel.x*MPU).toFixed(2), y:+(drone.vel.y*MPU).toFixed(2), z:+(drone.vel.z*MPU).toFixed(2), vrs:+(drone.vrs||0).toFixed(2) }),
   enlace:()=>({ signal:+signal.toFixed(3), motivo:enlaceMotivo, edificios:_atenUlt.edif, arboles:_atenUlt.arb, factor:+_atenUlt.f.toFixed(3), perdido:linkLost }),
   naval:()=>({ yaw:+drone.yaw.toFixed(3), yawVel:+(drone.yawVel||0).toFixed(3), roll:+drone.roll.toFixed(3), sonda:drone.sonda, varado:!!drone.varado,
     vel_kn:+(Math.hypot(drone.vel.x,drone.vel.z)*MPU*1.944).toFixed(1), y:drone.pos.y, agua:water&&water.visible?water.position.y:null }),
