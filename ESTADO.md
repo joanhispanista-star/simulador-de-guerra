@@ -851,6 +851,70 @@ conducción.
   compilación en ese shader ahora mata TAMBIÉN la iluminación. Probar noche
   y lluvia tras cualquier cambio del shader.
 
+
+## 1 y 2-oct-2026: comparación con 61 simuladores y la tanda que salió de ella
+
+**El plan** está en `PLAN-COMPARATIVO.md` (86 agentes: investigación web de Liftoff,
+Velocidrone, DJI, Zephyr, RealFlight, VBS4… y 70 brechas verificadas en el código).
+
+**Hecho y medido** (todo con `?dbg`, que ahora va MUDO — ver trampas):
+- **Emisora RC / mando** por Gamepad API: asistente de 6 pasos (detecta TAER/AETR y
+  ejes invertidos por movimiento), mando de consola Modo 2 en un clic, gas analógico
+  (`inp.throttle`), rates con la fórmula EXACTA de Betaflight (perfil BF 670 °/s,
+  ½ palanca 185), uptilt y lente elegibles, zona muerta. Panel 🎮 EMISORA.
+- **Tres modos**: FÁCIL (GPS) → ÁNGULO (55°, se nivela, NO frena) → ACRO. B solo en
+  multirrotor (con la lancha la B la hacía volar como un cuadricóptero).
+- **Choques reales**: forma real de cada edificio (caja girada en ruinas, polígono
+  OSM; el círculo chocaba a 30 m de una pared), azoteas posables, suelo a la altura
+  del tren (0,13 m medido, era 1,2 m), hélices al 25 % por golpe, a 9 m/s se pierde
+  el dron, modo «sin daño», X = reintentar / modo tortuga.
+- **Escuela reparada y a escala**: Reintentar/Siguiente hacían startMission(-1)
+  (TypeError); e3 era imposible. Aros de 3,5 m (2,5 en e5, 4 en t3, 8 en el ala) a
+  3-5 m del suelo y ~20 m entre sí (eran de 22 m, a 40-105 m de altura); cuentan al
+  CRUZAR el plano, por dentro y en su sentido; rozar = +2 s. **Nota 0-100 y medallas**
+  (bronce 60 / plata 80 / oro 92), candado suave por bronce, récords `@v2`, bitácora
+  de minutos por modo (solo en movimiento). Lección nueva **e7 «Se va el vídeo»**.
+- **Repetición** (Y): 90 s a 30 Hz en anillo Float32Array, ±4×, cámara elegible; al
+  salir restaura todo. **Fantasma del récord** en `drones_fantasmas_v1` (clave aparte).
+- **Vista PILOTO** (C): el ojo del operador junto al puesto, FOV 50, «FUERA DE VISTA».
+- **Enlace**: antenas en metros (el mástil medía 31 m), cada edificio en medio ×0,55
+  (piso 0,2), el aviso dice por qué (edificio / relieve / distancia / agua). Rescate
+  con histéresis que sube a 40 m y nivela.
+- **Naval**: el giro del dron ya no gobierna cascos (la lancha giraba parada); timón
+  con chorro (golpe de máquina = gira sin arrancada; atrás gobierna al revés),
+  varada que deja salir marcha atrás, telemetría en nudos y sonda; el casco se bota
+  en el agua más cercana y se opera desde ahí (en la misión 10 nacía sobre la isla);
+  el submarino no sale del agua y se pilota por módem acústico (señal 0,2).
+
+### Revisión adversaria antes de publicar (2-oct): 21 defectos confirmados, todos arreglados y medidos
+- **El alabeo de ÁNGULO/ACRO estaba invertido** (palanca a la derecha → −10,9 m a la
+  izquierda) y la **malla de FÁCIL se inclinaba hacia fuera** del giro. Ahora, medido
+  con el rumbo FIJADO (`rumbo(180)`): los tres modos van a la derecha y la malla baja
+  la derecha (`DRONES.malla()`). La lancha escora hacia dentro y el ala gira bien.
+- Reloj de golpes que no volvía con la misión, choques repetidos en duelo, asistente
+  que copiaba el disparo al modo, mapa de la emisora aplicado a otro mando (gas NaN),
+  mando quieto que anulaba el teclado (ahora cede a los 4 s), repetición que congelaba
+  la pausa o se deslizaba por los huecos, aterrizaje sobre el mar a 6 m/s, timón sin
+  autoridad marcha atrás, ala fija con el gas y el elevador cruzados en la emisora,
+  cortes de la e7 que se esquivaban con C, fantasma a velocidad equivocada.
+
+### Trampa nueva (la más cara del día)
+- **Una medición de sentido sin fijar el rumbo no vale.** El 1-oct "comprobé" que el
+  alabeo acro coincidía con el fácil comparando desplazamientos con rumbo libre y
+  velocidad residual: coincidió por casualidad. Fijar `rumbo(180)` (yaw 0: derecha =
+  −X, adelante = +Z), dejar que la velocidad muera (200 cuadros en fácil) y medir.
+
+### Trampas nuevas
+- **`?dbg` NO SUENA** (guardia `MUDO_PRUEBAS` en `despertar`). El 1-oct el juego sonó
+  en el computador de Joan durante una prueba. Cerrar la pestaña al acabar.
+- **`DRONES.render()` sin argumento APAGA el render** (`render:(on)=>RENDER_ON=!!on`).
+- Ya existía una rama de cámara acro (0,44 rad fija); la mía quedó detrás, muerta, y
+  la prueba de uptilt «pasaba» porque 25° = 0,44 rad. Probar con un valor DISTINTO
+  del de fábrica (10° y 40°).
+- No meter código entre `if(...) minY=` y su `else`: el `else` se cuelga del if nuevo.
+- En la misión 10 las pruebas navales deben fijar el loadout (`setLoadout`) y recordar
+  que persiste entre pruebas.
+
 ## Trampas que ya costaron tiempo
 
 - **La rama de este repo es `main`, no `master`.** Otros proyectos de Joan usan
